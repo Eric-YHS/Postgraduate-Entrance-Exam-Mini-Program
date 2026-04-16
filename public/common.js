@@ -143,14 +143,16 @@ function setButtonLoading(button, loading) {
 }
 
 async function ensureAuth(requiredRole) {
-  // 支持 URL query 参数中的 token（用于小程序 web-view 跳转等场景）
+  // 优先级：URL token > localStorage token > session cookie
   const urlParams = new URLSearchParams(location.search);
   const queryToken = urlParams.get('token');
+  const savedToken = localStorage.getItem('auth_token');
+  const authToken = queryToken || savedToken;
 
   let data;
-  if (queryToken) {
+  if (authToken) {
     data = await fetchJSON('/api/auth/me', {
-      headers: { Authorization: `Bearer ${queryToken}` }
+      headers: { Authorization: `Bearer ${authToken}` }
     });
   } else {
     data = await fetchJSON('/api/auth/me');
@@ -178,6 +180,8 @@ async function ensureAuth(requiredRole) {
 }
 
 async function logout() {
+  localStorage.removeItem('auth_token');
+  localStorage.removeItem('auth_username');
   await fetchJSON('/api/auth/logout', { method: 'POST' });
   location.href = '/';
 }
