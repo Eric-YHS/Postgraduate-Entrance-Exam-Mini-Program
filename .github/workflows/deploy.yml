@@ -16,8 +16,10 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd /home/ubuntu/study-planner
-            git stash --quiet 2>/dev/null || true
-            git pull origin main
+            cp .env .env.backup
+            git fetch origin main
+            git reset --hard origin/main
+            cp .env.backup .env
             npm install --omit=dev
             pm2 restart study-planner
             pm2 save
