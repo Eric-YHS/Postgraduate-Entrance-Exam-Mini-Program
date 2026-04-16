@@ -16,6 +16,7 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             cd /home/ubuntu/study-planner
+            git stash --quiet 2>/dev/null || true
             git pull origin main
             npm install --omit=dev
             pm2 restart study-planner
