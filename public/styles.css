@@ -194,10 +194,15 @@ button {
   padding: 18px;
 }
 
+.metric-card .muted {
+  color: var(--subtle);
+}
+
 .metric-card strong {
   display: block;
   margin-top: 10px;
   font-size: 30px;
+  color: var(--ink);
 }
 
 .tab-row {
