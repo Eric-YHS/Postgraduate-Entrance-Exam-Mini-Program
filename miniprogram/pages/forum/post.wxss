@@ -1,0 +1,7 @@
+/* 发帖页样式 */
+.field-label {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4rpx;
+}

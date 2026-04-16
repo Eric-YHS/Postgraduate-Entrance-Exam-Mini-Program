@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>老师后台｜研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="dashboard-grid">
+        <aside class="side-rail">
+          <section class="brand-block">
+            <div class="brand-mark">研</div>
+            <h2 id="teacher-name">老师后台</h2>
+            <p class="muted">围绕考研规划做日程拆分、进度提醒、课程运营与资料管理。</p>
+            <div class="inline-actions">
+              <button class="button" id="logout-button" type="button">退出登录</button>
+              <a class="ghost-button" href="/" style="text-decoration: none;">返回首页</a>
+            </div>
+          </section>
+          <section class="brand-block">
+            <h3>操作说明</h3>
+            <p class="muted">支持摄像头推流直播；任务提醒支持定时和手动触发；题库、商城、论坛均已上线。</p>
+          </section>
+        </aside>
+
+        <main>
+          <section class="hero">
+            <span class="hero-badge">老师工作台</span>
+            <h1>把学生每天的考研节奏，拆到可执行、可提醒、可追踪。</h1>
+            <p>从任务编排到课程答疑，再到题库和资料变现，这里是一个围绕考研规划主题的老师工作台。</p>
+            <div class="stat-grid" id="teacher-stats"></div>
+          </section>
+
+          <div class="tab-row">
+            <button class="tab-button active" data-target="teacher-tasks" type="button">任务规划</button>
+            <button class="tab-button" data-target="teacher-students" type="button">学生管理</button>
+            <button class="tab-button" data-target="teacher-courses" type="button">录播课程</button>
+            <button class="tab-button" data-target="teacher-live" type="button">直播答疑</button>
+            <div class="tab-more-wrap">
+              <button class="tab-more-btn" type="button">更多 ▾</button>
+              <div class="tab-dropdown">
+                <button class="tab-dropdown-item" data-target="teacher-summaries" type="button">学习总结</button>
+                <button class="tab-dropdown-item" data-target="teacher-forum" type="button">论坛社区</button>
+                <button class="tab-dropdown-item" data-target="teacher-questions" type="button">题库管理</button>
+                <button class="tab-dropdown-item" data-target="teacher-store" type="button">资料商城</button>
+                <button class="tab-dropdown-item" data-target="teacher-flashcards" type="button">词汇管理</button>
+                <button class="tab-dropdown-item" data-target="teacher-mock-exams" type="button">模拟考试 <span class="tab-badge-beta">即将开放</span></button>
+                <button class="tab-dropdown-item" data-target="teacher-ai-tools" type="button">AI工具 <span class="tab-badge-beta">即将开放</span></button>
+              </div>
+            </div>
+          </div>
+
+          <section class="panel" id="teacher-tasks">
+            <h2>考研任务规划</h2>
+            <p class="muted">手动创建任务，或按表格批量导入每天的学习节奏。</p>
+            <form id="task-form" class="form-grid">
+              <div class="field">
+                <label>任务标题</label>
+                <input class="input" name="title" placeholder="例如：英语真题精读" required />
+              </div>
+              <div class="field">
+                <label>科目</label>
+                <input class="input" name="subject" value="考研英语" />
+              </div>
+              <div class="field">
+                <label>开始时间</label>
+                <input class="input" type="time" name="startTime" required />
+              </div>
+              <div class="field">
+                <label>结束时间</label>
+                <input class="input" type="time" name="endTime" required />
+              </div>
+              <div class="field full-span">
+                <label>任务说明</label>
+                <textarea class="textarea" name="description" placeholder="写清楚完成标准、刷题数量、复盘要求。"></textarea>
+              </div>
+              <div class="field full-span">
+                <label>重复日期</label>
+                <div class="checkbox-wrap" id="weekday-checkboxes"></div>
+              </div>
+              <div class="field full-span">
+                <label>分配学生</label>
+                <div class="checkbox-wrap" id="student-checkboxes"></div>
+              </div>
+              <div class="field">
+                <label>优先级</label>
+                <select class="select" name="priority" style="padding:8px 12px;">
+                  <option value="1">高优先级</option>
+                  <option value="2" selected>中优先级</option>
+                  <option value="3">低优先级</option>
+                </select>
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">创建任务</button>
+              </div>
+            </form>
+
+            <div class="paper-card" style="margin-top: 18px;">
+              <h3>表格导入任务</h3>
+              <p class="muted">支持 `.xlsx`、`.xls`、`.csv`。字段建议：学生 / 任务标题 / 任务内容 / 科目 / 开始时间 / 结束时间 / 周期。</p>
+              <form id="task-import-form" class="form-grid">
+                <div class="field full-span">
+                  <label>上传文件</label>
+                  <input class="input" type="file" name="file" accept=".xlsx,.xls,.csv" required />
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">导入任务表</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="paper-card" style="margin-top: 18px;">
+              <h3>手动触发提醒</h3>
+              <div class="form-grid">
+                <div class="field">
+                  <label>提醒日期</label>
+                  <input class="input" type="date" id="dispatch-date" />
+                </div>
+                <div class="field">
+                  <label>提醒时间</label>
+                  <input class="input" type="time" id="dispatch-time" />
+                </div>
+                <div class="field">
+                  <button class="button" id="dispatch-daily-button" type="button">发送当日总任务提醒</button>
+                </div>
+                <div class="field">
+                  <button class="ghost-button" id="dispatch-due-button" type="button">发送时间节点提醒</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="list-grid" id="tasks-list"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-students">
+            <h2>学生管理</h2>
+            <p class="muted">查看学生今日任务完成情况、练习正确率和最近总结。</p>
+            <div class="list-grid" id="students-list"></div>
+            <div class="hidden" id="student-detail-view" style="margin-top:18px;"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-summaries">
+            <h2>学生学习总结</h2>
+            <div class="list-grid" id="summaries-list"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-courses">
+            <h2>录播网盘</h2>
+            <div class="inline-actions" style="margin-bottom:14px;">
+              <button class="button" id="create-folder-btn" type="button">新建文件夹</button>
+              <button class="ghost-button" id="upload-file-btn" type="button">上传文件</button>
+            </div>
+            <form id="create-folder-form" class="hidden form-grid" style="margin-bottom:14px;">
+              <div class="field">
+                <label>文件夹名称</label>
+                <input class="input" name="name" required />
+              </div>
+              <div class="field">
+                <button class="button" type="submit">创建</button>
+              </div>
+            </form>
+            <form id="upload-file-form" class="hidden form-grid" style="margin-bottom:14px;">
+              <div class="field">
+                <label>文件标题</label>
+                <input class="input" name="title" required />
+              </div>
+              <div class="field">
+                <label>类型</label>
+                <select class="select" name="itemType">
+                  <option value="video">视频</option>
+                  <option value="document">文档</option>
+                  <option value="audio">音频</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>选择文件</label>
+                <input class="input" type="file" name="file" required />
+              </div>
+              <div class="field">
+                <label>科目</label>
+                <input class="input" name="subject" value="考研规划" />
+              </div>
+              <div class="field full-span">
+                <label>描述</label>
+                <input class="input" name="description" />
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">上传</button>
+              </div>
+            </form>
+            <div id="folder-breadcrumb" class="breadcrumb"></div>
+            <div id="cloud-folder-grid" class="cloud-grid"></div>
+            <div id="cloud-items-grid" class="cloud-grid" style="margin-top:14px;"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-live">
+            <h2>直播答疑</h2>
+            <form id="live-form" class="form-grid">
+              <div class="field">
+                <label>直播标题</label>
+                <input class="input" name="title" placeholder="例如：数学冲刺晚自习答疑" required />
+              </div>
+              <div class="field">
+                <label>主题</label>
+                <input class="input" name="subject" value="考研规划" />
+              </div>
+              <div class="field full-span">
+                <label>直播说明</label>
+                <textarea class="textarea" name="description" placeholder="写清楚本场答疑覆盖范围。"></textarea>
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">创建直播间</button>
+              </div>
+            </form>
+            <div class="list-grid" id="live-list"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-forum">
+            <h2>论坛社区</h2>
+            <p class="muted">点击下方按钮进入考研社区，发帖交流、分享资料。</p>
+            <a class="button" href="/forum" style="display:inline-block;text-decoration:none;margin-top:10px;">进入社区</a>
+          </section>
+
+          <section class="panel hidden" id="teacher-questions">
+            <h2>题库管理</h2>
+            <div class="paper-card" style="margin-bottom:18px;">
+              <h3>标签管理</h3>
+              <form id="tag-form" class="form-grid" style="margin-top:12px;">
+                <div class="field">
+                  <label>标签名称</label>
+                  <input class="input" name="name" required />
+                </div>
+                <div class="field">
+                  <label>分类</label>
+                  <select class="select" name="category">
+                    <option value="subject">科目</option>
+                    <option value="difficulty">难度</option>
+                    <option value="topic">知识点</option>
+                    <option value="custom">自定义</option>
+                  </select>
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">创建标签</button>
+                </div>
+              </form>
+              <div id="tags-list" style="margin-top:12px;"></div>
+            </div>
+            <form id="question-form" class="form-grid">
+              <div class="field">
+                <label>题目标题</label>
+                <input class="input" name="title" required />
+              </div>
+              <div class="field">
+                <label>科目</label>
+                <input class="input" name="subject" value="考研英语" />
+              </div>
+              <div class="field full-span">
+                <label>题干</label>
+                <textarea class="textarea" name="stem" required></textarea>
+              </div>
+              <div class="field">
+                <label>选项 A</label>
+                <input class="input" name="optionA" required />
+              </div>
+              <div class="field">
+                <label>选项 B</label>
+                <input class="input" name="optionB" required />
+              </div>
+              <div class="field">
+                <label>选项 C</label>
+                <input class="input" name="optionC" />
+              </div>
+              <div class="field">
+                <label>选项 D</label>
+                <input class="input" name="optionD" />
+              </div>
+              <div class="field">
+                <label>正确答案</label>
+                <select class="select" name="correctAnswer">
+                  <option value="A">A</option>
+                  <option value="B">B</option>
+                  <option value="C">C</option>
+                  <option value="D">D</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>解析视频文件</label>
+                <input class="input" type="file" name="analysisVideo" accept="video/*" />
+              </div>
+              <div class="field full-span">
+                <label>题目标签</label>
+                <div class="checkbox-wrap" id="question-tag-checkboxes"></div>
+              </div>
+              <div class="field full-span">
+                <label>文字解析</label>
+                <textarea class="textarea" name="analysisText"></textarea>
+              </div>
+              <div class="field full-span">
+                <label>解析视频地址</label>
+                <input class="input" name="analysisVideoUrl" placeholder="可选" />
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">录入题目</button>
+              </div>
+            </form>
+            <div class="list-grid" id="questions-list"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-store">
+            <h2>资料商城</h2>
+            <form id="product-form" class="form-grid">
+              <div class="field">
+                <label>商品名称</label>
+                <input class="input" name="title" required />
+              </div>
+              <div class="field">
+                <label>价格</label>
+                <input class="input" type="number" step="0.01" min="0.01" name="price" required />
+              </div>
+              <div class="field">
+                <label>库存</label>
+                <input class="input" type="number" min="0" name="stock" required />
+              </div>
+              <div class="field">
+                <label>分类</label>
+                <select class="input" name="category" style="padding:8px 12px;">
+                  <option value="">未分类</option>
+                  <option value="教材">教材</option>
+                  <option value="真题">真题</option>
+                  <option value="笔记">笔记</option>
+                  <option value="模板">模板</option>
+                  <option value="冲刺资料">冲刺资料</option>
+                </select>
+              </div>
+              <div class="field">
+                <label>商品图片</label>
+                <input class="input" type="file" name="image" accept="image/*" />
+              </div>
+              <div class="field full-span">
+                <label>商品说明</label>
+                <textarea class="textarea" name="description"></textarea>
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">上架商品</button>
+              </div>
+            </form>
+            <h3>商品列表</h3>
+            <div class="list-grid" id="products-list"></div>
+            <h3 style="margin-top: 20px;">订单列表</h3>
+            <div class="list-grid" id="orders-list"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-flashcards">
+            <h2>词汇卡片管理</h2>
+            <form id="flashcard-form" class="form-grid">
+              <div class="field">
+                <label>卡片标题</label>
+                <input class="input" name="title" required />
+              </div>
+              <div class="field">
+                <label>科目</label>
+                <input class="input" name="subject" value="考研英语" />
+              </div>
+              <div class="field full-span">
+                <label>正面内容（题目/单词）</label>
+                <textarea class="textarea" name="frontContent" required></textarea>
+              </div>
+              <div class="field full-span">
+                <label>背面内容（释义/答案）</label>
+                <textarea class="textarea" name="backContent" required></textarea>
+              </div>
+              <div class="field full-span">
+                <label>例句（真实语境）</label>
+                <textarea class="textarea" name="exampleSentence" placeholder="考研真题中的实际用法，帮助学生理解语境。" style="min-height:60px;"></textarea>
+              </div>
+              <div class="field full-span">
+                <label>标签（逗号分隔）</label>
+                <input class="input" name="tags" placeholder="例如：英语,词汇,高频" />
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">创建卡片</button>
+              </div>
+            </form>
+            <div class="paper-card" style="margin-top:18px;">
+              <h3>批量导入</h3>
+              <p class="muted">支持 .xlsx/.xls/.csv，列名：标题、科目、正面内容、背面内容、标签</p>
+              <form id="flashcard-import-form" class="form-grid">
+                <div class="field full-span">
+                  <label>上传文件</label>
+                  <input class="input" type="file" name="file" accept=".xlsx,.xls,.csv" required />
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">导入卡片</button>
+                </div>
+              </form>
+            </div>
+            <div class="list-grid" id="flashcards-list"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-mock-exams">
+            <h2>模拟考试管理</h2>
+            <p class="muted">创建限时模拟考试，选择题目组成试卷。</p>
+            <div class="paper-card" style="margin-top:14px;">
+              <h3>创建考试</h3>
+              <form id="mock-exam-form" class="form-grid" style="margin-top:12px;">
+                <div class="field">
+                  <label>考试标题</label>
+                  <input class="input" name="title" required placeholder="考研英语模拟卷一" />
+                </div>
+                <div class="field">
+                  <label>科目</label>
+                  <input class="input" name="subject" placeholder="考研英语" />
+                </div>
+                <div class="field">
+                  <label>时长（分钟）</label>
+                  <input class="input" type="number" name="duration" min="10" max="300" value="120" />
+                </div>
+                <div class="field full-span">
+                  <label>题目ID列表（逗号分隔）</label>
+                  <input class="input" name="questionIds" placeholder="1,2,3,4,5" />
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">创建考试</button>
+                </div>
+              </form>
+            </div>
+            <div class="list-grid" id="mock-exams-list" style="margin-top:18px;"></div>
+          </section>
+
+          <section class="panel hidden" id="teacher-ai-tools">
+            <h2>AI 教学工具</h2>
+            <p class="muted">利用 AI 辅助教学：生成题目、智能摘要、批量批改。</p>
+            <div class="paper-card" style="margin-top:14px;">
+              <h3>AI 生成题目</h3>
+              <form id="ai-generate-form" class="form-grid" style="margin-top:12px;">
+                <div class="field">
+                  <label>科目</label>
+                  <input class="input" name="subject" placeholder="考研英语" />
+                </div>
+                <div class="field">
+                  <label>知识点</label>
+                  <input class="input" name="topic" placeholder="阅读理解" />
+                </div>
+                <div class="field">
+                  <label>数量</label>
+                  <input class="input" type="number" name="count" min="1" max="20" value="5" />
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">生成题目</button>
+                </div>
+              </form>
+              <div id="ai-generate-result" style="margin-top:12px;display:none;"></div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/teacher.js"></script>
+  </body>
+</html>

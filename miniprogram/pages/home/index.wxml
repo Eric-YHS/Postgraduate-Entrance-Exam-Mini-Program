@@ -1,0 +1,229 @@
+<view class="page-shell">
+  <!-- 骨架屏 -->
+  <block wx:if="{{loading}}">
+    <view class="skeleton skeleton-hero"></view>
+    <view class="skeleton-card">
+      <view class="skeleton skeleton-title"></view>
+      <view class="skeleton skeleton-text"></view>
+      <view class="skeleton skeleton-text-short"></view>
+    </view>
+    <view class="skeleton-card">
+      <view class="skeleton skeleton-title"></view>
+      <view class="skeleton skeleton-text"></view>
+      <view class="skeleton skeleton-text-short"></view>
+    </view>
+  </block>
+
+  <block wx:if="{{!loading}}">
+    <!-- 第一屏：核心状态 -->
+    <view class="hero animate-in">
+      <view class="hero-badge">今日考研规划</view>
+      <view class="hero-title">{{user.displayName}}，今天的复习节奏已经排好了。</view>
+
+      <!-- 核心指标 -->
+      <view class="core-stats">
+        <view class="core-stat" bindtap="scrollToTasks">
+          <text class="core-stat-value">{{tasksCompleted}}/{{tasks.length}}</text>
+          <text class="core-stat-label">任务完成</text>
+        </view>
+        <view class="core-stat">
+          <text class="core-stat-value">{{unreadCount}}</text>
+          <text class="core-stat-label">未读提醒</text>
+        </view>
+        <view class="core-stat" wx:if="{{nearestLive}}" bindtap="openLive" data-id="{{nearestLive.id}}">
+          <text class="core-stat-value live-dot">{{nearestLive.status === 'live' ? '直播中' : '即将开始'}}</text>
+          <text class="core-stat-label">{{nearestLive.title}}</text>
+        </view>
+      </view>
+
+      <!-- 搜索入口 -->
+      <view class="search-bar" style="margin-top: 24rpx; background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3);" bindtap="goSearch">
+        <text class="search-icon" style="color: rgba(255,255,255,0.7);">🔍</text>
+        <text style="flex: 1; font-size: 28rpx; color: rgba(255,255,255,0.6);">搜索帖子、题目、课程...</text>
+      </view>
+
+      <!-- 更新时间 -->
+      <view style="margin-top: 16rpx; font-size: 22rpx; color: rgba(255,255,255,0.5);">最后更新: {{lastUpdateTime}}</view>
+    </view>
+
+    <!-- 第二屏：行动入口 -->
+    <view class="section animate-in" style="animation-delay: 0.06s;">
+      <view class="section-title">下一步行动</view>
+      <view class="action-grid">
+        <!-- 开始今日任务 -->
+        <view class="action-card" bindtap="scrollToTasks" wx:if="{{tasks.length > tasksCompleted}}">
+          <view class="action-icon" style="background: #eff6ff;">📋</view>
+          <view class="action-info">
+            <view class="action-title">完成今日任务</view>
+            <view class="action-desc">还有 {{tasks.length - tasksCompleted}} 项待完成</view>
+          </view>
+          <view class="action-arrow">›</view>
+        </view>
+
+        <!-- 继续刷题 -->
+        <view class="action-card" bindtap="goQuestions">
+          <view class="action-icon" style="background: #f0fdf4;">📝</view>
+          <view class="action-info">
+            <view class="action-title">开始刷题</view>
+            <view class="action-desc">练习题目，暴露薄弱点</view>
+          </view>
+          <view class="action-arrow">›</view>
+        </view>
+
+        <!-- 继续课程 -->
+        <view class="action-card" bindtap="goCourses">
+          <view class="action-icon" style="background: #fefce8;">🎬</view>
+          <view class="action-info">
+            <view class="action-title">继续课程</view>
+            <view class="action-desc">{{recentCourseTitle || '查看录播课程'}}</view>
+          </view>
+          <view class="action-arrow">›</view>
+        </view>
+
+        <!-- 词汇复习 -->
+        <view class="action-card" bindtap="goFlashcards">
+          <view class="action-icon" style="background: #faf5ff;">🃏</view>
+          <view class="action-info">
+            <view class="action-title">词汇复习</view>
+            <view class="action-desc">利用间隔重复巩固记忆</view>
+          </view>
+          <view class="action-arrow">›</view>
+        </view>
+
+        <!-- 提交今日总结 -->
+        <view class="action-card" bindtap="scrollToSummary">
+          <view class="action-icon" style="background: #fff7ed;">✏️</view>
+          <view class="action-info">
+            <view class="action-title">提交今日总结</view>
+            <view class="action-desc">{{summarySubmitted ? '今日已提交' : '记录学习情况'}}</view>
+          </view>
+          <view class="action-arrow">›</view>
+        </view>
+
+        <!-- 论坛交流 -->
+        <view class="action-card" bindtap="goForum">
+          <view class="action-icon" style="background: #fef2f2;">💬</view>
+          <view class="action-info">
+            <view class="action-title">论坛交流</view>
+            <view class="action-desc">讨论疑问、分享经验</view>
+          </view>
+          <view class="action-arrow">›</view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 今日任务（精简列表） -->
+    <view class="section animate-in" id="task-section" style="animation-delay: 0.12s;">
+      <view class="section-title">今日任务 ({{tasksCompleted}}/{{tasks.length}})</view>
+      <view class="list" wx:if="{{tasks.length}}">
+        <block wx:for="{{tasks}}" wx:key="id">
+          <view class="list-item" style="{{item.completedAt ? 'opacity: 0.6;' : ''}}">
+            <view style="display: flex; align-items: flex-start; gap: 16rpx;">
+              <view style="width: 44rpx; height: 44rpx; border-radius: 50%; border: 3rpx solid {{item.completedAt ? '#16a34a' : '#d1d5db'}}; background: {{item.completedAt ? '#16a34a' : 'transparent'}}; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 4rpx;"
+                    bindtap="toggleTaskComplete" data-id="{{item.id}}" data-completed="{{item.completedAt}}">
+                <text wx:if="{{item.completedAt}}" style="color: #fff; font-size: 24rpx;">✓</text>
+              </view>
+              <view style="flex: 1;">
+                <view class="badge">{{item.subject}}</view>
+                <view class="item-title" style="{{item.completedAt ? 'text-decoration: line-through; color: #9ca3af;' : ''}}">{{item.title}}</view>
+                <view class="item-meta" wx:if="{{item.startTime && item.endTime}}">{{item.startTime}} - {{item.endTime}}</view>
+              </view>
+            </view>
+          </view>
+        </block>
+      </view>
+      <view class="empty-state" wx:else style="padding: 40rpx;">
+        <view class="empty-state-icon">📋</view>
+        <view class="empty-state-text">今天没有待办任务</view>
+        <view class="empty-state-action">
+          <button class="ghost-button" bindtap="goQuestions">去刷题</button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 提交今日总结 -->
+    <view class="section animate-in" id="summary-section" style="animation-delay: 0.18s;">
+      <view class="section-title">今日总结</view>
+      <input class="input" type="date" value="{{summaryDate}}" data-field="summaryDate" bindinput="handleSummaryInput" />
+      <textarea class="textarea" placeholder="写下今天的完成情况、薄弱点和明天要补什么" value="{{summaryContent}}" data-field="summaryContent" bindinput="handleSummaryInput" maxlength="2000"></textarea>
+      <view class="inline-actions">
+        <button class="ghost-button" bindtap="chooseImages">选择图片</button>
+        <button class="ghost-button" bindtap="chooseFiles">选择附件</button>
+        <button class="primary-button" bindtap="submitSummary" disabled="{{submittingSummary}}">{{submittingSummary ? '提交中...' : '提交总结'}}</button>
+      </view>
+      <view class="empty-text" wx:if="{{selectedImages.length || selectedFiles.length}}">已选图片 {{selectedImages.length}} 张，附件 {{selectedFiles.length}} 个</view>
+    </view>
+
+    <!-- 第三屏：补充信息（可折叠） -->
+    <view class="section animate-in" style="animation-delay: 0.24s;">
+      <view style="display: flex; justify-content: space-between; align-items: center;" bindtap="toggleSupplement">
+        <view class="section-title">更多信息</view>
+        <text style="font-size: 26rpx; color: #6b7280;">{{expandSupplement ? '收起 ▴' : '展开 ▾'}}</text>
+      </view>
+
+      <block wx:if="{{expandSupplement}}">
+        <!-- 提醒中心 -->
+        <view style="margin-top: 20rpx;">
+          <view style="display: flex; justify-content: space-between; align-items: center;">
+            <text style="font-size: 28rpx; font-weight: 600;">提醒中心</text>
+            <text wx:if="{{notifications.length}}" style="font-size: 26rpx; color: #2563eb;" bindtap="markAllRead">全部已读</text>
+          </view>
+          <view class="list" wx:if="{{notifications.length}}" style="margin-top: 12rpx;">
+            <block wx:for="{{notifications}}" wx:key="id">
+              <view class="list-item" style="{{item.readAt ? 'opacity: 0.6;' : ''}}">
+                <view class="item-title">{{item.title}}</view>
+                <view class="item-meta">{{item.body}}</view>
+                <view class="inline-actions">
+                  <view class="badge">{{item.type}}</view>
+                  <button wx:if="{{!item.readAt}}" class="ghost-button" size="mini" data-id="{{item.id}}" bindtap="markNotificationRead">标记已读</button>
+                </view>
+              </view>
+            </block>
+          </view>
+          <view wx:else style="padding: 24rpx; text-align: center; color: #9ca3af; font-size: 26rpx;">暂无提醒</view>
+        </view>
+
+        <!-- 直播入口 -->
+        <view wx:if="{{liveSessions.length}}" style="margin-top: 24rpx;">
+          <text style="font-size: 28rpx; font-weight: 600;">直播入口</text>
+          <view class="list" style="margin-top: 12rpx;">
+            <block wx:for="{{liveSessions}}" wx:key="id">
+              <view class="list-item">
+                <view style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <view>
+                    <view class="item-title">{{item.title}}</view>
+                  </view>
+                  <view style="font-size: 24rpx; padding: 6rpx 16rpx; border-radius: 999rpx;
+                    background: {{item.status === 'live' ? '#fef2f2' : '#eff6ff'}};
+                    color: {{item.status === 'live' ? '#dc2626' : '#2563eb'}};">
+                    {{item.status === 'live' ? '直播中' : (item.status === 'ended' ? '已结束' : '待开始')}}
+                  </view>
+                </view>
+                <view style="margin-top: 16rpx;">
+                  <button class="primary-button" data-id="{{item.id}}}" bindtap="openLive"
+                          disabled="{{item.status === 'ended'}}">
+                    {{item.status === 'live' ? '进入直播' : (item.status === 'ended' ? '已结束' : '预约进入')}}
+                  </button>
+                </view>
+              </view>
+            </block>
+          </view>
+        </view>
+
+        <!-- 历史总结（最多显示3条） -->
+        <view style="margin-top: 24rpx;">
+          <text style="font-size: 28rpx; font-weight: 600;">历史总结</text>
+          <view class="list" wx:if="{{summaries.length}}" style="margin-top: 12rpx;">
+            <block wx:for="{{summaries}}" wx:key="id" wx:if="{{index < 3}}">
+              <view class="list-item">
+                <view class="item-title">{{item.taskDate}}</view>
+                <view class="item-meta">{{item.content}}</view>
+              </view>
+            </block>
+          </view>
+          <view wx:else style="padding: 24rpx; text-align: center; color: #9ca3af; font-size: 26rpx;">暂无历史总结</view>
+        </view>
+      </block>
+    </view>
+  </block>
+</view>

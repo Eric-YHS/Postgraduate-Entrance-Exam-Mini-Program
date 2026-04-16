@@ -1,0 +1,162 @@
+<view class="page-shell">
+  <!-- 顶部进度条 -->
+  <view class="progress-header animate-in" wx:if="{{!loading && questions.length}}">
+    <view class="progress-info">
+      <text class="progress-text">第 {{currentIndex + 1}} / {{questions.length}} 题</text>
+      <text class="progress-stats" wx:if="{{sessionCorrect !== null}}">正确 {{sessionCorrect}} / {{sessionAnswered}}</text>
+    </view>
+    <view class="progress-bar" style="margin-top: 8rpx;">
+      <view class="progress-fill" style="width: {{questions.length ? ((currentIndex + 1) / questions.length * 100) : 0}}%;"></view>
+    </view>
+  </view>
+
+  <!-- 筛选栏（可折叠） -->
+  <view class="section animate-in" style="animation-delay: 0.03s;">
+    <view style="display: flex; justify-content: space-between; align-items: center;" bindtap="toggleFilter">
+      <text style="font-size: 28rpx; font-weight: 600; color: #374151;">
+        {{filters.subject || '全部科目'}} · {{modeLabel}}
+      </text>
+      <text style="font-size: 24rpx; color: #6b7280;">{{showFilter ? '收起 ▴' : '筛选 ▾'}}</text>
+    </view>
+
+    <block wx:if="{{showFilter}}">
+      <!-- 科目筛选 -->
+      <view class="filter-bar" wx:if="{{filterOptions.subjects.length}}">
+        <view class="filter-pill {{filters.subject === '' ? 'active' : ''}}" bindtap="selectSubject" data-subject="">全部</view>
+        <view wx:for="{{filterOptions.subjects}}" wx:key="*this"
+              class="filter-pill {{filters.subject === item ? 'active' : ''}}"
+              bindtap="selectSubject" data-subject="{{item}}">
+          {{item}}
+        </view>
+      </view>
+
+      <!-- 模式选择 -->
+      <view class="filter-bar">
+        <view class="filter-pill {{filters.mode === 'all' ? 'active' : ''}}" bindtap="selectMode" data-mode="all">全部</view>
+        <view class="filter-pill {{filters.mode === 'random' ? 'active' : ''}}" bindtap="selectMode" data-mode="random">随机</view>
+        <view class="filter-pill {{filters.mode === 'untried' ? 'active' : ''}}" bindtap="selectMode" data-mode="untried">未做</view>
+        <view class="filter-pill {{filters.mode === 'favorites' ? 'active' : ''}}" bindtap="selectMode" data-mode="favorites">收藏</view>
+        <view class="filter-pill {{filters.mode === 'wrong' ? 'active' : ''}}" bindtap="selectMode" data-mode="wrong">错题</view>
+        <view class="filter-pill {{filters.mode === 'daily' ? 'active' : ''}}" bindtap="loadDaily">每日推荐</view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 骨架屏 -->
+  <block wx:if="{{loading}}">
+    <view class="skeleton-card" wx:for="{{[1,2,3]}}" wx:key="*this">
+      <view class="skeleton skeleton-title"></view>
+      <view class="skeleton skeleton-text"></view>
+      <view class="skeleton skeleton-option"></view>
+      <view class="skeleton skeleton-option"></view>
+      <view class="skeleton skeleton-option"></view>
+    </view>
+  </block>
+
+  <!-- 会话完成报告 -->
+  <view class="section animate-in" wx:if="{{!loading && sessionComplete}}">
+    <view style="text-align: center; padding: 40rpx 0;">
+      <view style="font-size: 80rpx;">🎉</view>
+      <view class="section-title" style="text-align: center;">练习完成</view>
+      <view class="session-stats">
+        <view class="session-stat">
+          <text class="session-stat-value">{{questions.length}}</text>
+          <text class="session-stat-label">总题数</text>
+        </view>
+        <view class="session-stat">
+          <text class="session-stat-value" style="color: #16a34a;">{{sessionCorrect}}</text>
+          <text class="session-stat-label">正确</text>
+        </view>
+        <view class="session-stat">
+          <text class="session-stat-value" style="color: #dc2626;">{{sessionAnswered - sessionCorrect}}</text>
+          <text class="session-stat-label">错误</text>
+        </view>
+        <view class="session-stat">
+          <text class="session-stat-value" style="color: #2563eb;">{{sessionAccuracy}}%</text>
+          <text class="session-stat-label">正确率</text>
+        </view>
+      </view>
+      <view class="inline-actions" style="justify-content: center; margin-top: 32rpx;">
+        <button class="primary-button" bindtap="restartSession">再来一组</button>
+        <button class="ghost-button" bindtap="reviewWrong">查看错题</button>
+      </view>
+    </view>
+  </view>
+
+  <!-- 单题视图 -->
+  <block wx:if="{{!loading && !sessionComplete && questions.length}}">
+    <view class="card question-card animate-in" style="animation-delay: 0.06s;">
+      <!-- 题目头部 -->
+      <view style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <view class="badge">{{currentQuestion.subject}}</view>
+        <view class="fav-btn {{currentQuestion.favorited ? 'active' : ''}}" bindtap="toggleFavorite" data-id="{{currentQuestion.id}}">
+          {{currentQuestion.favorited ? '★' : '☆'}}
+        </view>
+      </view>
+
+      <!-- 题目标题和题干 -->
+      <view class="item-title" style="margin-top: 16rpx;">{{currentQuestion.title}}</view>
+      <view class="item-meta" style="margin-top: 8rpx;">{{currentQuestion.stem}}</view>
+
+      <!-- 上次作答记录 -->
+      <view wx:if="{{currentQuestion.latestRecord}}" style="margin-top: 12rpx; font-size: 24rpx; color: {{currentQuestion.latestRecord.isCorrect ? '#16a34a' : '#dc2626'}};">
+        上次作答：{{currentQuestion.latestRecord.isCorrect ? '正确' : '错误（选了 ' + currentQuestion.latestRecord.selectedAnswer + '）'}}
+      </view>
+
+      <!-- 选项 -->
+      <radio-group data-id="{{currentQuestion.id}}" bindchange="handleRadioChange" style="margin-top: 24rpx;">
+        <block wx:for="{{currentQuestion.options}}" wx:key="key">
+          <label class="option-item {{selectedAnswer === item.key ? 'option-selected' : ''}} {{showAnalysis && item.key === currentQuestion.correctAnswer ? 'option-correct' : ''}} {{showAnalysis && selectedAnswer === item.key && item.key !== currentQuestion.correctAnswer ? 'option-wrong' : ''}}" style="display: flex; align-items: center; gap: 16rpx;">
+            <radio value="{{item.key}}" color="#2563eb" disabled="{{showAnalysis}}" />
+            <text style="flex: 1;">{{item.key}}. {{item.text}}</text>
+          </label>
+        </block>
+      </radio-group>
+
+      <!-- 提交按钮 / 下一题按钮 -->
+      <block wx:if="{{!showAnalysis}}">
+        <button class="primary-button" bindtap="submitAnswer" disabled="{{!selectedAnswer || submitting}}"
+                style="margin-top: 28rpx;">
+          {{submitting ? '提交中...' : '提交答案'}}
+        </button>
+      </block>
+      <block wx:else>
+        <!-- 答题结果 -->
+        <view class="result-panel {{currentResult.isCorrect ? 'result-correct' : 'result-wrong'}}" style="margin-top: 24rpx;">
+          <view class="result-header">
+            {{currentResult.isCorrect ? '✓ 回答正确' : '✗ 正确答案：' + currentResult.correctAnswer}}
+          </view>
+          <view class="result-analysis" wx:if="{{currentResult.analysisText}}">{{currentResult.analysisText}}</view>
+        </view>
+
+        <!-- 下一题按钮 -->
+        <button class="primary-button" bindtap="nextQuestion" style="margin-top: 24rpx;">
+          {{currentIndex < questions.length - 1 ? '下一题' : '完成练习'}}
+        </button>
+      </block>
+    </view>
+  </block>
+
+  <!-- 空状态 -->
+  <view class="empty-state" wx:if="{{!loading && !sessionComplete && questions.length === 0}}">
+    <view class="empty-state-icon">📝</view>
+    <view class="empty-state-text">当前筛选条件下没有题目</view>
+    <view class="empty-state-action">
+      <button class="primary-button" bindtap="loadDaily">试试每日推荐</button>
+    </view>
+  </view>
+
+  <!-- 总体统计 -->
+  <view class="section animate-in" style="animation-delay: 0.12s; margin-top: 24rpx;">
+    <view style="display: flex; gap: 24rpx; justify-content: center;">
+      <view style="text-align: center;">
+        <text style="font-size: 36rpx; font-weight: 700; color: #2563eb;">{{stats.totalAttempts}}</text>
+        <text style="display: block; font-size: 22rpx; color: #6b7280; margin-top: 4rpx;">已做题数</text>
+      </view>
+      <view style="text-align: center;">
+        <text style="font-size: 36rpx; font-weight: 700; color: #16a34a;">{{stats.accuracy}}%</text>
+        <text style="display: block; font-size: 22rpx; color: #6b7280; margin-top: 4rpx;">正确率</text>
+      </view>
+    </view>
+  </view>
+</view>

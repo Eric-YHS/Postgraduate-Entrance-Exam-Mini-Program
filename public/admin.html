@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>管理后台｜研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="dashboard-grid">
+        <aside class="side-rail">
+          <section class="brand-block">
+            <div class="brand-mark">研</div>
+            <h2>管理后台</h2>
+            <p class="muted">管理教师注册审核、用户账号和系统状态。</p>
+            <div class="inline-actions">
+              <button class="button" id="logout-button" type="button">退出登录</button>
+              <a class="ghost-button" href="/" style="text-decoration: none;">返回首页</a>
+            </div>
+          </section>
+          <section class="brand-block">
+            <h3>系统统计</h3>
+            <div id="admin-sidebar-stats" class="stat-grid" style="grid-template-columns: 1fr 1fr;"></div>
+          </section>
+        </aside>
+
+        <main>
+          <section class="hero">
+            <span class="hero-badge">超级管理员</span>
+            <h1>管理教师注册、用户账号与系统运行状态。</h1>
+          </section>
+
+          <div class="tab-row">
+            <button class="tab-button active" data-target="admin-applications" type="button">注册审核</button>
+            <button class="tab-button" data-target="admin-users" type="button">用户管理</button>
+            <button class="tab-button" data-target="admin-stats" type="button">系统统计</button>
+          </div>
+
+          <!-- 注册审核 -->
+          <section class="panel" id="admin-applications">
+            <h2>教师注册审核</h2>
+            <p class="muted">审核教师注册申请，批准后自动创建教师账号。</p>
+            <div id="applications-list"></div>
+          </section>
+
+          <!-- 用户管理 -->
+          <section class="panel" id="admin-users">
+            <h2>用户管理</h2>
+            <p class="muted">查看和管理所有教师与学生账号。</p>
+            <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <input id="user-search" class="input" placeholder="搜索用户名或姓名" style="flex: 1; min-width: 200px;" />
+              <select id="user-role-filter" class="input" style="width: auto;">
+                <option value="">全部角色</option>
+                <option value="teacher">教师</option>
+                <option value="student">学生</option>
+              </select>
+            </div>
+            <div id="users-list"></div>
+          </section>
+
+          <!-- 系统统计 -->
+          <section class="panel" id="admin-stats">
+            <h2>系统统计</h2>
+            <div id="stats-grid" class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));"></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/admin.js"></script>
+  </body>
+</html>

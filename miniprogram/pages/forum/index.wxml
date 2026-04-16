@@ -1,0 +1,100 @@
+<view class="page-shell">
+  <!-- Hero -->
+  <view class="hero animate-in">
+    <view class="hero-badge">论坛交流</view>
+    <view class="hero-title">把备考疑问、阶段复盘和经验都放在这里交流。</view>
+    <view class="nav-row">
+      <button class="nav-button" bindtap="goNewPost">✏️ 发帖</button>
+    </view>
+  </view>
+
+  <!-- 搜索栏 -->
+  <view class="search-bar">
+    <text class="search-icon">🔍</text>
+    <input placeholder="搜索帖子..." value="{{searchText}}" bindinput="handleSearchInput" confirm-type="search" />
+  </view>
+
+  <!-- 分类筛选 + 排序 -->
+  <view class="filter-bar">
+    <view class="filter-pill {{selectedCategory === '' ? 'active' : ''}}" bindtap="selectCategory" data-category="">全部</view>
+    <view wx:for="{{categories}}" wx:key="*this"
+          class="filter-pill {{selectedCategory === item ? 'active' : ''}}"
+          bindtap="selectCategory" data-category="{{item}}">
+      {{item}}
+    </view>
+    <view class="filter-pill" style="margin-left: auto; {{sortMode === 'hot' ? 'color: #2563eb; border-color: #2563eb;' : ''}}" bindtap="toggleSort">
+      {{sortMode === 'hot' ? '🔥 热门' : '🕐 最新'}}
+    </view>
+  </view>
+
+  <!-- 骨架屏 -->
+  <block wx:if="{{loading}}">
+    <view class="skeleton-card" wx:for="{{[1,2,3]}}" wx:key="*this">
+      <view class="skeleton skeleton-title"></view>
+      <view class="skeleton skeleton-text"></view>
+      <view class="skeleton skeleton-text-short"></view>
+    </view>
+  </block>
+
+  <!-- 帖子列表 -->
+  <view class="list" wx:if="{{!loading && topics.length}}">
+    <block wx:for="{{topics}}" wx:key="id">
+      <view class="card animate-in" style="animation-delay: {{index * 0.06}}s;" bindtap="goTopicDetail" data-id="{{item.id}}">
+        <!-- 帖子头部 -->
+        <view style="display: flex; justify-content: space-between; align-items: center;">
+          <view style="display: flex; align-items: center; gap: 12rpx;">
+            <view class="badge">{{item.category}}</view>
+            <view wx:if="{{item.isPinned}}" style="font-size: 22rpx; color: #ea580c;">📌 置顶</view>
+          </view>
+          <text class="muted" style="font-size: 22rpx;">{{item.authorName}}</text>
+        </view>
+
+        <!-- 帖子标题 -->
+        <view class="item-title" style="margin-top: 12rpx;">{{item.title}}</view>
+
+        <!-- 帖子内容摘要 -->
+        <view class="item-meta">
+          {{item.content.length > 80 ? item.content.substring(0, 80) + '...' : item.content}}
+        </view>
+
+        <!-- 图片缩略图 -->
+        <view wx:if="{{item.imageUrls.length}}" style="display: flex; gap: 8rpx; margin-top: 12rpx;">
+          <image wx:for="{{item.imageUrls}}" wx:for-item="imgUrl" wx:key="*this"
+                 wx:if="{{index < 3}}"
+                 src="{{imgUrl}}" mode="aspectFill" lazy-load
+                 style="width: 120rpx; height: 120rpx; border-radius: 12rpx; background: #f3f4f6;" />
+          <view wx:if="{{item.imageUrls.length > 3}}" style="width: 120rpx; height: 120rpx; border-radius: 12rpx; background: #f3f4f6; display: flex; align-items: center; justify-content: center; font-size: 24rpx; color: #6b7280;">
+            +{{item.imageUrls.length - 3}}
+          </view>
+        </view>
+
+        <!-- 互动栏 -->
+        <view style="display: flex; align-items: center; gap: 24rpx; margin-top: 16rpx; padding-top: 12rpx; border-top: 2rpx solid #f3f4f6;">
+          <view style="font-size: 24rpx; color: {{item.likedByMe ? '#ef4444' : '#9ca3af'}};">
+            {{item.likedByMe ? '❤️' : '🤍'}} {{item.likeCount || 0}}
+          </view>
+          <view style="font-size: 24rpx; color: #6b7280;">
+            💬 {{item.replyCount || 0}}
+          </view>
+          <text class="muted" style="font-size: 22rpx; margin-left: auto;">{{item.createdAt}}</text>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 空状态 -->
+  <view class="empty-state" wx:if="{{!loading && topics.length === 0}}">
+    <view class="empty-state-icon">💬</view>
+    <view class="empty-state-text">
+      {{searchText ? '没有找到相关帖子' : '还没有帖子，来发第一条吧'}}
+    </view>
+    <view class="empty-state-action" wx:if="{{!searchText}}">
+      <button class="primary-button" bindtap="goNewPost">发帖交流</button>
+    </view>
+  </view>
+
+  <!-- 加载更多 -->
+  <view wx:if="{{loadingMore}}" style="text-align: center; padding: 40rpx; color: #6b7280;">
+    <text>加载中...</text>
+  </view>
+</view>

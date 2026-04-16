@@ -1,0 +1,4 @@
+/* 论坛页面局部样式 */
+.ghost-button {
+  margin-top: 20rpx;
+}

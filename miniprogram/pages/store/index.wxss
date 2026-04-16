@@ -1,0 +1,4 @@
+/* 商城页面局部样式 */
+.primary-button {
+  margin-top: 20rpx;
+}

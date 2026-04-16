@@ -1,0 +1,118 @@
+<view class="page-shell">
+  <!-- 搜索栏 -->
+  <view class="search-bar" style="margin-top: 0;">
+    <text class="search-icon">🔍</text>
+    <input placeholder="搜索帖子、题目、课程..." value="{{keyword}}" bindinput="handleInput"
+           confirm-type="search" bindconfirm="handleConfirm" focus="{{true}}" />
+    <text style="font-size: 26rpx; color: #2563eb; white-space: nowrap;" bindtap="{{keyword ? 'doSearch' : 'goBack'}}">
+      {{keyword ? '搜索' : '取消'}}
+    </text>
+  </view>
+
+  <!-- 搜索历史和热门搜索（未搜索时显示） -->
+  <block wx:if="{{!searched}}">
+    <!-- 搜索历史 -->
+    <view wx:if="{{searchHistory.length}}" class="section" style="margin-top: 16rpx;">
+      <view style="display: flex; justify-content: space-between; align-items: center;">
+        <view class="section-title">搜索历史</view>
+        <text style="font-size: 24rpx; color: #9ca3af;" bindtap="clearSearchHistory">清除</text>
+      </view>
+      <view class="filter-bar">
+        <view wx:for="{{searchHistory}}" wx:key="*this"
+              class="filter-pill" bindtap="tapHistory" data-keyword="{{item}}">
+          {{item}}
+        </view>
+      </view>
+    </view>
+
+    <!-- 热门搜索 -->
+    <view class="section" style="margin-top: 16rpx;">
+      <view class="section-title">热门搜索</view>
+      <view class="filter-bar" wx:if="{{hotKeywords.length}}">
+        <view wx:for="{{hotKeywords}}" wx:key="*this"
+              class="filter-pill" bindtap="tapHot" data-keyword="{{item}}">
+          {{item}}
+        </view>
+      </view>
+      <view class="empty-text" wx:else>暂无热门搜索</view>
+    </view>
+  </block>
+
+  <!-- 搜索结果 -->
+  <block wx:if="{{searched}}">
+    <!-- Tab 切换 -->
+    <view class="tab-bar">
+      <view class="tab-item {{activeTab === 'all' ? 'active' : ''}}" bindtap="switchTab" data-tab="all">
+        全部
+      </view>
+      <view class="tab-item {{activeTab === 'topics' ? 'active' : ''}}" bindtap="switchTab" data-tab="topics">
+        帖子 {{results.topics.length}}
+      </view>
+      <view class="tab-item {{activeTab === 'questions' ? 'active' : ''}}" bindtap="switchTab" data-tab="questions">
+        题目 {{results.questions.length}}
+      </view>
+      <view class="tab-item {{activeTab === 'courses' ? 'active' : ''}}" bindtap="switchTab" data-tab="courses">
+        课程 {{results.items.length}}
+      </view>
+    </view>
+
+    <!-- 加载中 -->
+    <view wx:if="{{loading}}" class="section" style="margin-top: 20rpx;">
+      <view class="skeleton-card" wx:for="{{[1,2,3]}}" wx:key="*this">
+        <view class="skeleton skeleton-title"></view>
+        <view class="skeleton skeleton-text"></view>
+        <view class="skeleton skeleton-text-short"></view>
+      </view>
+    </view>
+
+    <!-- 结果列表 -->
+    <block wx:if="{{!loading}}">
+      <!-- 帖子结果 - 直达帖子详情 -->
+      <view class="list" wx:if="{{(activeTab === 'all' || activeTab === 'topics') && results.topics.length}}">
+        <view class="section-title" wx:if="{{activeTab === 'all'}}" style="margin-top: 20rpx;">帖子</view>
+        <block wx:for="{{results.topics}}" wx:key="id">
+          <view class="card" style="margin-top: 12rpx;" bindtap="goTopicDetail" data-id="{{item.id}}">
+            <view class="item-title">{{item.title}}</view>
+            <view class="item-meta">{{item.authorName}} · {{item.created_at}}</view>
+          </view>
+        </block>
+      </view>
+
+      <!-- 题目结果 - 跳转题库并定位 -->
+      <view class="list" wx:if="{{(activeTab === 'all' || activeTab === 'questions') && results.questions.length}}">
+        <view class="section-title" wx:if="{{activeTab === 'all'}}" style="margin-top: 20rpx;">题目</view>
+        <block wx:for="{{results.questions}}" wx:key="id">
+          <view class="card" style="margin-top: 12rpx;" bindtap="goQuestion" data-subject="{{item.subject}}">
+            <view style="display: flex; justify-content: space-between; align-items: center;">
+              <view class="item-title" style="flex: 1;">{{item.title}}</view>
+              <view class="badge" style="margin-left: 12rpx;">{{item.subject}}</view>
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <!-- 课程结果 - 直达课程详情 -->
+      <view class="list" wx:if="{{(activeTab === 'all' || activeTab === 'courses') && results.items.length}}">
+        <view class="section-title" wx:if="{{activeTab === 'all'}}" style="margin-top: 20rpx;">课程</view>
+        <block wx:for="{{results.items}}" wx:key="id">
+          <view class="card" style="margin-top: 12rpx;" bindtap="goCourseDetail" data-id="{{item.course_id || item.id}}">
+            <view style="display: flex; justify-content: space-between; align-items: center;">
+              <view class="item-title" style="flex: 1;">{{item.title}}</view>
+              <view class="badge" style="margin-left: 12rpx;">{{item.item_type || '课程'}}</view>
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <!-- 无结果 -->
+      <view class="empty-state" wx:if="{{results.topics.length === 0 && results.questions.length === 0 && results.items.length === 0}}">
+        <view class="empty-state-icon">🔍</view>
+        <view class="empty-state-text">没有找到"{{keyword}}"相关内容</view>
+        <view class="empty-state-text" style="font-size: 24rpx; margin-top: 12rpx;">试试用更短或不同的关键词</view>
+        <view class="empty-state-action">
+          <button class="ghost-button" bindtap="goBack">换个关键词试试</button>
+        </view>
+      </view>
+    </block>
+  </block>
+</view>

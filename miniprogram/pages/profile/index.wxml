@@ -1,0 +1,206 @@
+<view class="page-shell">
+  <!-- Hero: 学习概览 -->
+  <view class="hero animate-in">
+    <view style="display: flex; justify-content: space-between; align-items: flex-start;">
+      <view>
+        <view class="hero-badge">个人中心</view>
+        <view class="hero-title" style="font-size: 40rpx;">{{user.displayName}}</view>
+      </view>
+      <!-- 连续打卡 -->
+      <view style="text-align: center; background: rgba(255,255,255,0.15); border-radius: 20rpx; padding: 16rpx 24rpx;">
+        <view style="font-size: 44rpx;">🔥</view>
+        <view style="font-size: 36rpx; font-weight: 700;">{{streak.currentStreak}}</view>
+        <view style="font-size: 20rpx; opacity: 0.8;">天连续</view>
+      </view>
+    </view>
+
+    <!-- 统计指标 -->
+    <view class="stats">
+      <view class="stat-card">
+        <text class="stat-value">{{overview.totalAttempts}}</text>
+        <text style="font-size: 22rpx; opacity: 0.9;">做题数</text>
+      </view>
+      <view class="stat-card">
+        <text class="stat-value">{{overview.accuracy}}%</text>
+        <text style="font-size: 22rpx; opacity: 0.9;">正确率</text>
+      </view>
+      <view class="stat-card">
+        <text class="stat-value">{{overview.flashcardsLearned}}</text>
+        <text style="font-size: 22rpx; opacity: 0.9;">已学词汇</text>
+      </view>
+      <view class="stat-card">
+        <text class="stat-value">{{overview.totalSessions}}</text>
+        <text style="font-size: 22rpx; opacity: 0.9;">练习次数</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 快捷入口 -->
+  <view class="section animate-in" style="animation-delay: 0.08s;">
+    <view class="section-title">快捷入口</view>
+    <view class="quick-grid">
+      <view class="quick-item" bindtap="goQuestions">
+        <view class="quick-icon">📝</view>
+        <text class="quick-label">题库</text>
+      </view>
+      <view class="quick-item" bindtap="goFlashcards">
+        <view class="quick-icon">🃏</view>
+        <text class="quick-label">词汇卡</text>
+      </view>
+      <view class="quick-item" bindtap="goForum">
+        <view class="quick-icon">💬</view>
+        <text class="quick-label">论坛</text>
+      </view>
+      <view class="quick-item" bindtap="goStore">
+        <view class="quick-icon">🛒</view>
+        <text class="quick-label">商城</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- Tab 切换 -->
+  <view class="tab-bar">
+    <view class="tab-item {{activeTab === 'dashboard' ? 'active' : ''}}" bindtap="switchTab" data-tab="dashboard">学习数据</view>
+    <view class="tab-item {{activeTab === 'achievements' ? 'active' : ''}}" bindtap="switchTab" data-tab="achievements">成就</view>
+    <view class="tab-item {{activeTab === 'records' ? 'active' : ''}}" bindtap="switchTab" data-tab="records">记录</view>
+    <view class="tab-item {{activeTab === 'account' ? 'active' : ''}}" bindtap="switchTab" data-tab="account">账号</view>
+  </view>
+
+  <!-- 学习数据 Tab -->
+  <block wx:if="{{activeTab === 'dashboard'}}">
+    <!-- 月度热力图 -->
+    <view class="section animate-in">
+      <view class="section-title">{{calendarMonth}} 学习日历</view>
+      <view style="display: flex; gap: 8rpx; flex-wrap: wrap; margin-top: 16rpx;">
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">日</text>
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">一</text>
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">二</text>
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">三</text>
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">四</text>
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">五</text>
+        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">六</text>
+      </view>
+      <view style="display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 8rpx;">
+        <view wx:for="{{calendarGrid}}" wx:key="index"
+              style="width: calc(14.28% - 8rpx); height: 56rpx; border-radius: 12rpx; display: flex; align-items: center; justify-content: center; font-size: 22rpx;
+                background: {{item.active ? '#dbeafe' : (item.day ? '#f3f4f6' : 'transparent')}};
+                color: {{item.today ? '#2563eb' : (item.active ? '#1d4ed8' : '#9ca3af')}};
+                font-weight: {{item.today ? '700' : '400'}};
+                border: {{item.today ? '2rpx solid #2563eb' : 'none'}};">
+          {{item.day}}
+        </view>
+      </view>
+      <view style="margin-top: 12rpx; font-size: 24rpx; color: #6b7280;">
+        本月学习 {{streak.monthDays}} 天 | 最长连续 {{streak.longestStreak}} 天
+      </view>
+    </view>
+
+    <!-- 科目正确率 -->
+    <view class="section animate-in" wx:if="{{subjectAccuracy.length}}">
+      <view class="section-title">科目正确率</view>
+      <view class="list" style="margin-top: 12rpx;">
+        <view wx:for="{{subjectAccuracy}}" wx:key="subject" style="margin-bottom: 16rpx;">
+          <view style="display: flex; justify-content: space-between; align-items: center;">
+            <text style="font-size: 28rpx; font-weight: 600;">{{item.subject}}</text>
+            <text style="font-size: 26rpx; color: {{item.accuracy >= 70 ? '#16a34a' : (item.accuracy >= 50 ? '#ea580c' : '#dc2626')}};">
+              {{item.accuracy}}% ({{item.correct}}/{{item.total}})
+            </text>
+          </view>
+          <view class="progress-bar">
+            <view class="progress-fill" style="width: {{item.accuracy}}%; background: {{item.accuracy >= 70 ? '#16a34a' : (item.accuracy >= 50 ? '#ea580c' : '#dc2626')}};"></view>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <!-- 薄弱点 -->
+    <view class="section animate-in" wx:if="{{tagAccuracy.length}}">
+      <view class="section-title">薄弱知识点</view>
+      <view class="list" style="margin-top: 12rpx;">
+        <view wx:for="{{tagAccuracy}}" wx:key="tagName" class="list-item" style="margin-bottom: 12rpx;">
+          <view style="display: flex; justify-content: space-between; align-items: center;">
+            <text style="font-size: 28rpx; font-weight: 600;">{{item.tagName}}</text>
+            <text style="font-size: 24rpx; color: #dc2626;">{{item.accuracy}}%</text>
+          </view>
+          <view class="progress-bar">
+            <view class="progress-fill" style="width: {{item.accuracy}}%; background: #dc2626;"></view>
+          </view>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 成就 Tab -->
+  <block wx:if="{{activeTab === 'achievements'}}">
+    <view class="section animate-in">
+      <view class="section-title">成就徽章</view>
+      <view style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20rpx; margin-top: 20rpx;">
+        <view wx:for="{{achievements}}" wx:key="id"
+              style="text-align: center; padding: 24rpx 12rpx; border-radius: 20rpx;
+                background: {{item.unlocked ? '#eff6ff' : '#f3f4f6'}};
+                border: 2rpx solid {{item.unlocked ? '#93c5fd' : '#e5e7eb'}};">
+          <view style="font-size: 48rpx; {{item.unlocked ? '' : 'filter: grayscale(1); opacity: 0.5;'}}">{{item.icon}}</view>
+          <view style="font-size: 24rpx; font-weight: 600; margin-top: 8rpx; color: {{item.unlocked ? '#1f2937' : '#9ca3af'}};">{{item.title}}</view>
+          <view style="font-size: 20rpx; color: #6b7280; margin-top: 4rpx;">{{item.description}}</view>
+        </view>
+      </view>
+      <view wx:if="{{!achievements.length}}" class="empty-state" style="padding: 40rpx;">
+        <view class="empty-state-icon">🏆</view>
+        <view class="empty-state-text">开始学习来解锁成就吧</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 记录 Tab -->
+  <block wx:if="{{activeTab === 'records'}}">
+    <!-- 总结记录 -->
+    <view class="section animate-in">
+      <view class="section-title">总结记录</view>
+      <view class="list" wx:if="{{summaries.length}}">
+        <block wx:for="{{summaries}}" wx:key="id">
+          <view class="list-item">
+            <view class="item-title">{{item.taskDate}}</view>
+            <view class="item-meta">{{item.content}}</view>
+          </view>
+        </block>
+      </view>
+      <view class="empty-state" wx:else style="padding: 40rpx;">
+        <view class="empty-state-icon">📝</view>
+        <view class="empty-state-text">还没有提交过总结</view>
+      </view>
+    </view>
+
+    <!-- 提醒记录 -->
+    <view class="section animate-in">
+      <view class="section-title">提醒记录</view>
+      <view class="list" wx:if="{{notifications.length}}">
+        <block wx:for="{{notifications}}" wx:key="id">
+          <view class="list-item">
+            <view class="item-title">{{item.title}}</view>
+            <view class="item-meta">{{item.body}}</view>
+          </view>
+        </block>
+      </view>
+      <view class="empty-state" wx:else style="padding: 40rpx;">
+        <view class="empty-state-icon">🔔</view>
+        <view class="empty-state-text">暂无提醒</view>
+      </view>
+    </view>
+  </block>
+
+  <!-- 账号 Tab -->
+  <block wx:if="{{activeTab === 'account'}}">
+    <view class="section animate-in">
+      <view class="section-title">账号信息</view>
+      <view class="list">
+        <view class="list-item">
+          <view class="item-meta">账号：{{user.username}}</view>
+          <view class="item-meta">姓名：{{user.displayName}}</view>
+          <view class="item-meta" wx:if="{{user.className}}">班级：{{user.className}}</view>
+          <view class="item-meta">角色：{{user.role === 'teacher' ? '老师' : '学生'}}</view>
+        </view>
+      </view>
+      <button class="danger-button" bindtap="handleLogout" style="margin-top: 24rpx;">退出登录</button>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,4 @@
+/* 个人中心页面局部样式 */
+.danger-button {
+  margin-top: 20rpx;
+}

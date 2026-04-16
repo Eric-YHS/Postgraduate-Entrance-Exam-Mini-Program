@@ -1,0 +1,64 @@
+/* 课程页面局部样式 */
+
+/* 课程卡片网格 */
+.course-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20rpx;
+  margin-top: 24rpx;
+}
+
+.course-card {
+  background: #ffffff;
+  border-radius: 24rpx;
+  overflow: hidden;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.06);
+  border: 2rpx solid #e5e7eb;
+  transition: transform 0.15s;
+}
+
+.course-card:active {
+  transform: scale(0.98);
+}
+
+.course-cover {
+  height: 200rpx;
+  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.course-cover-icon {
+  font-size: 64rpx;
+}
+
+.course-info {
+  padding: 20rpx;
+}
+
+.course-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2937;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-desc {
+  font-size: 22rpx;
+  color: #6b7280;
+  margin-top: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.course-action {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #2563eb;
+  font-weight: 600;
+}

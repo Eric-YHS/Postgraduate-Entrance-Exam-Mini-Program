@@ -1,0 +1,37 @@
+<view class="page-shell">
+  <!-- Hero -->
+  <view class="hero animate-in">
+    <view class="hero-badge">发布新帖</view>
+    <view class="hero-title" style="font-size: 36rpx;">分享你的备考经验和疑问</view>
+  </view>
+
+  <view class="section animate-in" style="animation-delay: 0.06s;">
+    <!-- 标题 -->
+    <view class="field-label">帖子标题</view>
+    <input class="input" placeholder="写一个清晰的标题" value="{{title}}" bindinput="handleInput" data-field="title" />
+
+    <!-- 分类 -->
+    <view class="field-label" style="margin-top: 20rpx;">选择分类</view>
+    <view class="filter-bar" style="margin-top: 8rpx;">
+      <view wx:for="{{categories}}" wx:key="*this"
+            class="filter-pill {{category === item ? 'active' : ''}}"
+            bindtap="selectCategory" data-cat="{{item}}">
+        {{item}}
+      </view>
+    </view>
+    <input class="input" placeholder="或自定义分类" value="{{category}}" bindinput="handleInput" data-field="category" style="margin-top: 12rpx;" />
+
+    <!-- 内容 -->
+    <view class="field-label" style="margin-top: 20rpx;">帖子内容</view>
+    <textarea class="textarea" placeholder="写下你的问题、阶段总结或经验" value="{{content}}" bindinput="handleInput" data-field="content" maxlength="2000"></textarea>
+    <view style="text-align: right; font-size: 22rpx; color: #9ca3af; margin-top: 4rpx;">{{content.length || 0}}/2000</view>
+
+    <!-- 操作按钮 -->
+    <view style="display: flex; gap: 16rpx; margin-top: 24rpx;">
+      <button class="primary-button" style="flex: 1;" bindtap="submitTopic" disabled="{{submitting}}">
+        {{submitting ? '发布中...' : '发布'}}
+      </button>
+      <button class="ghost-button" style="flex: 1;" bindtap="goBack">取消</button>
+    </view>
+  </view>
+</view>

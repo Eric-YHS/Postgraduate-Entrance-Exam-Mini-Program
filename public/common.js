@@ -1,0 +1,268 @@
+async function fetchJSON(url, options = {}) {
+  const { headers: customHeaders, ...restOptions } = options;
+  const isFormData = typeof FormData !== 'undefined' && restOptions.body instanceof FormData;
+  const response = await fetch(url, {
+    credentials: 'include',
+    ...restOptions,
+    headers: {
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+      ...customHeaders
+    }
+  });
+
+  let payload = null;
+  try {
+    payload = await response.json();
+  } catch (error) {
+    payload = null;
+  }
+
+  if (!response.ok) {
+    // 401 登录过期处理
+    if (response.status === 401) {
+      createToast('登录已过期，请重新登录', 'error');
+      setTimeout(() => { location.href = '/'; }, 2000);
+      throw new Error('登录已过期');
+    }
+    throw new Error(payload?.error || '请求失败');
+  }
+
+  return payload;
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function formatDateTime(value) {
+  if (!value) {
+    return '';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatMoney(value) {
+  return `¥${Number(value || 0).toFixed(2)}`;
+}
+
+function createToast(message, type = 'info', duration) {
+  let root = document.getElementById('toast-root');
+  if (!root) {
+    root = document.createElement('div');
+    root.id = 'toast-root';
+    root.className = 'toast-root';
+    document.body.appendChild(root);
+  }
+
+  // BUG-066: 最多保留 5 条 toast，超出则移除最早的
+  while (root.children.length >= 5) {
+    root.firstChild.remove();
+  }
+
+  const item = document.createElement('div');
+  item.className = `toast toast-${type}`;
+  item.textContent = message;
+  root.appendChild(item);
+
+  const dismissTime = duration || (type === 'error' ? 4500 : 2600);
+  setTimeout(() => {
+    item.classList.add('toast-hide');
+    setTimeout(() => item.remove(), 350);
+  }, dismissTime);
+}
+
+// 自定义确认弹窗（替代原生 confirm）
+function confirmDialog({ title = '确认操作', message, confirmText = '确定', cancelText = '取消', danger = false }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'confirm-overlay';
+    overlay.innerHTML = `
+      <div class="confirm-dialog">
+        <h3>${escapeHtml(title)}</h3>
+        <p>${escapeHtml(message)}</p>
+        <div class="confirm-actions">
+          <button class="ghost-button confirm-cancel">${escapeHtml(cancelText)}</button>
+          <button class="${danger ? 'danger-button' : 'button'} confirm-ok">${escapeHtml(confirmText)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(overlay);
+
+    overlay.querySelector('.confirm-cancel').addEventListener('click', () => {
+      overlay.remove();
+      resolve(false);
+    });
+    overlay.querySelector('.confirm-ok').addEventListener('click', () => {
+      overlay.remove();
+      resolve(true);
+    });
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) {
+        overlay.remove();
+        resolve(false);
+      }
+    });
+    // Escape 关闭
+    const escHandler = (e) => {
+      if (e.key === 'Escape') {
+        overlay.remove();
+        document.removeEventListener('keydown', escHandler);
+        resolve(false);
+      }
+    };
+    document.addEventListener('keydown', escHandler);
+  });
+}
+
+// 按钮 loading 状态管理
+function setButtonLoading(button, loading) {
+  if (!button) return;
+  if (loading) {
+    button._origText = button.textContent;
+    button.disabled = true;
+    button.style.opacity = '0.7';
+    button.style.cursor = 'wait';
+    button.textContent = '处理中...';
+  } else {
+    button.disabled = false;
+    button.style.opacity = '';
+    button.style.cursor = '';
+    button.textContent = button._origText || button.textContent;
+  }
+}
+
+async function ensureAuth(requiredRole) {
+  // 支持 URL query 参数中的 token（用于小程序 web-view 跳转等场景）
+  const urlParams = new URLSearchParams(location.search);
+  const queryToken = urlParams.get('token');
+
+  let data;
+  if (queryToken) {
+    data = await fetchJSON('/api/auth/me', {
+      headers: { Authorization: `Bearer ${queryToken}` }
+    });
+  } else {
+    data = await fetchJSON('/api/auth/me');
+  }
+
+  if (!data.user) {
+    location.href = '/';
+    return null;
+  }
+
+  if (requiredRole && data.user.role !== requiredRole) {
+    const roleRoutes = { admin: '/admin', teacher: '/teacher', student: '/student' };
+    location.href = roleRoutes[data.user.role] || '/';
+    return null;
+  }
+
+  // BUG-006: 验证后从 URL 中移除 token
+  if (queryToken) {
+    const cleanUrl = new URL(location.href);
+    cleanUrl.searchParams.delete('token');
+    history.replaceState(null, '', cleanUrl.pathname + cleanUrl.hash);
+  }
+
+  return data;
+}
+
+async function logout() {
+  await fetchJSON('/api/auth/logout', { method: 'POST' });
+  location.href = '/';
+}
+
+function activateTabs(buttonSelector, sectionSelector, onActivate) {
+  const buttons = Array.from(document.querySelectorAll(buttonSelector));
+  const sections = Array.from(document.querySelectorAll(sectionSelector));
+
+  // 查找"更多"下拉组件
+  const moreWrap = document.querySelector('.tab-more-wrap');
+  const moreBtn = moreWrap ? moreWrap.querySelector('.tab-more-btn') : null;
+  const dropdown = moreWrap ? moreWrap.querySelector('.tab-dropdown') : null;
+  const dropdownItems = dropdown ? Array.from(dropdown.querySelectorAll('.tab-dropdown-item')) : [];
+
+  // 懒加载追踪：记录哪些面板已激活过
+  const activatedPanels = new Set();
+
+  function activate(target) {
+    // 清除所有按钮的 active 状态
+    buttons.forEach((b) => b.classList.remove('active'));
+    dropdownItems.forEach((b) => b.classList.remove('active'));
+    if (moreBtn) moreBtn.classList.remove('active');
+
+    // 激活目标按钮
+    const matchBtn = buttons.find((b) => b.dataset.target === target);
+    if (matchBtn) matchBtn.classList.add('active');
+
+    // 如果目标在下拉菜单中
+    const matchDrop = dropdownItems.find((b) => b.dataset.target === target);
+    if (matchDrop && moreBtn) {
+      moreBtn.classList.add('active');
+      matchDrop.classList.add('active');
+    }
+
+    // 切换面板
+    sections.forEach((section) => section.classList.toggle('hidden', section.id !== target));
+
+    // 首次激活时触发懒加载回调
+    if (!activatedPanels.has(target)) {
+      activatedPanels.add(target);
+      if (typeof onActivate === 'function') {
+        onActivate(target);
+      }
+    }
+
+    // 关闭下拉
+    if (dropdown) dropdown.classList.remove('show');
+  }
+
+  // 核心 tab 点击
+  buttons.forEach((button) => {
+    button.addEventListener('click', () => activate(button.dataset.target));
+  });
+
+  // 下拉菜单项点击
+  dropdownItems.forEach((item) => {
+    item.addEventListener('click', () => activate(item.dataset.target));
+  });
+
+  // "更多"按钮：切换下拉显示
+  if (moreBtn && dropdown) {
+    moreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      dropdown.classList.toggle('show');
+    });
+
+    // 点击外部关闭下拉
+    document.addEventListener('click', (e) => {
+      if (!moreWrap.contains(e.target)) {
+        dropdown.classList.remove('show');
+      }
+    });
+  }
+
+  // 标记首屏已激活的面板
+  const activeBtn = buttons.find((b) => b.classList.contains('active'));
+  if (activeBtn) activatedPanels.add(activeBtn.dataset.target);
+}
+
+function buildEmptyState(title, description) {
+  return `
+    <div class="empty-state">
+      <div class="empty-state-mark">研</div>
+      <h3>${escapeHtml(title)}</h3>
+      <p>${escapeHtml(description)}</p>
+    </div>
+  `;
+}

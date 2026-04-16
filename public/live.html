@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>直播间｜研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .danmaku-item {
+        position: absolute;
+        white-space: nowrap;
+        font-size: 14px;
+        font-weight: 600;
+        text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        animation: danmaku-scroll 8s linear;
+        pointer-events: none;
+        z-index: 20;
+      }
+      @keyframes danmaku-scroll {
+        from { right: -200px; }
+        to { right: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <section class="hero">
+        <span class="hero-badge" id="live-role-badge">直播间</span>
+        <h1 id="live-title">直播间</h1>
+        <p id="live-description">加载中...</p>
+        <div class="inline-actions">
+          <a class="ghost-button" href="javascript:history.back()" style="text-decoration: none;">返回上一页</a>
+          <button class="button" id="logout-button" type="button">退出登录</button>
+        </div>
+      </section>
+
+      <div class="room-grid">
+        <section class="panel video-stage">
+          <div class="card-head">
+            <div>
+              <h2>直播画面</h2>
+              <p class="muted">老师开启摄像头后，学生会自动接收视频流。</p>
+            </div>
+            <div class="badge" id="live-status">加载中</div>
+          </div>
+
+          <div class="inline-actions" id="teacher-controls">
+            <button class="button" id="start-broadcast-button" type="button">开启推流</button>
+            <button class="danger-button" id="end-live-button" type="button">结束直播</button>
+          </div>
+
+          <div class="video-stack">
+            <div id="danmaku-layer" style="position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:10;"></div>
+            <div id="live-poll-area"></div>
+            <div class="paper-card">
+              <h3>我的画面</h3>
+              <video id="local-video" class="video-frame" autoplay muted playsinline></video>
+            </div>
+            <div class="paper-card">
+              <h3>远端画面</h3>
+              <div id="remote-videos" class="video-stack"></div>
+            </div>
+          </div>
+        </section>
+
+        <aside class="panel">
+          <h2>互动区</h2>
+          <div class="chat-list" id="chat-list"></div>
+          <form id="chat-form" class="form-grid" style="margin-top: 16px;">
+            <div class="field full-span">
+              <textarea class="textarea" name="content" placeholder="输入讨论内容或提问"></textarea>
+            </div>
+            <div class="field full-span">
+              <button class="button" type="submit">发送消息</button>
+            </div>
+          </form>
+        </aside>
+      </div>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/live.js"></script>
+  </body>
+</html>

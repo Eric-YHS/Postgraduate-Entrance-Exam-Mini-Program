@@ -1,0 +1,63 @@
+<view class="page-shell">
+  <!-- Hero 品牌区 -->
+  <view class="hero animate-in" style="text-align: center; padding: 60rpx 32rpx;">
+    <view class="hero-badge">考研规划学生端</view>
+    <view class="hero-title" style="font-size: 56rpx;">研途规划</view>
+    <view class="hero-desc">每天该学什么，一目了然。</view>
+  </view>
+
+  <!-- 账号登录 -->
+  <view class="section animate-in" style="animation-delay: 0.1s;">
+    <view class="section-title">账号登录</view>
+    <view style="position: relative;">
+      <input
+        class="input {{usernameValid ? 'input-valid' : ''}}"
+        placeholder="请输入账号"
+        value="{{username}}"
+        data-field="username"
+        bindinput="handleInput"
+      />
+      <view wx:if="{{usernameValid}}" class="input-check">✓</view>
+    </view>
+    <view style="position: relative;">
+      <input
+        class="input {{passwordValid ? 'input-valid' : ''}}"
+        placeholder="请输入密码"
+        password
+        value="{{password}}"
+        data-field="password"
+        bindinput="handleInput"
+      />
+      <view wx:if="{{passwordValid}}" class="input-check">✓</view>
+    </view>
+
+    <!-- 记住我 & 忘记密码 -->
+    <view style="display: flex; justify-content: space-between; align-items: center; margin-top: 16rpx;">
+      <view style="display: flex; align-items: center; gap: 8rpx;" bindtap="toggleRemember">
+        <view style="width: 36rpx; height: 36rpx; border-radius: 8rpx; border: 2rpx solid {{rememberMe ? '#2563eb' : '#d1d5db'}}; background: {{rememberMe ? '#2563eb' : 'transparent'}}; display: flex; align-items: center; justify-content: center;">
+          <text wx:if="{{rememberMe}}" style="color: #fff; font-size: 22rpx;">✓</text>
+        </view>
+        <text style="font-size: 26rpx; color: #6b7280;">记住我</text>
+      </view>
+      <text style="font-size: 26rpx; color: #2563eb;" bindtap="showForgotHint">忘记密码？</text>
+    </view>
+
+    <button class="primary-button full-width" bindtap="accountLogin" loading="{{loading}}">
+      登录
+    </button>
+  </view>
+
+  <!-- 分隔线 -->
+  <view class="divider">
+    <view class="divider-line"></view>
+    <text class="divider-text">或</text>
+    <view class="divider-line"></view>
+  </view>
+
+  <!-- 微信登录 -->
+  <view class="section animate-in" style="animation-delay: 0.2s;">
+    <button class="wx-login-btn" bindtap="wxLogin" loading="{{loading}}">
+      微信一键登录
+    </button>
+  </view>
+</view>

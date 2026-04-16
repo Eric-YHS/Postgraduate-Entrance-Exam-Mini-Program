@@ -1,0 +1,21 @@
+/* 论坛详情页样式 */
+.reply-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  gap: 12rpx;
+  align-items: flex-end;
+  padding: 16rpx 28rpx;
+  padding-bottom: calc(16rpx + env(safe-area-inset-bottom));
+  background: #ffffff;
+  border-top: 2rpx solid #e5e7eb;
+  box-shadow: 0 -8rpx 24rpx rgba(0, 0, 0, 0.05);
+  z-index: 100;
+}
+
+/* 为底部回复栏留出空间 */
+.page-shell {
+  padding-bottom: 160rpx;
+}

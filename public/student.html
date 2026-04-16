@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>学生端｜研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <div class="dashboard-grid">
+        <aside class="side-rail">
+          <section class="brand-block">
+            <div class="brand-mark">研</div>
+            <h2 id="student-name">学生端</h2>
+            <p class="muted">围绕你的考研规划，只显示今日该做什么、什么时候提醒、做完如何复盘。</p>
+            <div class="inline-actions">
+              <button class="button" id="logout-button" type="button">退出登录</button>
+              <button class="ghost-button" id="notification-button" type="button">开启浏览器提醒</button>
+            </div>
+            <p id="last-update-time" class="muted" style="font-size:11px;margin-top:8px;"></p>
+          </section>
+          <section class="brand-block">
+            <h3>今日提醒中心 <span id="unread-badge" class="badge badge-danger" style="font-size:11px;"></span></h3>
+            <button class="ghost-button" id="read-all-btn" type="button" style="font-size:12px;padding:4px 10px;margin-bottom:8px;">全部已读</button>
+            <div class="list-grid" id="notification-list"></div>
+          </section>
+          <section class="brand-block">
+            <h3>账号设置</h3>
+            <form id="change-password-form" class="form-grid">
+              <div class="field">
+                <label>旧密码</label>
+                <input class="input" type="password" name="oldPassword" required />
+              </div>
+              <div class="field">
+                <label>新密码</label>
+                <input class="input" type="password" name="newPassword" required minlength="6" />
+              </div>
+              <div class="field full-span">
+                <button class="button" type="submit">修改密码</button>
+              </div>
+            </form>
+          </section>
+        </aside>
+
+        <main>
+          <section class="hero">
+            <span class="hero-badge">学生规划台</span>
+            <h1>今天学什么、几点开始、完成后怎么复盘，都已经帮你排好。</h1>
+            <p>这里是围绕考研规划主题设计的学生端。你会看到当天任务、课程、直播答疑、论坛讨论、题库练习和资料购买入口。</p>
+            <div class="stat-grid" id="student-stats"></div>
+            <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
+              <input id="global-search-input" class="input" placeholder="搜索帖子、题目、课程..." style="padding:10px 16px;border-radius:999px;font-size:14px;width:280px;" />
+              <button class="button" id="global-search-btn" type="button" style="padding:10px 20px;">搜索</button>
+            </div>
+            <div id="search-suggestions" style="margin-top:10px;font-size:12px;">
+              <span class="muted">热门：</span><span id="hot-search-tags"></span>
+            </div>
+            <div id="search-history" style="margin-top:6px;font-size:12px;" class="hidden">
+              <span class="muted">搜索历史：</span><span id="history-tags"></span>
+            </div>
+            <div id="global-search-results" style="margin-top:14px;" class="hidden"></div>
+          </section>
+
+          <div class="tab-row">
+            <button class="tab-button active" data-target="student-tasks" type="button">今日任务</button>
+            <button class="tab-button" data-target="student-questions" type="button">题库刷题</button>
+            <button class="tab-button" data-target="student-courses" type="button">录播课程</button>
+            <button class="tab-button" data-target="student-live" type="button">直播答疑</button>
+            <button class="tab-button" data-target="student-stats-panel" type="button">学习数据</button>
+            <div class="tab-more-wrap">
+              <button class="tab-more-btn" type="button">更多 ▾</button>
+              <div class="tab-dropdown">
+                <button class="tab-dropdown-item" data-target="student-forum" type="button">论坛交流</button>
+                <button class="tab-dropdown-item" data-target="student-store" type="button">资料商城</button>
+                <button class="tab-dropdown-item" data-target="student-flashcards" type="button">词汇记忆</button>
+                <button class="tab-dropdown-item" data-target="student-checkin" type="button">打卡日历</button>
+                <button class="tab-dropdown-item" data-target="student-achievements" type="button">成就徽章</button>
+                <button class="tab-dropdown-item" data-target="student-daily" type="button">每日推荐</button>
+                <button class="tab-dropdown-item" data-target="student-mock-exams" type="button">模拟考试 <span class="tab-badge-beta">即将开放</span></button>
+                <button class="tab-dropdown-item" data-target="student-ai" type="button">AI助手 <span class="tab-badge-beta">即将开放</span></button>
+              </div>
+            </div>
+          </div>
+
+          <section class="panel" id="student-tasks">
+            <h2>今日任务</h2>
+            <p class="muted">系统会在每天早上推送总任务，在每个时间点继续提醒你开始执行。</p>
+            <div class="list-grid" id="student-tasks-list"></div>
+
+            <div class="paper-card" style="margin-top: 18px;">
+              <h3>提交今日学习总结</h3>
+              <form id="summary-form" class="form-grid">
+                <div class="field">
+                  <label>总结日期</label>
+                  <input class="input" type="date" name="taskDate" id="summary-date" />
+                </div>
+                <div class="field full-span">
+                  <label>总结内容</label>
+                  <textarea class="textarea" name="content" placeholder="写下今天的完成情况、薄弱点、明天需要补的内容。"></textarea>
+                </div>
+                <div class="field">
+                  <label>上传图片</label>
+                  <input class="input" type="file" name="images" accept="image/*" multiple />
+                </div>
+                <div class="field">
+                  <label>上传附件</label>
+                  <input class="input" type="file" name="attachments" multiple />
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">提交总结</button>
+                </div>
+              </form>
+            </div>
+
+            <div class="list-grid" id="student-summaries-list"></div>
+          </section>
+
+          <section class="panel hidden" id="student-courses">
+            <h2>录播网盘</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+              <select id="course-subject-filter" class="select" style="padding:6px 12px;font-size:13px;border-radius:10px;">
+                <option value="">全部科目</option>
+              </select>
+              <button class="tab-button active" data-course-tab="browse" type="button">浏览课程</button>
+              <button class="tab-button" data-course-tab="recent" type="button">最近观看</button>
+            </div>
+            <div id="student-recent-courses" class="hidden" style="margin-bottom:18px;">
+              <h3 style="margin-bottom:10px;">最近观看</h3>
+              <div id="recent-courses-list" class="cloud-grid"></div>
+            </div>
+            <div id="student-course-browse">
+              <div id="student-folder-breadcrumb" class="breadcrumb"></div>
+              <div id="student-cloud-folder-grid" class="cloud-grid"></div>
+              <div id="student-cloud-items-grid" class="cloud-grid" style="margin-top:14px;"></div>
+            </div>
+          </section>
+
+          <section class="panel hidden" id="student-live">
+            <h2>直播答疑</h2>
+            <div class="list-grid" id="student-live-list"></div>
+          </section>
+
+          <section class="panel hidden" id="student-forum">
+            <h2>论坛交流</h2>
+            <p class="muted">点击下方按钮进入考研社区，发帖交流、分享资料。</p>
+            <a class="button" href="/forum" style="display:inline-block;text-decoration:none;margin-top:10px;">进入社区</a>
+          </section>
+
+          <section class="panel hidden" id="student-questions">
+            <h2>题库刷题</h2>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;">
+              <button class="tab-button active" data-practice-mode="sequential" type="button">顺序刷题</button>
+              <button class="tab-button" data-practice-mode="random" type="button">随机练习</button>
+              <button class="tab-button" data-practice-mode="untried" type="button">未做题</button>
+              <button class="tab-button" data-action="load-wrong-review" type="button">错题复习</button>
+              <button class="tab-button" data-action="auto-paper" type="button">随机组卷</button>
+            </div>
+            <div class="question-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+              <select id="qf-subject" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+                <option value="">全部科目</option>
+              </select>
+              <select id="qf-type" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+                <option value="">全部题型</option>
+              </select>
+              <select id="qf-tag" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+                <option value="">全部标签</option>
+              </select>
+            </div>
+            <div class="tab-row" style="margin-bottom:14px;">
+              <button class="tab-button active" data-target="qtab-all" type="button">全部题目</button>
+              <button class="tab-button" data-target="qtab-wrong" type="button">错题本</button>
+              <button class="tab-button" data-target="qtab-fav" type="button">收藏题目</button>
+            </div>
+            <div style="display:flex;gap:18px;align-items:flex-start;">
+              <div style="flex:1;min-width:0;">
+                <div id="qtab-all" class="list-grid"></div>
+                <div id="qtab-wrong" class="list-grid hidden"></div>
+                <div id="qtab-fav" class="list-grid hidden"></div>
+                <div id="question-pagination" style="text-align:center;margin-top:14px;display:flex;gap:8px;justify-content:center;"></div>
+                <div id="practice-report" class="hidden" style="margin-top:18px;"></div>
+              </div>
+              <div id="answer-card-sidebar" class="hidden" style="width:160px;flex-shrink:0;position:sticky;top:80px;"></div>
+            </div>
+          </section>
+
+          <section class="panel hidden" id="student-store">
+            <h2>资料商城</h2>
+            <div class="list-grid" id="student-products-list"></div>
+            <div class="paper-card" style="margin-top:20px;">
+              <h3>购物车</h3>
+              <div id="cart-items-list"></div>
+              <div id="cart-checkout-area" class="hidden" style="margin-top:14px;">
+                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                  <select id="cart-address-select" class="input" style="padding:8px 12px;font-size:13px;max-width:300px;">
+                    <option value="">选择收货地址</option>
+                  </select>
+                  <button class="button" id="cart-checkout-btn" type="button" style="font-size:12px;padding:6px 16px;">结算下单</button>
+                  <a style="font-size:12px;color:var(--brand);cursor:pointer;" id="cart-manage-address">管理地址</a>
+                </div>
+              </div>
+            </div>
+            <div class="paper-card hidden" id="address-manager" style="margin-top:14px;">
+              <h3>地址管理</h3>
+              <form id="address-form" class="form-grid" style="margin-top:12px;">
+                <div class="field">
+                  <label>收件人</label>
+                  <input class="input" name="name" required placeholder="姓名" />
+                </div>
+                <div class="field">
+                  <label>手机号</label>
+                  <input class="input" name="phone" placeholder="手机号" />
+                </div>
+                <div class="field full-span">
+                  <label>详细地址</label>
+                  <input class="input" name="address" required placeholder="省/市/区/街道/门牌号" />
+                </div>
+                <div class="field">
+                  <label class="checkbox-chip"><input type="checkbox" name="isDefault" /> 设为默认地址</label>
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">保存地址</button>
+                </div>
+              </form>
+              <div id="address-list" style="margin-top:12px;"></div>
+            </div>
+            <h3 style="margin-top: 20px;">我的订单</h3>
+            <div class="list-grid" id="student-orders-list"></div>
+          </section>
+
+          <section class="panel hidden" id="student-flashcards">
+            <h2>词汇记忆</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+              <select id="flashcard-subject-filter" class="select" style="padding:6px 12px;font-size:13px;border-radius:10px;">
+                <option value="">全部科目</option>
+              </select>
+              <button class="tab-button active" id="flashcard-mode-flip" type="button">翻转模式</button>
+              <button class="tab-button" id="flashcard-mode-quiz" type="button">选择题模式</button>
+              <button class="ghost-button" id="flashcard-goal-btn" type="button" style="font-size:12px;padding:4px 12px;">每日目标</button>
+            </div>
+            <div id="flashcard-goal-bar" class="hidden" style="margin-bottom:14px;padding:12px 16px;background:#f0f7ff;border-radius:12px;border:1px solid var(--brand-light);">
+              <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+                <span style="font-size:13px;font-weight:600;">每日目标</span>
+                <label style="font-size:12px;">新学 <input id="goal-daily-new" class="input" type="number" min="1" max="200" value="20" style="width:60px;padding:4px 8px;font-size:12px;" /> 张</label>
+                <label style="font-size:12px;">复习 <input id="goal-daily-review" class="input" type="number" min="1" max="500" value="50" style="width:60px;padding:4px 8px;font-size:12px;" /> 张</label>
+                <button class="button" id="save-goal-btn" type="button" style="font-size:11px;padding:4px 12px;">保存</button>
+              </div>
+              <div id="flashcard-goal-progress" style="margin-top:10px;"></div>
+            </div>
+            <div id="flashcard-stats" class="stat-grid"></div>
+            <div id="flashcard-container" style="margin-top:18px;"></div>
+          </section>
+
+          <section class="panel hidden" id="student-stats-panel">
+            <h2>学习数据统计</h2>
+            <div style="display:flex;gap:6px;margin-bottom:14px;">
+              <button class="tab-button active" data-stats-tab="overview" type="button">总览</button>
+              <button class="tab-button" data-stats-tab="weekly" type="button">周报</button>
+              <button class="tab-button" data-stats-tab="monthly" type="button">月报</button>
+            </div>
+            <div id="stats-overview" class="stat-grid"></div>
+            <div id="stats-subject-accuracy" style="margin-top:24px;"></div>
+            <div id="stats-daily-activity" style="margin-top:24px;"></div>
+            <div id="stats-recent-sessions" style="margin-top:24px;"></div>
+            <div id="stats-weekly-report" class="hidden" style="margin-top:14px;"></div>
+            <div id="stats-monthly-report" class="hidden" style="margin-top:14px;"></div>
+          </section>
+
+          <section class="panel hidden" id="student-checkin">
+            <h2>学习打卡</h2>
+            <div id="checkin-streak-stats" class="stat-grid"></div>
+            <div id="checkin-calendar" style="margin-top:18px;"></div>
+          </section>
+
+          <section class="panel hidden" id="student-achievements">
+            <h2>成就徽章</h2>
+            <p class="muted">完成学习里程碑即可解锁成就。</p>
+            <div id="achievements-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:16px;"></div>
+          </section>
+
+          <section class="panel hidden" id="student-daily">
+            <h2>每日推荐</h2>
+            <p class="muted">根据你的错题和未做题，智能推荐每日练习。</p>
+            <div id="daily-questions-list" class="list-grid" style="margin-top:14px;"></div>
+          </section>
+
+          <section class="panel hidden" id="student-mock-exams">
+            <h2>模拟考试</h2>
+            <p class="muted">限时考试模式，交卷后统一判分，生成成绩单报告。</p>
+            <div id="mock-exams-area" style="margin-top:14px;"></div>
+          </section>
+
+          <section class="panel hidden" id="student-ai">
+            <h2>AI 智能助手</h2>
+            <p class="muted">接入大模型 AI，提供答疑、作文批改、学习计划、智能摘要等功能。</p>
+            <div id="ai-main-area" style="margin-top:14px;">
+              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+                <button class="tab-button active" data-ai-tab="tutor" type="button">AI答疑</button>
+                <button class="tab-button" data-ai-tab="essay" type="button">作文批改</button>
+                <button class="tab-button" data-ai-tab="plan" type="button">学习计划</button>
+                <button class="tab-button" data-ai-tab="summary" type="button">智能摘要</button>
+              </div>
+              <div id="ai-main-input-area">
+                <textarea id="ai-main-input" class="textarea" placeholder="输入你的问题..." style="min-height:100px;"></textarea>
+                <button class="button" id="ai-main-submit" type="button" style="margin-top:8px;">发送</button>
+              </div>
+              <div id="ai-main-response" style="margin-top:14px;display:none;padding:16px;background:var(--bg);border-radius:12px;border:1px solid var(--border);max-height:400px;overflow:auto;"></div>
+            </div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <!-- 专注计时器 overlay -->
+    <div class="hidden" id="focus-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;">
+      <div style="text-align:center;">
+        <p style="font-size:14px;margin-bottom:8px;" id="focus-task-name">专注学习中</p>
+        <div style="width:200px;height:200px;border-radius:50%;border:4px solid rgba(255,255,255,0.2);display:grid;place-items:center;margin:0 auto;">
+          <svg width="200" height="200" style="position:absolute;">
+            <circle cx="100" cy="100" r="94" fill="none" stroke="var(--brand)" stroke-width="4" stroke-linecap="round" id="focus-progress-ring" stroke-dasharray="590" stroke-dashoffset="0" transform="rotate(-90 100 100)" />
+          </svg>
+          <div style="font-size:48px;font-weight:700;z-index:1;" id="focus-timer-display">25:00</div>
+        </div>
+        <div style="margin-top:24px;display:flex;gap:12px;">
+          <button class="ghost-button" id="focus-pause-btn" type="button" style="color:#fff;border-color:rgba(255,255,255,0.4);padding:10px 24px;">暂停</button>
+          <button class="ghost-button" id="focus-stop-btn" type="button" style="color:#f87171;border-color:#f87171;padding:10px 24px;">结束专注</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/student.js"></script>
+  </body>
+</html>

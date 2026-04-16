@@ -1,0 +1,82 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/courses/index",
+    "pages/courses/detail",
+    "pages/forum/index",
+    "pages/forum/detail",
+    "pages/forum/post",
+    "pages/questions/index",
+    "pages/profile/index",
+    "pages/login/index"
+  ],
+  "subPackages": [
+    {
+      "root": "pages/store",
+      "name": "store",
+      "pages": ["index"]
+    },
+    {
+      "root": "pages/flashcards",
+      "name": "flashcards",
+      "pages": ["index"]
+    },
+    {
+      "root": "pages/search",
+      "name": "search",
+      "pages": ["index"]
+    },
+    {
+      "root": "pages/live-webview",
+      "name": "live",
+      "pages": ["index"]
+    }
+  ],
+  "window": {
+    "navigationBarTitleText": "研途规划",
+    "navigationBarBackgroundColor": "#3b82f6",
+    "navigationBarTextStyle": "white",
+    "backgroundColor": "#f6efe2",
+    "backgroundTextStyle": "light"
+  },
+  "tabBar": {
+    "color": "#6b7280",
+    "selectedColor": "#2563eb",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/home/index",
+        "text": "首页",
+        "iconPath": "images/home.png",
+        "selectedIconPath": "images/home_active.png"
+      },
+      {
+        "pagePath": "pages/courses/index",
+        "text": "课程",
+        "iconPath": "images/courses.png",
+        "selectedIconPath": "images/courses_active.png"
+      },
+      {
+        "pagePath": "pages/forum/index",
+        "text": "论坛",
+        "iconPath": "images/forum.png",
+        "selectedIconPath": "images/forum_active.png"
+      },
+      {
+        "pagePath": "pages/questions/index",
+        "text": "题库",
+        "iconPath": "images/questions.png",
+        "selectedIconPath": "images/questions_active.png"
+      },
+      {
+        "pagePath": "pages/profile/index",
+        "text": "我的",
+        "iconPath": "images/profile.png",
+        "selectedIconPath": "images/profile_active.png"
+      }
+    ]
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}

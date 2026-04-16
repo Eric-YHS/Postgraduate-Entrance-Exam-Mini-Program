@@ -1,0 +1,77 @@
+<view class="page-shell">
+  <!-- Hero -->
+  <view class="hero animate-in">
+    <view class="hero-badge">录播课程</view>
+    <view class="hero-title">把复习方法讲透，再去执行计划。</view>
+    <view class="hero-desc">浏览课程列表，点击进入学习。这里展示老师上传的考研规划课、方法课和专题讲解视频。</view>
+  </view>
+
+  <!-- 最近观看 -->
+  <view class="section" wx:if="{{recentCourses.length}}" style="margin-top: 24rpx;">
+    <view class="section-title">最近观看</view>
+    <scroll-view scroll-x style="margin-top: 16rpx; white-space: nowrap;">
+      <view style="display: inline-flex; gap: 16rpx;">
+        <view wx:for="{{recentCourses}}" wx:key="id"
+              style="display: inline-block; width: 320rpx; background: #f9fafb; border-radius: 20rpx; overflow: hidden; vertical-align: top;"
+              bindtap="goDetail" data-id="{{item.course_id || item.id}}">
+          <view style="padding: 20rpx;">
+            <view style="font-size: 28rpx; font-weight: 600; white-space: normal; overflow: hidden; text-overflow: ellipsis;">{{item.title}}</view>
+            <view class="progress-bar" style="margin-top: 12rpx;">
+              <view class="progress-fill" style="width: {{item.progress}}%;"></view>
+            </view>
+            <text style="font-size: 22rpx; color: #6b7280;">{{item.progress}}% 已观看</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 科目筛选 -->
+  <view class="filter-bar" wx:if="{{subjects.length > 1}}">
+    <view class="filter-pill {{selectedSubject === '' ? 'active' : ''}}" bindtap="selectSubject" data-subject="">全部</view>
+    <view wx:for="{{subjects}}" wx:key="*this"
+          class="filter-pill {{selectedSubject === item ? 'active' : ''}}"
+          bindtap="selectSubject" data-subject="{{item}}">
+      {{item}}
+    </view>
+  </view>
+
+  <!-- 骨架屏 -->
+  <block wx:if="{{loading}}">
+    <view class="skeleton-card" wx:for="{{[1,2,3]}}" wx:key="*this">
+      <view class="skeleton" style="height: 200rpx; border-radius: 24rpx;"></view>
+      <view class="skeleton skeleton-title" style="margin-top: 16rpx;"></view>
+      <view class="skeleton skeleton-text"></view>
+    </view>
+  </block>
+
+  <!-- 课程卡片列表 -->
+  <view class="course-grid" wx:if="{{!loading && filteredCourses.length}}">
+    <block wx:for="{{filteredCourses}}" wx:key="id">
+      <view class="course-card animate-in" style="animation-delay: {{index * 0.06}}s;" bindtap="goDetail" data-id="{{item.id}}">
+        <!-- 课程封面/图标区域 -->
+        <view class="course-cover">
+          <view class="course-cover-icon">🎬</view>
+          <view class="badge" style="position: absolute; top: 12rpx; left: 12rpx;">{{item.subject}}</view>
+        </view>
+        <!-- 课程信息 -->
+        <view class="course-info">
+          <view class="course-title">{{item.title}}</view>
+          <view class="course-desc" wx:if="{{item.description}}">{{item.description}}</view>
+          <view class="course-action">点击播放</view>
+        </view>
+      </view>
+    </block>
+  </view>
+
+  <!-- 空状态 -->
+  <view class="empty-state" wx:if="{{!loading && filteredCourses.length === 0}}">
+    <view class="empty-state-icon">🎬</view>
+    <view class="empty-state-text">
+      {{selectedSubject ? '该科目暂无课程' : '老师上传录播后，这里就会出现课程列表'}}
+    </view>
+    <view class="empty-state-action" wx:if="{{selectedSubject}}">
+      <button class="ghost-button" bindtap="selectSubject" data-subject="">查看全部课程</button>
+    </view>
+  </view>
+</view>

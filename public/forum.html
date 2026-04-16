@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>考研社区｜研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .forum-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 24px;
+        background: #fff;
+        border-bottom: 1px solid var(--line);
+        position: sticky;
+        top: 0;
+        z-index: 100;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      }
+      .forum-header-left {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .forum-header-left h1 {
+        margin: 0;
+        font-size: 20px;
+      }
+      .forum-header-right {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .forum-container {
+        max-width: 860px;
+        margin: 0 auto;
+        padding: 20px 18px 60px;
+      }
+      .forum-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 18px;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .forum-category-bar {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .hashtag-bar {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-bottom: 14px;
+      }
+      .hashtag-chip {
+        padding: 4px 12px;
+        border-radius: 999px;
+        border: 1px solid var(--brand-light);
+        background: #fff;
+        font-size: 12px;
+        cursor: pointer;
+        transition: background 0.15s;
+        color: var(--brand);
+        font-weight: 600;
+      }
+      .hashtag-chip.active {
+        background: var(--brand);
+        color: #fff;
+        border-color: var(--brand-dark);
+      }
+      .hashtag-chip.active .muted {
+        color: rgba(255,255,255,0.8);
+      }
+      .hashtag-highlight {
+        color: var(--brand);
+        font-weight: 600;
+      }
+      .category-chip {
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+      }
+      .category-chip.active {
+        background: var(--brand);
+        color: #fff;
+        border-color: var(--brand-dark);
+      }
+      .topic-card {
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: #fff;
+        box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+        padding: 18px;
+        margin-bottom: 14px;
+        transition: box-shadow 0.15s;
+      }
+      .topic-card:hover {
+        box-shadow: 0 6px 24px rgba(0,0,0,0.08);
+      }
+      .topic-author {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+      .author-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: var(--brand-light);
+        color: var(--brand);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 14px;
+      }
+      .topic-meta {
+        font-size: 12px;
+        color: var(--subtle);
+      }
+      .topic-title {
+        font-size: 17px;
+        font-weight: 700;
+        margin: 0 0 6px;
+        cursor: pointer;
+      }
+      .topic-content {
+        color: #374151;
+        font-size: 14px;
+        line-height: 1.6;
+        margin-bottom: 4px;
+      }
+      .topic-content-collapsed {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+      }
+      .expand-btn {
+        background: none;
+        border: none;
+        color: var(--brand);
+        font-size: 13px;
+        cursor: pointer;
+        padding: 2px 0;
+        margin-bottom: 6px;
+        font-weight: 600;
+      }
+      .expand-btn:hover {
+        text-decoration: underline;
+      }
+      .topic-images-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        margin: 8px 0;
+      }
+      .topic-image-item {
+        position: relative;
+        padding-top: 100%;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+      .topic-image-item img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      .topic-image-item img:hover {
+        opacity: 0.85;
+      }
+      .topic-image-more {
+        position: absolute;
+        inset: 0;
+        background: rgba(0,0,0,0.45);
+        color: #fff;
+        display: grid;
+        place-items: center;
+        font-size: 18px;
+        font-weight: 700;
+        border-radius: 10px;
+      }
+      .lightbox-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 999;
+        cursor: pointer;
+      }
+      .lightbox-overlay img {
+        max-width: 90%;
+        max-height: 90%;
+        border-radius: 12px;
+      }
+      .topic-footer {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 13px;
+        color: var(--subtle);
+      }
+      .topic-footer span {
+        cursor: pointer;
+      }
+      .reply-section {
+        margin-top: 14px;
+        border-top: 1px solid #e5e7eb;
+        padding-top: 14px;
+      }
+      .reply-item {
+        display: flex;
+        gap: 10px;
+        padding: 10px 0;
+        border-bottom: 1px solid #f1f5f9;
+      }
+      .reply-item:last-child {
+        border-bottom: none;
+      }
+      .reply-avatar {
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--brand-light);
+        color: var(--brand);
+        display: grid;
+        place-items: center;
+        font-weight: 700;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+      .reply-body {
+        flex: 1;
+      }
+      .reply-author {
+        font-weight: 600;
+        font-size: 13px;
+      }
+      .reply-time {
+        font-size: 11px;
+        color: var(--subtle);
+        margin-left: 8px;
+      }
+      .reply-text {
+        font-size: 14px;
+        margin-top: 4px;
+        color: #374151;
+        line-height: 1.5;
+      }
+      .reply-form {
+        display: flex;
+        gap: 10px;
+        margin-top: 14px;
+        flex-wrap: wrap;
+      }
+      .reply-form textarea {
+        flex: 1;
+        min-height: 60px;
+        padding: 10px 14px;
+        border-radius: 14px;
+        border: 1px solid #cbd5e1;
+        font-family: inherit;
+        resize: vertical;
+        min-width: 200px;
+      }
+      .new-post-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 200;
+      }
+      .new-post-card {
+        background: #fff;
+        border-radius: 22px;
+        padding: 28px;
+        width: 90%;
+        max-width: 600px;
+        max-height: 85vh;
+        overflow: auto;
+        box-shadow: 0 16px 48px rgba(0,0,0,0.15);
+      }
+      .new-post-card h2 {
+        margin: 0 0 18px;
+      }
+      @media (max-width: 720px) {
+        .forum-header { padding: 12px 14px; }
+        .forum-container { padding: 14px 10px 40px; }
+        .topic-title { font-size: 15px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="forum-header">
+      <div class="forum-header-left">
+        <a href="/teacher" class="ghost-button" style="text-decoration:none;padding:8px 14px;font-size:13px;">返回工作台</a>
+        <h1>考研社区</h1>
+      </div>
+      <div class="forum-header-right">
+        <span id="forum-user-name" class="muted" style="font-size:13px;"></span>
+        <button class="button" id="new-post-btn" type="button" style="font-size:13px;padding:8px 18px;">发帖</button>
+      </div>
+    </div>
+
+    <div class="forum-container">
+      <div class="forum-toolbar">
+        <div class="forum-category-bar" id="category-bar"></div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <input id="forum-search" class="input" placeholder="搜索帖子..." style="padding:6px 14px;border-radius:999px;font-size:13px;width:160px;" />
+          <select id="forum-sort" class="select" style="padding:6px 12px;border-radius:999px;font-size:13px;">
+            <option value="latest">最新</option>
+            <option value="hot">最热</option>
+          </select>
+          <button class="ghost-button" id="forum-my-favs" type="button" style="font-size:12px;padding:6px 14px;">我的收藏</button>
+        </div>
+      </div>
+      <div class="hashtag-bar" id="hashtag-bar"></div>
+      <div style="display:flex;gap:18px;align-items:flex-start;">
+        <div style="flex:1;min-width:0;">
+          <div id="topics-list"></div>
+        </div>
+        <div id="trending-area" style="width:220px;flex-shrink:0;position:sticky;top:80px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px;"></div>
+      </div>
+    </div>
+
+    <!-- 新帖弹窗 -->
+    <div class="new-post-modal hidden" id="new-post-modal">
+      <div class="new-post-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>发布新帖</h2>
+          <button class="ghost-button" id="close-modal-btn" type="button" style="padding:6px 12px;">关闭</button>
+        </div>
+        <form id="new-topic-form" class="form-grid">
+          <div class="field">
+            <label>标题</label>
+            <input class="input" name="title" required />
+          </div>
+          <div class="field">
+            <label>分类</label>
+            <input class="input" name="category" value="考研交流" />
+          </div>
+          <div class="field full-span">
+            <label>内容</label>
+            <textarea class="textarea" name="content" required></textarea>
+          </div>
+          <div class="field">
+            <label>上传图片（最多9张）</label>
+            <input class="input" type="file" name="images" accept="image/*" multiple />
+          </div>
+          <div class="field">
+            <label>上传视频（最多1个）</label>
+            <input class="input" type="file" name="videos" accept="video/*" />
+          </div>
+          <div class="field">
+            <label>上传附件（最多3个）</label>
+            <input class="input" type="file" name="attachments" multiple />
+          </div>
+          <div class="field full-span">
+            <button class="button" type="submit" style="width:100%;">发布</button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/forum.js"></script>
+  </body>
+</html>

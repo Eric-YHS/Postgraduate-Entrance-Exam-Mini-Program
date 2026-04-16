@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>教师注册 - 研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell" style="max-width: 480px; margin: 40px auto;">
+      <section class="paper-card" style="text-align: center;">
+        <div class="brand-mark" style="margin: 0 auto 16px;">研</div>
+        <h2 style="margin: 0 0 6px; font-size: 24px;">教师注册</h2>
+        <p class="muted">提交注册申请，等待管理员审核通过后即可使用</p>
+        <form id="register-form" style="margin-top: 20px; display: grid; gap: 14px; text-align: left;">
+          <div class="field">
+            <label class="label">用户名</label>
+            <input id="username" class="input" name="username" autocomplete="username" placeholder="请输入用户名" required />
+          </div>
+          <div class="field">
+            <label class="label">密码</label>
+            <input id="password" class="input" type="password" name="password" autocomplete="new-password" placeholder="至少6位" required minlength="6" />
+          </div>
+          <div class="field">
+            <label class="label">显示名称</label>
+            <input id="displayName" class="input" name="displayName" placeholder="如：王老师" required />
+          </div>
+          <div class="field">
+            <label class="label">班级名称</label>
+            <input id="className" class="input" name="className" placeholder="如：2027考研冲刺班" />
+          </div>
+          <div class="field">
+            <label class="label">申请说明</label>
+            <textarea id="motivation" class="input" name="motivation" rows="3" placeholder="简要说明您的教学方向和需求"></textarea>
+          </div>
+          <div class="field">
+            <button class="button" style="width: 100%;" type="submit">提交申请</button>
+          </div>
+        </form>
+        <p style="margin-top: 16px; font-size: 14px;">
+          <a href="/" style="color: var(--brand); text-decoration: none;">返回登录</a>
+        </p>
+      </section>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/register.js"></script>
+  </body>
+</html>

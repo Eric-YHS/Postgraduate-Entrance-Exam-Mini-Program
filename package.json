@@ -1,0 +1,24 @@
+{
+  "name": "study-planner",
+  "version": "1.0.0",
+  "description": "考研规划系统，包含任务提醒、总结、直播、录播、论坛、题库、商城。",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node src/server.js",
+    "pm2:start": "pm2 start ecosystem.config.cjs --env production",
+    "pm2:stop": "pm2 delete study-planner"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "better-sqlite3": "^12.4.1",
+    "dayjs": "^1.11.13",
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "iconv-lite": "^0.7.2",
+    "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
+    "ws": "^8.18.3",
+    "xlsx": "^0.18.5"
+  }
+}

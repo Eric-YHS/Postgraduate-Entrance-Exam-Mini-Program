@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell" style="max-width: 480px; margin: 80px auto;">
+      <section class="paper-card" style="text-align: center;">
+        <div class="brand-mark" style="margin: 0 auto 16px;">研</div>
+        <h2 style="margin: 0 0 6px; font-size: 24px;">研途总控台</h2>
+        <p class="muted">请登录您的账号</p>
+        <form id="login-form" style="margin-top: 20px; display: grid; gap: 14px;">
+          <div class="field">
+            <input id="username" class="input" name="username" autocomplete="username" placeholder="请输入账号" required />
+          </div>
+          <div class="field">
+            <input id="password" class="input" type="password" name="password" autocomplete="current-password" placeholder="请输入密码" required />
+          </div>
+          <div class="field">
+            <button class="button" style="width: 100%;" type="submit">登录</button>
+          </div>
+        </form>
+        <p style="margin-top: 16px; font-size: 14px;">
+          <a href="/register" style="color: var(--brand); text-decoration: none;">教师注册</a>
+        </p>
+      </section>
+    </div>
+
+    <script src="/common.js"></script>
+    <script src="/login.js"></script>
+  </body>
+</html>
