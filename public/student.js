@@ -2410,7 +2410,7 @@ function bindExamCountdown() {
   const countdownArea = document.createElement('div');
   countdownArea.id = 'exam-countdown-area';
   countdownArea.style.cssText = 'margin-bottom:18px;padding:16px 20px;background:linear-gradient(135deg,#1e3a5f,#0f172a);border-radius:14px;color:#fff;';
-  countdownArea.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;"><div><div style="font-size:13px;opacity:0.7;">考研倒计时</div><div id="exam-countdown-display" style="font-size:36px;font-weight:700;margin:4px 0;">加载中...</div><div id="exam-countdown-name" style="font-size:12px;opacity:0.6;"></div></div><div><button class="ghost-button" id="exam-countdown-set" type="button" style="color:#fff;border-color:rgba(255,255,255,0.3);font-size:12px;padding:4px 12px;">设置日期</button></div></div>';
+  countdownArea.innerHTML = '<div style="display:flex;justify-content:space-between;align-items:center;"><div><div style="font-size:13px;opacity:0.7;">考研倒计时</div><div id="exam-countdown-display" style="font-size:36px;font-weight:700;margin:4px 0;">加载中...</div><div id="exam-countdown-name" style="font-size:12px;opacity:0.6;"></div></div><div><button class="ghost-button" id="exam-countdown-set" type="button" style="color:#fff;background:rgba(255,255,255,0.15);border-color:rgba(255,255,255,0.3);font-size:12px;padding:4px 12px;">设置日期</button></div></div>';
   panel.insertBefore(countdownArea, panel.firstChild);
   loadExamCountdown();
 
