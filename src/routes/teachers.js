@@ -256,7 +256,7 @@ module.exports = function registerTeacherRoutes(app, shared) {
         }
 
         // 当日任务拆分：首条为 title，其余加入 description
-        const taskLines = String(rawTask).split(/\n/).map((s) => s.trim()).filter(Boolean);
+        const taskLines = String(rawTask).split(/[\n；;]/).map((s) => s.trim()).filter(Boolean);
         const title = taskLines[0].replace(/^[一二三四五六七八九十\d]+[、.．]\s*/, '').trim() || taskLines[0];
         const descriptionLines = taskLines.slice(1);
 

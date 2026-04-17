@@ -291,8 +291,13 @@ function renderTasks() {
         detailHtml += '<div style="margin-top:4px;">' + extra.tasks.map((t) => '<div style="font-size:12px;color:#64748b;">' + escapeHtml(t) + '</div>').join('') + '</div>';
       }
       if (extra.link) {
-        const isUrl = /^https?:\/\//i.test(extra.link);
-        detailHtml += '<div style="font-size:12px;color:#64748b;margin-top:2px;">🔗 ' + (isUrl ? '<a href="' + escapeHtml(extra.link) + '" target="_blank" style="color:#2563eb;">听课链接</a>' : escapeHtml(extra.link)) + '</div>';
+        var urlMatch = extra.link.match(/https?:\/\/[^\s<>"']+/);
+        var url = urlMatch ? urlMatch[0] : '';
+        if (url) {
+          detailHtml += '<div style="font-size:12px;margin-top:2px;">🔗 <a href="' + escapeHtml(url) + '" target="_blank" style="color:#2563eb;text-decoration:none;">打开听课链接</a></div>';
+        } else {
+          detailHtml += '<div style="font-size:12px;color:#64748b;margin-top:2px;">🔗 ' + escapeHtml(extra.link) + '</div>';
+        }
       }
       if (extra.time) {
         detailHtml += '<span style="display:inline-block;font-size:11px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;margin-top:2px;">⏱ ' + escapeHtml(extra.time) + '</span>';

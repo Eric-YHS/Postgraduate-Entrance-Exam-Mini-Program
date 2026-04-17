@@ -360,11 +360,18 @@ function renderTasks() {
         let detailHtml = '';
         if (extra) {
           if (extra.tasks && extra.tasks.length) {
-            detailHtml += extra.tasks.map((t) => `<div style="font-size:13px;color:#475569;padding:2px 0;">${escapeHtml(t)}</div>`).join('');
+            detailHtml += extra.tasks.map((t) => `<div style="font-size:13px;color:#475569;padding:2px 0;">• ${escapeHtml(t)}</div>`).join('');
           }
           if (extra.link) {
-            const isUrl = /^https?:\/\//i.test(extra.link);
-            detailHtml += `<div style="margin-top:6px;font-size:13px;color:#475569;">🔗 <strong>听课链接：</strong>${isUrl ? `<a href="${escapeHtml(extra.link)}" target="_blank" style="color:#2563eb;word-break:break-all;">${escapeHtml(extra.link)}</a>` : escapeHtml(extra.link)}</div>`;
+            // 从长文本中提取 URL
+            const urlMatch = extra.link.match(/https?:\/\/[^\s<>"']+/);
+            const url = urlMatch ? urlMatch[0] : '';
+            const shortLabel = extra.link.length > 60 ? extra.link.substring(0, 60) + '…' : extra.link;
+            if (url) {
+              detailHtml += `<div style="margin-top:6px;font-size:13px;">🔗 <a href="${escapeHtml(url)}" target="_blank" style="color:#2563eb;text-decoration:none;">打开听课链接</a><div style="font-size:11px;color:#94a3b8;margin-top:2px;word-break:break-all;">${escapeHtml(shortLabel)}</div></div>`;
+            } else {
+              detailHtml += `<div style="margin-top:6px;font-size:13px;color:#475569;">🔗 ${escapeHtml(extra.link)}</div>`;
+            }
           }
           if (extra.time) {
             detailHtml += `<div style="margin-top:6px;"><span style="display:inline-block;font-size:12px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;">⏱ ${escapeHtml(extra.time)}</span></div>`;
