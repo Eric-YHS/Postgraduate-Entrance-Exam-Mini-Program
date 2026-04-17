@@ -43,7 +43,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const moduleMap = {
       'teacher-courses': 'courses',
       'teacher-live': 'liveSessions',
-      'teacher-forum': 'forumTopics',
       'teacher-questions': 'questions',
       'teacher-store': 'products,orders',
       'teacher-summaries': 'summaries'

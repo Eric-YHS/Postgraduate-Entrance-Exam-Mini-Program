@@ -44,7 +44,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     const moduleMap = {
       'student-courses': 'courses',
       'student-live': 'liveSessions',
-      'student-forum': 'forumTopics',
       'student-questions': 'questions',
       'student-store': 'products,orders'
     };
