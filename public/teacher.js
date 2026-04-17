@@ -335,6 +335,15 @@ function renderStudentCheckboxes() {
     .join('');
 }
 
+function parseTaskExtra(description) {
+  if (!description) return null;
+  try {
+    const obj = JSON.parse(description);
+    if (obj && typeof obj === 'object') return obj;
+  } catch (_) {}
+  return null;
+}
+
 function renderTasks() {
   const root = document.getElementById('tasks-list');
   if (!teacherState.data.tasks.length) {
@@ -344,24 +353,48 @@ function renderTasks() {
 
   root.innerHTML = teacherState.data.tasks
     .map(
-      (task) => `
+      (task) => {
+        const extra = parseTaskExtra(task.description);
+        const isAllDay = task.startTime === '00:00' && task.endTime === '23:59';
+
+        let detailHtml = '';
+        if (extra) {
+          if (extra.tasks && extra.tasks.length) {
+            detailHtml += extra.tasks.map((t) => `<div style="font-size:13px;color:#475569;padding:2px 0;">${escapeHtml(t)}</div>`).join('');
+          }
+          if (extra.link) {
+            const isUrl = /^https?:\/\//i.test(extra.link);
+            detailHtml += `<div style="margin-top:6px;font-size:13px;color:#475569;">🔗 <strong>听课链接：</strong>${isUrl ? `<a href="${escapeHtml(extra.link)}" target="_blank" style="color:#2563eb;word-break:break-all;">${escapeHtml(extra.link)}</a>` : escapeHtml(extra.link)}</div>`;
+          }
+          if (extra.time) {
+            detailHtml += `<div style="margin-top:6px;"><span style="display:inline-block;font-size:12px;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:6px;">⏱ ${escapeHtml(extra.time)}</span></div>`;
+          }
+          if (extra.notes) {
+            detailHtml += `<div style="margin-top:6px;font-size:13px;color:#dc2626;background:#fef2f2;padding:6px 10px;border-radius:8px;border-left:3px solid #fca5a5;">💡 ${escapeHtml(extra.notes)}</div>`;
+          }
+        } else if (task.description) {
+          detailHtml = `<p class="muted">${escapeHtml(task.description)}</p>`;
+        }
+
+        return `
         <article class="task-card">
           <div class="card-head">
             <div>
               <div class="badge badge-brand">${escapeHtml(task.subject)}</div>
               <h3>${escapeHtml(task.title)}</h3>
-              <p class="muted">${escapeHtml(task.description || '暂无任务说明')}</p>
+              ${detailHtml}
             </div>
             <div>
-              <div class="badge">${escapeHtml(task.startTime)} - ${escapeHtml(task.endTime)}</div>
+              ${!isAllDay ? `<div class="badge">${escapeHtml(task.startTime)} - ${escapeHtml(task.endTime)}</div>` : ''}
             </div>
           </div>
           <div class="inline-actions">
-            <span class="badge">${escapeHtml(task.weekdaysLabel)}</span>
+            ${!isAllDay ? `<span class="badge">${escapeHtml(task.weekdaysLabel)}</span>` : ''}
             ${task.students.map((student) => `<span class="badge">${escapeHtml(student.displayName)}</span>`).join('')}
           </div>
         </article>
-      `
+      `;
+      }
     )
     .join('');
 }

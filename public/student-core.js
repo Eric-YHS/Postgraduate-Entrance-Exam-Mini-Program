@@ -256,6 +256,15 @@ function renderNotifications() {
     : '<p class="muted">该分类下暂无通知。</p>');
 }
 
+function parseTaskExtra(description) {
+  if (!description) return null;
+  try {
+    const obj = JSON.parse(description);
+    if (obj && typeof obj === 'object') return obj;
+  } catch (_) {}
+  return null;
+}
+
 function renderTasks() {
   const root = document.getElementById('student-tasks-list');
   if (!studentState.data.todaysTasks.length) {
@@ -267,13 +276,33 @@ function renderTasks() {
 
   root.innerHTML = sorted.map((task) => {
     const title = escapeHtml(task.title);
-    const time = escapeHtml(task.startTime) + ' - ' + escapeHtml(task.endTime);
+    const isAllDay = task.startTime === '00:00' && task.endTime === '23:59';
+    const timeLabel = isAllDay ? '' : (escapeHtml(task.startTime) + ' - ' + escapeHtml(task.endTime) + ' · ');
     const subject = escapeHtml(task.subject);
     const statusIcon = task.completedAt ? '<span style="color:#16a34a;font-size:18px;">&#10003;</span>' : '<span style="color:#d1d5db;font-size:18px;">&#9675;</span>';
     const actionBtn = task.completedAt
       ? '<span class="badge badge-success" style="font-size:11px;">已完成</span>'
       : '<button class="button" data-action="complete-task" data-task-title="' + title + '" type="button" style="font-size:12px;padding:4px 14px;">完成</button>';
-    return '<article class="task-card"><div class="card-head"><div style="display:flex;align-items:center;gap:10px;">' + statusIcon + '<div><h3 style="margin:0;">' + title + '</h3><p class="muted" style="margin:2px 0 0;">' + time + ' · ' + subject + '</p></div></div></div><div class="inline-actions">' + actionBtn + '</div></article>';
+
+    const extra = parseTaskExtra(task.description);
+    let detailHtml = '';
+    if (extra) {
+      if (extra.tasks && extra.tasks.length) {
+        detailHtml += '<div style="margin-top:4px;">' + extra.tasks.map((t) => '<div style="font-size:12px;color:#64748b;">' + escapeHtml(t) + '</div>').join('') + '</div>';
+      }
+      if (extra.link) {
+        const isUrl = /^https?:\/\//i.test(extra.link);
+        detailHtml += '<div style="font-size:12px;color:#64748b;margin-top:2px;">🔗 ' + (isUrl ? '<a href="' + escapeHtml(extra.link) + '" target="_blank" style="color:#2563eb;">听课链接</a>' : escapeHtml(extra.link)) + '</div>';
+      }
+      if (extra.time) {
+        detailHtml += '<span style="display:inline-block;font-size:11px;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:4px;margin-top:2px;">⏱ ' + escapeHtml(extra.time) + '</span>';
+      }
+      if (extra.notes) {
+        detailHtml += '<div style="font-size:12px;color:#dc2626;margin-top:2px;">💡 ' + escapeHtml(extra.notes) + '</div>';
+      }
+    }
+
+    return '<article class="task-card"><div class="card-head"><div style="display:flex;align-items:center;gap:10px;">' + statusIcon + '<div><h3 style="margin:0;">' + title + '</h3><p class="muted" style="margin:2px 0 0;">' + timeLabel + subject + '</p>' + detailHtml + '</div></div></div><div class="inline-actions">' + actionBtn + '</div></article>';
   }).join('');
 }
 

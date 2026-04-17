@@ -256,15 +256,18 @@ module.exports = function registerTeacherRoutes(app, shared) {
         }
 
         // 当日任务拆分：首条为 title，其余加入 description
-        const taskLines = String(rawTask).split(/\n|；|;/).map((s) => s.trim()).filter(Boolean);
+        const taskLines = String(rawTask).split(/\n/).map((s) => s.trim()).filter(Boolean);
         const title = taskLines[0].replace(/^[一二三四五六七八九十\d]+[、.．]\s*/, '').trim() || taskLines[0];
-        const descParts = taskLines.slice(1);
+        const descriptionLines = taskLines.slice(1);
 
-        if (listenLink) descParts.push('听课链接: ' + String(listenLink).trim());
-        if (timeArrangement) descParts.push('时间安排: ' + String(timeArrangement).trim());
-        if (notes) descParts.push('注意: ' + String(notes).trim());
+        // 结构化额外信息，方便前端分开展示
+        const extra = {};
+        if (descriptionLines.length) extra.tasks = descriptionLines;
+        if (listenLink) extra.link = String(listenLink).trim();
+        if (timeArrangement) extra.time = String(timeArrangement).trim();
+        if (notes) extra.notes = String(notes).trim();
 
-        const description = descParts.join('\n');
+        const description = Object.keys(extra).length ? JSON.stringify(extra) : '';
         const subject = stage ? String(stage).trim() : '考研规划';
 
         if (!title || !allStudentIds.length) {

@@ -116,7 +116,7 @@
               <view class="task-content">
                 <view class="badge">{{item.subject}}</view>
                 <view class="item-title {{item.completedAt ? 'task-title--done' : ''}}">{{item.title}}</view>
-                <view class="item-meta" wx:if="{{item.startTime && item.endTime}}">{{item.startTime}} - {{item.endTime}}</view>
+                <view class="item-meta" wx:if="{{item.startTime !== '00:00' && item.endTime !== '23:59'}}">{{item.startTime}} - {{item.endTime}}</view>
               </view>
             </view>
           </view>
