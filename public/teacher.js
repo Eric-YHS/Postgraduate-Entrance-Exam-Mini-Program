@@ -200,7 +200,6 @@ function renderStudentDetail(data) {
         </div>
         <div class="inline-actions">
           <button class="button" data-action="remind-student" data-student-id="${data.student.id}" type="button" style="font-size:12px;padding:4px 12px;">提醒未完成任务</button>
-          <button class="ghost-button" data-action="collapse-student-detail" type="button" style="font-size:12px;padding:4px 12px;">收起</button>
         </div>
       </div>
 
@@ -1080,25 +1079,7 @@ function bindTeacherForms() {
 
 function bindStudentManagement() {
   document.getElementById('students-list').addEventListener('click', async (event) => {
-    // 点击学生卡片 → 展开详情
-    const card = event.target.closest('[data-action="view-student"]');
-    if (card) {
-      await loadStudentDetail(Number(card.dataset.studentId));
-      return;
-    }
-
-    // 收起详情
-    const collapseBtn = event.target.closest('[data-action="collapse-student-detail"]');
-    if (collapseBtn) {
-      const slot = collapseBtn.closest('.student-detail-slot');
-      if (slot) {
-        slot.classList.add('hidden');
-        slot.innerHTML = '';
-      }
-      return;
-    }
-
-    // 提醒学生
+    // 提醒学生（优先处理，避免被卡片点击拦截）
     const remindBtn = event.target.closest('[data-action="remind-student"]');
     if (remindBtn) {
       try {
@@ -1109,6 +1090,22 @@ function bindStudentManagement() {
       } catch (error) {
         createToast(error.message, 'error');
       }
+      return;
+    }
+
+    // 点击学生卡片 → toggle 展开/收起
+    const card = event.target.closest('[data-action="view-student"]');
+    if (card) {
+      const studentId = card.dataset.studentId;
+      const slot = document.querySelector(`.student-detail-slot[data-detail-for="${studentId}"]`);
+      // 如果已展开 → 收起
+      if (slot && !slot.classList.contains('hidden')) {
+        slot.classList.add('hidden');
+        slot.innerHTML = '';
+        return;
+      }
+      // 否则 → 展开
+      await loadStudentDetail(Number(studentId));
     }
   });
 }
