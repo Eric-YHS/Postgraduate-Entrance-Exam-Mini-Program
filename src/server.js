@@ -291,6 +291,8 @@ function serializeSummary(row) {
     content: row.content,
     imagePaths: safeJsonParse(row.image_paths, []),
     attachmentPaths: safeJsonParse(row.attachment_paths, []),
+    teacherComment: row.teacher_comment || null,
+    commentedAt: row.commented_at || null,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };

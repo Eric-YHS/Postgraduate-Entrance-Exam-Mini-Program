@@ -104,7 +104,7 @@
               <summary style="cursor:pointer;font-weight:600;font-size:14px;padding:12px 0;">批量操作（点击展开）</summary>
               <div class="paper-card" style="margin-top: 10px; box-shadow: none; padding: 0;">
                 <h3>表格导入任务</h3>
-                <p class="muted">支持 `.xlsx`、`.xls`、`.csv`。字段建议：学生 / 任务标题 / 任务内容 / 科目 / 开始时间 / 结束时间 / 周期。</p>
+                <p class="muted">支持 .xlsx/.xls/.csv。表头：阶段 / 当日任务 / 听课链接 / 时间安排 / 注意（自动分配全部学生，全天有效）。</p>
                 <form id="task-import-form" class="form-grid">
                   <div class="field full-span">
                     <label>上传文件</label>
@@ -400,16 +400,7 @@
             </form>
             <div class="paper-card" style="margin-top:18px;">
               <h3>批量导入</h3>
-              <p class="muted">支持 .xlsx/.xls/.csv，列名：标题、科目、正面内容、背面内容、标签</p>
-              <form id="flashcard-import-form" class="form-grid">
-                <div class="field full-span">
-                  <label>上传文件</label>
-                  <input class="input" type="file" name="file" accept=".xlsx,.xls,.csv" required />
-                </div>
-                <div class="field full-span">
-                  <button class="button" type="submit">导入卡片</button>
-                </div>
-              </form>
+              <p class="muted" style="color:#9ca3af;">暂未开放 — 缺少标准格式模板，功能尚不可用。</p>
             </div>
             <div class="list-grid" id="flashcards-list"></div>
           </section>

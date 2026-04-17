@@ -213,6 +213,10 @@
               <view class="list-item">
                 <view class="item-title">{{item.taskDate}}</view>
                 <view class="item-meta">{{item.content}}</view>
+                <view wx:if="{{item.teacherComment}}" style="margin-top:8rpx;padding:12rpx 16rpx;background:#eff6ff;border-radius:12rpx;border-left:4rpx solid #3b82f6;">
+                  <text style="font-size:22rpx;color:#3b82f6;font-weight:600;">老师点评：</text>
+                  <text style="font-size:24rpx;color:#1e293b;">{{item.teacherComment}}</text>
+                </view>
               </view>
             </block>
           </view>

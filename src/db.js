@@ -322,6 +322,10 @@ function initializeDatabase() {
       FOREIGN KEY (student_id) REFERENCES users(id)
     );
   `);
+
+  // 教师评语字段
+  try { db.exec('ALTER TABLE summaries ADD COLUMN teacher_comment TEXT DEFAULT NULL'); } catch (_) {}
+  try { db.exec('ALTER TABLE summaries ADD COLUMN commented_at TEXT DEFAULT NULL'); } catch (_) {}
 }
 
 function seedUsers() {

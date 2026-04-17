@@ -317,6 +317,11 @@ function renderSummaries() {
             </div>
             <div class="badge">${escapeHtml(formatDateTime(summary.updatedAt))}</div>
           </div>
+          ${summary.teacherComment ? `<div style="margin-top:8px;background:#eff6ff;padding:10px 14px;border-radius:10px;border-left:3px solid #3b82f6;">
+            <div style="font-size:12px;color:#3b82f6;font-weight:600;">老师点评</div>
+            <div style="font-size:13px;color:#1e293b;">${escapeHtml(summary.teacherComment)}</div>
+            ${summary.commentedAt ? `<div style="font-size:11px;color:#94a3b8;margin-top:4px;">${escapeHtml(formatDateTime(summary.commentedAt))}</div>` : ''}
+          </div>` : ''}
         </article>
       `;
       }

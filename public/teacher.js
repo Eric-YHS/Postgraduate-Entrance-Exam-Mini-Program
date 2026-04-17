@@ -386,10 +386,47 @@ function renderSummaries() {
           </div>
           ${summary.imagePaths.length ? `<div class="asset-list">${summary.imagePaths.map((item) => `<a class="badge" href="${escapeHtml(item)}" target="_blank">查看图片</a>`).join('')}</div>` : ''}
           ${summary.attachmentPaths.length ? `<div class="asset-list">${summary.attachmentPaths.map((item) => `<a class="badge" href="${escapeHtml(item)}" target="_blank">打开附件</a>`).join('')}</div>` : ''}
+          <div style="margin-top:10px;border-top:1px dashed rgba(30,41,59,0.1);padding-top:10px;">
+            ${summary.teacherComment ? `
+              <div style="background:#eff6ff;padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:8px;">
+                <strong style="color:#2563eb;">老师点评：</strong>${escapeHtml(summary.teacherComment)}
+                <span class="muted" style="font-size:11px;margin-left:6px;">${escapeHtml(summary.commentedAt ? formatDateTime(summary.commentedAt) : '')}</span>
+              </div>
+            ` : ''}
+            <div style="display:flex;gap:6px;">
+              <input class="input" type="text" placeholder="写点评..." data-summary-id="${summary.id}" style="flex:1;font-size:13px;padding:6px 10px;" />
+              <button class="button" type="button" data-action="comment-summary" data-id="${summary.id}" style="font-size:12px;padding:4px 12px;">发送</button>
+            </div>
+          </div>
         </article>
       `
     )
     .join('');
+
+  // 事件委托 — 发送点评
+  root.onclick = async (event) => {
+    const btn = event.target.closest('[data-action="comment-summary"]');
+    if (!btn) return;
+    const summaryId = btn.dataset.id;
+    const input = btn.parentElement.querySelector('input');
+    const comment = (input.value || '').trim();
+    if (!comment) return;
+
+    btn.disabled = true;
+    try {
+      await fetchJSON(`/api/summaries/${summaryId}/comment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comment })
+      });
+      createToast('点评已发送。', 'success');
+      await refreshTeacherData();
+    } catch (error) {
+      createToast(error.message, 'error');
+    } finally {
+      btn.disabled = false;
+    }
+  };
 }
 
 function renderCourses() {
@@ -602,21 +639,24 @@ function bindFlashcardForms() {
     }
   });
 
-  document.getElementById('flashcard-import-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    try {
-      const result = await fetchJSON('/api/flashcards/import', {
-        method: 'POST',
-        body: new FormData(form)
-      });
-      createToast(`导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条。`, 'success');
-      form.reset();
-      await loadFlashcards();
-    } catch (error) {
-      createToast(error.message, 'error');
-    }
-  });
+  const flashcardImportForm = document.getElementById('flashcard-import-form');
+  if (flashcardImportForm) {
+    flashcardImportForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const form = event.currentTarget;
+      try {
+        const result = await fetchJSON('/api/flashcards/import', {
+          method: 'POST',
+          body: new FormData(form)
+        });
+        createToast(`导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条。`, 'success');
+        form.reset();
+        await loadFlashcards();
+      } catch (error) {
+        createToast(error.message, 'error');
+      }
+    });
+  }
 }
 
 // ── 词汇卡片管理 ──
@@ -748,7 +788,7 @@ function bindTeacherForms() {
     try {
       const result = await fetchJSON('/api/tasks/import', {
         method: 'POST',
-        body: formData
+        body: new FormData(form)
       });
       createToast(`导入完成：成功 ${result.imported} 条，跳过 ${result.skipped} 条。`, 'success');
       form.reset();

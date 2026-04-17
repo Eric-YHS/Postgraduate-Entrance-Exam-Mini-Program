@@ -218,7 +218,7 @@ module.exports = function registerTeacherRoutes(app, shared) {
     response.json({ ok: true, id: taskId });
   });
 
-  // 任务批量导入
+  // 任务批量导入 — 支持"阶段/当日任务/听课链接/时间安排/注意"5 列格式
   app.post('/api/tasks/import', requireTeacher, (request, response) => {
     shared.taskImportUpload(request, response, (error) => {
       if (error) {
@@ -235,33 +235,51 @@ module.exports = function registerTeacherRoutes(app, shared) {
       let imported = 0;
       let skipped = 0;
 
-      rows.forEach((row) => {
-        const title = shared.getFieldValue(row, ['任务标题', 'title', 'Title']);
-        const description = shared.getFieldValue(row, ['任务内容', 'description', 'Description']);
-        const subject = shared.getFieldValue(row, ['科目', 'subject', 'Subject']) || '考研规划';
-        const startTime = shared.getFieldValue(row, ['开始时间', 'startTime', 'StartTime']);
-        const endTime = shared.getFieldValue(row, ['结束时间', 'endTime', 'EndTime']);
-        const weekdays = parseWeekdaysInput(shared.getFieldValue(row, ['周期', '星期', 'weekdays', 'Weekdays']) || '0,1,2,3,4,5,6');
-        const studentIds = resolveStudentIds(shared.getFieldValue(row, ['学生', '学生账号', '学生用户名', 'studentIds', 'StudentIds']));
+      // 获取老师班级下全部学生
+      const teacherClassName = request.currentUser.class_name || '';
+      let allStudents = getStudents();
+      if (teacherClassName) {
+        allStudents = allStudents.filter((s) => !s.className || s.className === teacherClassName);
+      }
+      const allStudentIds = allStudents.map((s) => s.id);
 
-        if (!title || !startTime || !endTime || !studentIds.length) {
+      rows.forEach((row) => {
+        const stage = shared.getFieldValue(row, ['阶段']);
+        const rawTask = shared.getFieldValue(row, ['当日任务']);
+        const listenLink = shared.getFieldValue(row, ['听课链接']);
+        const timeArrangement = shared.getFieldValue(row, ['时间安排']);
+        const notes = shared.getFieldValue(row, ['注意']);
+
+        if (!rawTask) {
           skipped += 1;
           return;
         }
 
-        if (startTime >= endTime) {
+        // 当日任务拆分：首条为 title，其余加入 description
+        const taskLines = String(rawTask).split(/\n|；|;/).map((s) => s.trim()).filter(Boolean);
+        const title = taskLines[0].replace(/^[一二三四五六七八九十\d]+[、.．]\s*/, '').trim() || taskLines[0];
+        const descParts = taskLines.slice(1);
+
+        if (listenLink) descParts.push('听课链接: ' + String(listenLink).trim());
+        if (timeArrangement) descParts.push('时间安排: ' + String(timeArrangement).trim());
+        if (notes) descParts.push('注意: ' + String(notes).trim());
+
+        const description = descParts.join('\n');
+        const subject = stage ? String(stage).trim() : '考研规划';
+
+        if (!title || !allStudentIds.length) {
           skipped += 1;
           return;
         }
 
         createTaskRecord({
-          title,
+          title: title.substring(0, MAX_TITLE_LENGTH),
           description,
           subject,
-          startTime,
-          endTime,
-          weekdays,
-          studentIds,
+          startTime: '00:00',
+          endTime: '23:59',
+          weekdays: [0, 1, 2, 3, 4, 5, 6],
+          studentIds: allStudentIds,
           teacherId: request.currentUser.id
         });
 
@@ -272,5 +290,68 @@ module.exports = function registerTeacherRoutes(app, shared) {
       fs.unlink(request.file.path, () => {});
       response.json({ ok: true, imported, skipped });
     });
+  });
+
+  // 教师评语 — 对学生总结写评语
+  app.post('/api/summaries/:id/comment', requireTeacher, (request, response) => {
+    const { comment } = request.body;
+    if (!comment || typeof comment !== 'string' || !comment.trim()) {
+      response.status(400).json({ error: '评语内容不能为空。' });
+      return;
+    }
+    if (comment.length > 2000) {
+      response.status(400).json({ error: '评语不能超过 2000 个字符。' });
+      return;
+    }
+
+    const summary = db.prepare(
+      `SELECT summaries.*, users.class_name AS student_class
+       FROM summaries LEFT JOIN users ON users.id = summaries.student_id
+       WHERE summaries.id = ?`
+    ).get(request.params.id);
+
+    if (!summary) {
+      response.status(404).json({ error: '总结不存在。' });
+      return;
+    }
+
+    const teacherClassName = request.currentUser.class_name || '';
+    if (teacherClassName && summary.student_class && summary.student_class !== teacherClassName) {
+      response.status(403).json({ error: '无权评论该学生的总结。' });
+      return;
+    }
+
+    const now = dayjs().toISOString();
+    const sanitizedComment = sanitizeText(comment.trim());
+
+    db.prepare('UPDATE summaries SET teacher_comment = ?, commented_at = ? WHERE id = ?')
+      .run(sanitizedComment, now, request.params.id);
+
+    response.json({ ok: true, teacherComment: sanitizedComment, commentedAt: now });
+  });
+
+  // 教师评语 — 删除评语
+  app.delete('/api/summaries/:id/comment', requireTeacher, (request, response) => {
+    const summary = db.prepare(
+      `SELECT summaries.*, users.class_name AS student_class
+       FROM summaries LEFT JOIN users ON users.id = summaries.student_id
+       WHERE summaries.id = ?`
+    ).get(request.params.id);
+
+    if (!summary) {
+      response.status(404).json({ error: '总结不存在。' });
+      return;
+    }
+
+    const teacherClassName = request.currentUser.class_name || '';
+    if (teacherClassName && summary.student_class && summary.student_class !== teacherClassName) {
+      response.status(403).json({ error: '无权操作该总结。' });
+      return;
+    }
+
+    db.prepare('UPDATE summaries SET teacher_comment = NULL, commented_at = NULL WHERE id = ?')
+      .run(request.params.id);
+
+    response.json({ ok: true });
   });
 };
