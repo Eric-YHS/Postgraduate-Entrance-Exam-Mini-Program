@@ -33,6 +33,11 @@ Page({
 
   onShow() {
     if (!ensureLogin()) return;
+    // 消费搜索页传来的科目筛选
+    const pending = getApp().consumePendingFilter();
+    if (pending && pending.subject && pending.subject !== this.data.filters.subject) {
+      this.setData({ 'filters.subject': pending.subject });
+    }
     this.loadMeta();
     this.loadStats();
     this.loadQuestions(true);
@@ -48,14 +53,18 @@ Page({
     try {
       const data = await request({ url: '/api/questions/meta' });
       this.setData({ 'filterOptions.subjects': data.subjects || [] });
-    } catch (e) { /* 静默 */ }
+    } catch (e) {
+      console.warn('题目元数据加载失败:', e);
+    }
   },
 
   async loadStats() {
     try {
       const stats = await request({ url: '/api/practice/stats' });
       this.setData({ stats });
-    } catch (e) { /* 静默 */ }
+    } catch (e) {
+      console.warn('练习统计加载失败:', e);
+    }
   },
 
   async loadQuestions(reset) {
@@ -233,7 +242,9 @@ Page({
         currentSessionId: data.sessionId || data.id,
         sessionStartTime: Date.now()
       });
-    } catch (e) { /* 静默 */ }
+    } catch (e) {
+      console.warn('练习会话创建失败:', e);
+    }
   },
 
   async loadDaily() {

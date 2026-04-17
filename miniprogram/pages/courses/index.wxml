@@ -45,33 +45,22 @@
     </view>
   </block>
 
-  <!-- 课程卡片列表 -->
-  <view class="course-grid" wx:if="{{!loading && filteredCourses.length}}">
-    <block wx:for="{{filteredCourses}}" wx:key="id">
-      <view class="course-card animate-in" style="animation-delay: {{index * 0.06}}s;" bindtap="goDetail" data-id="{{item.id}}">
-        <!-- 课程封面/图标区域 -->
-        <view class="course-cover">
-          <view class="course-cover-icon">🎬</view>
-          <view class="badge" style="position: absolute; top: 12rpx; left: 12rpx;">{{item.subject}}</view>
-        </view>
-        <!-- 课程信息 -->
-        <view class="course-info">
-          <view class="course-title">{{item.title}}</view>
-          <view class="course-desc" wx:if="{{item.description}}">{{item.description}}</view>
-          <view class="course-action">点击播放</view>
-        </view>
-      </view>
-    </block>
-  </view>
+  <!-- 加载失败 -->
+  <empty-state wx:if="{{!loading && loadError}}"
+    icon="⚠️"
+    title="加载失败"
+    description="{{loadError}}"
+    actionText="重试"
+    bind:action="retry" />
 
   <!-- 空状态 -->
-  <view class="empty-state" wx:if="{{!loading && filteredCourses.length === 0}}">
-    <view class="empty-state-icon">🎬</view>
-    <view class="empty-state-text">
-      {{selectedSubject ? '该科目暂无课程' : '老师上传录播后，这里就会出现课程列表'}}
-    </view>
-    <view class="empty-state-action" wx:if="{{selectedSubject}}">
-      <button class="ghost-button" bindtap="selectSubject" data-subject="">查看全部课程</button>
-    </view>
-  </view>
+  <empty-state wx:if="{{!loading && !loadError && filteredCourses.length === 0}}"
+    icon="🎬"
+    title="{{selectedSubject ? '该科目暂无课程' : '暂无课程'}}"
+    description="{{selectedSubject ? '换一个科目试试' : '老师上传录播后，这里就会出现课程列表'}}"
+    actionText="{{selectedSubject ? '查看全部' : ''}}"
+    bind:action="clearFilter" />
+
+  <!-- 课程卡片列表 -->
+  <view class="course-grid" wx:if="{{!loading && !loadError && filteredCourses.length}}">
 </view>

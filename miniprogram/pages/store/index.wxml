@@ -51,10 +51,11 @@
       </block>
     </view>
 
-    <view class="empty-state" wx:if="{{!loading && products.length === 0}}">
-      <view class="empty-state-icon">🛍️</view>
-      <view class="empty-state-text">暂无商品</view>
-    </view>
+    <empty-state wx:if="{{!loading && loadError}}"
+      icon="⚠️" title="加载失败" description="{{loadError}}" actionText="重试" bind:action="retry" />
+
+    <empty-state wx:if="{{!loading && !loadError && products.length === 0}}"
+      icon="🛍️" title="暂无商品" description="老师上架资料后，这里会显示商品列表" />
   </block>
 
   <!-- 购物车 Tab -->
@@ -114,23 +115,18 @@
             </view>
             <text style="font-size: 26rpx; color: #6b7280;">设为默认地址</text>
           </view>
-          <button class="primary-button" style="margin-top: 16rpx;" bindtap="saveAddress">保存地址</button>
+          <button class="primary-button" style="margin-top: 16rpx;" bindtap="saveAddress" disabled="{{savingAddress}}">{{savingAddress ? '保存中...' : '保存地址'}}</button>
         </view>
       </view>
 
       <!-- 结账按钮 -->
-      <button class="primary-button" style="margin-top: 24rpx; width: 100%;" bindtap="checkout">
-        结账（{{cartCount}}件）
+      <button class="primary-button" style="margin-top: 24rpx; width: 100%;" bindtap="checkout" disabled="{{submitting}}">
+        {{submitting ? '提交中...' : '结账（' + cartCount + '件）'}}
       </button>
     </view>
 
-    <view class="empty-state" wx:if="{{cartItems.length === 0}}">
-      <view class="empty-state-icon">🛒</view>
-      <view class="empty-state-text">购物车是空的</view>
-      <view class="empty-state-action">
-        <button class="primary-button" bindtap="switchTab" data-tab="products">去逛逛</button>
-      </view>
-    </view>
+    <empty-state wx:if="{{cartItems.length === 0}}"
+      icon="🛒" title="购物车是空的" description="去商品区逛逛吧" actionText="去逛逛" bind:action="goProducts" />
   </block>
 
   <!-- 订单 Tab -->
@@ -152,12 +148,7 @@
       </block>
     </view>
 
-    <view class="empty-state" wx:if="{{orders.length === 0}}">
-      <view class="empty-state-icon">📦</view>
-      <view class="empty-state-text">还没有订单</view>
-      <view class="empty-state-action">
-        <button class="primary-button" bindtap="switchTab" data-tab="products">去购物</button>
-      </view>
-    </view>
+    <empty-state wx:if="{{orders.length === 0}}"
+      icon="📦" title="还没有订单" description="购买资料后，订单会显示在这里" actionText="去购物" bind:action="goProducts" />
   </block>
 </view>

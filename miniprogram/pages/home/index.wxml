@@ -175,7 +175,7 @@
                 <view class="item-meta">{{item.body}}</view>
                 <view class="inline-actions">
                   <view class="badge">{{item.type}}</view>
-                  <button wx:if="{{!item.readAt}}" class="ghost-button" size="mini" data-id="{{item.id}}" bindtap="markNotificationRead">标记已读</button>
+                  <button wx:if="{{!item.readAt}}" class="ghost-button" size="mini" data-id="{{item.id}}" bindtap="markNotificationRead">已读</button>
                 </view>
               </view>
             </block>
@@ -202,7 +202,7 @@
                 <view style="margin-top: 16rpx;">
                   <button class="primary-button" data-id="{{item.id}}}" bindtap="openLive"
                           disabled="{{item.status === 'ended'}}">
-                    {{item.status === 'live' ? '进入直播' : (item.status === 'ended' ? '已结束' : '预约进入')}}
+                    {{item.status === 'live' ? '进入' : (item.status === 'ended' ? '已结束' : '预约')}}
                   </button>
                 </view>
               </view>

@@ -9,6 +9,11 @@ page {
   --color-red: #dc2626;
   --color-green: #16a34a;
   --color-orange: #ea580c;
+  /* 语义别名：与 Web 端 styles.css 对齐 */
+  --brand: var(--color-blue);
+  --danger: var(--color-red);
+  --success: var(--color-green);
+  --warning: var(--color-orange);
 
   background: var(--bg-primary);
   color: var(--text-primary);

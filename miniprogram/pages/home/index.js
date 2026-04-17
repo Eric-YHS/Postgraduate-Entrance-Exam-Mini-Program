@@ -171,14 +171,19 @@ Page({
       }
 
       wx.showToast({ title: '总结已提交', icon: 'success' });
+      const today = this.data.today;
+      const newSummary = { taskDate: today, content: summaryContent, imagePaths: [], attachmentPaths: [], updatedAt: new Date().toISOString() };
+      const summaries = [newSummary, ...this.data.summaries];
       this.setData({
         summaryContent: '',
-        summaryDate: getApp().getBootstrapCache()?.today || '',
+        summaryDate: today,
         selectedImages: [],
         selectedFiles: [],
-        summarySubmitted: true
+        summarySubmitted: true,
+        summaries
       });
-      this.loadData(true);
+      const app = getApp();
+      app.updateBootstrapCache({ summaries });
     } catch (error) {
       if (error.message) {
         wx.showToast({ title: error.message, icon: 'none' });
@@ -203,7 +208,16 @@ Page({
   markNotificationRead(event) {
     const notificationId = event.currentTarget.dataset.id;
     request({ url: `/api/notifications/${notificationId}/read`, method: 'POST' })
-      .then(() => this.loadData(true))
+      .then(() => {
+        const notifications = this.data.notifications.map(n =>
+          n.id === notificationId ? { ...n, readAt: new Date().toISOString() } : n
+        );
+        const unreadCount = notifications.filter(n => !n.readAt).length;
+        this.setData({ notifications, unreadCount });
+        // 局部更新缓存
+        const app = getApp();
+        app.updateBootstrapCache({ notifications });
+      })
       .catch((error) => {
         if (error.message) wx.showToast({ title: error.message, icon: 'none' });
       });
@@ -213,7 +227,10 @@ Page({
     try {
       await request({ url: '/api/notifications/read-all', method: 'POST' });
       wx.showToast({ title: '已全部标为已读', icon: 'success' });
-      this.loadData(true);
+      const notifications = this.data.notifications.map(n => ({ ...n, readAt: n.readAt || new Date().toISOString() }));
+      this.setData({ notifications, unreadCount: 0 });
+      const app = getApp();
+      app.updateBootstrapCache({ notifications });
     } catch (error) {
       wx.showToast({ title: error.message, icon: 'none' });
     }
@@ -224,7 +241,13 @@ Page({
     try {
       const url = completed ? `/api/tasks/${id}/uncomplete` : `/api/tasks/${id}/complete`;
       await request({ url, method: 'POST' });
-      this.loadData(true);
+      const tasks = this.data.tasks.map(t =>
+        t.id === id ? { ...t, completedAt: completed ? null : new Date().toISOString() } : t
+      );
+      const tasksCompleted = tasks.filter(t => t.completedAt).length;
+      this.setData({ tasks, tasksCompleted });
+      const app = getApp();
+      app.updateBootstrapCache({ todaysTasks: tasks });
     } catch (error) {
       wx.showToast({ title: error.message, icon: 'none' });
     }

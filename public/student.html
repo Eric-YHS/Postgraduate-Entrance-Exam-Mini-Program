@@ -47,23 +47,14 @@
           <section class="hero">
             <span class="hero-badge">学生规划台</span>
             <h1>今天学什么、几点开始、完成后怎么复盘，都已经帮你排好。</h1>
-            <p>这里是围绕考研规划主题设计的学生端。你会看到当天任务、课程、直播答疑、论坛讨论、题库练习和资料购买入口。</p>
             <div class="stat-grid" id="student-stats"></div>
-            <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap;">
-              <input id="global-search-input" class="input" placeholder="搜索帖子、题目、课程..." style="padding:10px 16px;border-radius:999px;font-size:14px;width:280px;" />
-              <button class="button" id="global-search-btn" type="button" style="padding:10px 20px;">搜索</button>
-            </div>
-            <div id="search-suggestions" style="margin-top:10px;font-size:12px;">
-              <span class="muted">热门：</span><span id="hot-search-tags"></span>
-            </div>
-            <div id="search-history" style="margin-top:6px;font-size:12px;" class="hidden">
-              <span class="muted">搜索历史：</span><span id="history-tags"></span>
-            </div>
-            <div id="global-search-results" style="margin-top:14px;" class="hidden"></div>
+            <div id="next-action-area" style="margin-top:12px;"></div>
+            <div id="unread-summary-area" style="margin-top:10px;"></div>
           </section>
 
           <div class="tab-row">
             <button class="tab-button active" data-target="student-tasks" type="button">今日任务</button>
+            <button class="tab-button" data-target="student-summary" type="button">学习总结</button>
             <button class="tab-button" data-target="student-questions" type="button">题库刷题</button>
             <button class="tab-button" data-target="student-courses" type="button">录播课程</button>
             <button class="tab-button" data-target="student-live" type="button">直播答疑</button>
@@ -77,8 +68,6 @@
                 <button class="tab-dropdown-item" data-target="student-checkin" type="button">打卡日历</button>
                 <button class="tab-dropdown-item" data-target="student-achievements" type="button">成就徽章</button>
                 <button class="tab-dropdown-item" data-target="student-daily" type="button">每日推荐</button>
-                <button class="tab-dropdown-item" data-target="student-mock-exams" type="button">模拟考试 <span class="tab-badge-beta">即将开放</span></button>
-                <button class="tab-dropdown-item" data-target="student-ai" type="button">AI助手 <span class="tab-badge-beta">即将开放</span></button>
               </div>
             </div>
           </div>
@@ -87,8 +76,13 @@
             <h2>今日任务</h2>
             <p class="muted">系统会在每天早上推送总任务，在每个时间点继续提醒你开始执行。</p>
             <div class="list-grid" id="student-tasks-list"></div>
+            <div id="summary-cta-area" style="margin-top:18px;"></div>
+          </section>
 
-            <div class="paper-card" style="margin-top: 18px;">
+          <section class="panel hidden" id="student-summary">
+            <h2>学习总结</h2>
+            <p class="muted">完成当天任务后，在这里记录你的学习复盘。</p>
+            <div class="paper-card" style="margin-top: 14px;">
               <h3>提交今日学习总结</h3>
               <form id="summary-form" class="form-grid">
                 <div class="field">
@@ -112,7 +106,7 @@
                 </div>
               </form>
             </div>
-
+            <h3 style="margin-top:20px;">历史总结</h3>
             <div class="list-grid" id="student-summaries-list"></div>
           </section>
 
@@ -284,29 +278,6 @@
             <div id="daily-questions-list" class="list-grid" style="margin-top:14px;"></div>
           </section>
 
-          <section class="panel hidden" id="student-mock-exams">
-            <h2>模拟考试</h2>
-            <p class="muted">限时考试模式，交卷后统一判分，生成成绩单报告。</p>
-            <div id="mock-exams-area" style="margin-top:14px;"></div>
-          </section>
-
-          <section class="panel hidden" id="student-ai">
-            <h2>AI 智能助手</h2>
-            <p class="muted">接入大模型 AI，提供答疑、作文批改、学习计划、智能摘要等功能。</p>
-            <div id="ai-main-area" style="margin-top:14px;">
-              <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
-                <button class="tab-button active" data-ai-tab="tutor" type="button">AI答疑</button>
-                <button class="tab-button" data-ai-tab="essay" type="button">作文批改</button>
-                <button class="tab-button" data-ai-tab="plan" type="button">学习计划</button>
-                <button class="tab-button" data-ai-tab="summary" type="button">智能摘要</button>
-              </div>
-              <div id="ai-main-input-area">
-                <textarea id="ai-main-input" class="textarea" placeholder="输入你的问题..." style="min-height:100px;"></textarea>
-                <button class="button" id="ai-main-submit" type="button" style="margin-top:8px;">发送</button>
-              </div>
-              <div id="ai-main-response" style="margin-top:14px;display:none;padding:16px;background:var(--bg);border-radius:12px;border:1px solid var(--border);max-height:400px;overflow:auto;"></div>
-            </div>
-          </section>
         </main>
       </div>
     </div>
@@ -329,6 +300,12 @@
     </div>
 
     <script src="/common.js"></script>
-    <script src="/student.js"></script>
+    <script src="/student-core.js"></script>
+    <script src="/student-courses.js"></script>
+    <script src="/student-practice.js"></script>
+    <script src="/student-social.js"></script>
+    <script src="/student-store.js"></script>
+    <script src="/student-flashcards.js"></script>
+    <script src="/student-stats.js"></script>
   </body>
 </html>

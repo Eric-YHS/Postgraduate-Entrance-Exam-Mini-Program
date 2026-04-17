@@ -20,8 +20,11 @@ const ERROR_MESSAGES = {
   503: '服务器暂时无法访问，请稍后重试'
 };
 
-// 处理 401 登录过期
+// 处理 401 登录过期（防抖：只触发一次）
+let _authExpiredHandling = false;
 function handleAuthExpired() {
+  if (_authExpiredHandling) return;
+  _authExpiredHandling = true;
   wx.removeStorageSync('token');
   wx.removeStorageSync('user');
   const app = getApp();
@@ -30,6 +33,7 @@ function handleAuthExpired() {
   }
   wx.showToast({ title: '登录已过期，请重新登录', icon: 'none', duration: 2000 });
   setTimeout(() => {
+    _authExpiredHandling = false;
     wx.reLaunch({ url: '/pages/login/index' });
   }, 1500);
 }
@@ -114,5 +118,6 @@ module.exports = {
   request,
   resolveUrl,
   uploadFile,
+  handleAuthExpired,
   ERROR_MESSAGES
 };

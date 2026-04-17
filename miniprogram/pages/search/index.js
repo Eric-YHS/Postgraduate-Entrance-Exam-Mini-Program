@@ -52,7 +52,9 @@ Page({
     try {
       const data = await request({ url: '/api/search/hot' });
       this.setData({ hotKeywords: (data.keywords || []).map(k => k.keyword) });
-    } catch (e) { /* 静默 */ }
+    } catch (e) {
+      console.warn('热词加载失败:', e);
+    }
   },
 
   handleInput(e) {
@@ -108,6 +110,9 @@ Page({
   // 跳转题库（带科目筛选）
   goQuestion(e) {
     const subject = e.currentTarget.dataset.subject;
+    if (subject) {
+      getApp().setPendingFilter({ subject });
+    }
     wx.switchTab({ url: '/pages/questions/index' });
   },
 

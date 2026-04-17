@@ -261,12 +261,52 @@ function activateTabs(buttonSelector, sectionSelector, onActivate) {
   if (activeBtn) activatedPanels.add(activeBtn.dataset.target);
 }
 
-function buildEmptyState(title, description) {
-  return `
+function buildEmptyState(title, description, options = {}) {
+  const { icon = '研', actionText, actionFn } = options;
+  let html = `
     <div class="empty-state">
-      <div class="empty-state-mark">研</div>
+      <div class="empty-state-mark">${escapeHtml(icon)}</div>
       <h3>${escapeHtml(title)}</h3>
       <p>${escapeHtml(description)}</p>
+  `;
+  if (actionText && typeof actionFn === 'function') {
+    const actionId = 'empty-action-' + Math.random().toString(36).slice(2, 8);
+    html += `<button class="ghost-button" id="${actionId}" type="button">${escapeHtml(actionText)}</button>`;
+    // 延迟绑定事件（因为 buildEmptyState 通常用于 innerHTML）
+    setTimeout(() => {
+      const btn = document.getElementById(actionId);
+      if (btn) btn.addEventListener('click', actionFn);
+    }, 50);
+  }
+  html += '</div>';
+  return html;
+}
+
+function buildRetryState(message, retryFn) {
+  const retryId = 'retry-action-' + Math.random().toString(36).slice(2, 8);
+  let html = `
+    <div class="empty-state">
+      <div class="empty-state-mark" style="background:#fef2f2;color:#b91c1c;">!</div>
+      <h3>加载失败</h3>
+      <p>${escapeHtml(message)}</p>
+      <button class="ghost-button" id="${retryId}" type="button">重试</button>
     </div>
   `;
+  setTimeout(() => {
+    const btn = document.getElementById(retryId);
+    if (btn) btn.addEventListener('click', retryFn);
+  }, 50);
+  return html;
 }
+
+const FEEDBACK = {
+  loading: '处理中...',
+  success: { save: '保存成功', submit: '提交成功', delete: '删除成功' },
+  error: {
+    network: '网络连接失败，请检查网络后重试',
+    server: '服务器开小差了，请稍后重试',
+    auth: '登录已过期，请重新登录',
+    permission: '没有权限执行此操作',
+    notFound: '请求的资源不存在'
+  }
+};

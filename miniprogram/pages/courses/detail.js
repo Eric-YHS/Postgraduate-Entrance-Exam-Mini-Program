@@ -32,15 +32,7 @@ Page({
 
   async loadCourse(courseId) {
     try {
-      const app = getApp();
-      const payload = await app.fetchBootstrap();
-      const courses = payload.courses || [];
-      const course = courses.find(c => String(c.id) === String(courseId));
-      if (!course) {
-        wx.showToast({ title: '课程不存在', icon: 'none' });
-        this.setData({ loading: false });
-        return;
-      }
+      const course = await request({ url: `/api/courses/${courseId}` });
       course.videoSrc = resolveUrl(course.videoPath) || resolveUrl(course.videoUrl);
       wx.setNavigationBarTitle({ title: course.title || '课程详情' });
       this.setData({ course, loading: false });
@@ -63,7 +55,7 @@ Page({
         progressText: percent > 0 ? `${percent}% 已观看` : '未开始'
       });
     } catch (e) {
-      // 静默
+      console.warn('进度加载失败:', e);
     }
   },
 
@@ -72,7 +64,7 @@ Page({
       const data = await request({ url: `/api/courses/${courseId}/notes` });
       this.setData({ notes: data.notes || [] });
     } catch (e) {
-      // 静默
+      console.warn('笔记加载失败:', e);
     }
   },
 

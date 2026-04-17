@@ -4,6 +4,7 @@ const { ensureLogin } = require('../../utils/auth');
 Page({
   data: {
     loading: true,
+    loadError: null,
     courses: [],
     filteredCourses: [],
     recentCourses: [],
@@ -24,7 +25,7 @@ Page({
   async loadCourses(forceRefresh) {
     try {
       const app = getApp();
-      const payload = await app.fetchBootstrap(forceRefresh);
+      const payload = await app.fetchBootstrapModules(['courses'], forceRefresh);
       const courses = (payload.courses || []).map(course => ({
         ...course,
         videoSrc: resolveUrl(course.videoPath) || resolveUrl(course.videoUrl)
@@ -37,8 +38,7 @@ Page({
         subjects: Array.from(subjectSet)
       });
     } catch (error) {
-      this.setData({ loading: false });
-      wx.showToast({ title: error.message, icon: 'none' });
+      this.setData({ loading: false, loadError: error.message || '课程加载失败，请重试' });
     }
   },
 
@@ -52,7 +52,7 @@ Page({
       }));
       this.setData({ recentCourses });
     } catch (e) {
-      // 静默处理
+      console.warn('最近观看加载失败:', e);
     }
   },
 
@@ -63,6 +63,15 @@ Page({
       ? this.data.courses.filter(c => c.subject === selectedSubject)
       : this.data.courses;
     this.setData({ selectedSubject, filteredCourses });
+  },
+
+  clearFilter() {
+    this.setData({ selectedSubject: '', filteredCourses: this.data.courses });
+  },
+
+  retry() {
+    this.setData({ loadError: null, loading: true });
+    this.loadCourses(true);
   },
 
   goDetail(e) {

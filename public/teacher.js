@@ -26,7 +26,37 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   teacherState.user = authResult.user;
   document.getElementById('teacher-name').textContent = `${authResult.user.displayName} 的考研总控台`;
-  activateTabs('.tab-button', '.panel');
+  activateTabs('.tab-button', '.panel', async (target) => {
+    // 延迟加载：非核心面板首次激活时按需请求数据
+    if (!teacherState.data) return;
+    const moduleMap = {
+      'teacher-courses': 'courses',
+      'teacher-live': 'liveSessions',
+      'teacher-forum': 'forumTopics',
+      'teacher-questions': 'questions',
+      'teacher-store': 'products,orders',
+      'teacher-summaries': 'summaries'
+    };
+    const renderMap = {
+      'teacher-courses': () => renderCourses(),
+      'teacher-live': () => renderLiveSessions(),
+      'teacher-questions': () => renderQuestions(),
+      'teacher-store': () => renderStore(),
+      'teacher-summaries': () => renderSummaries()
+    };
+    if (moduleMap[target] && !teacherState.data._loadedModules?.has(target)) {
+      try {
+        const moduleData = await fetchJSON('/api/teacher/bootstrap?modules=' + moduleMap[target]);
+        Object.assign(teacherState.data, moduleData);
+        if (!teacherState.data._loadedModules) teacherState.data._loadedModules = new Set();
+        teacherState.data._loadedModules.add(target);
+      } catch (e) {
+        console.warn('模块加载失败:', target, e);
+        createToast('部分功能加载失败，请刷新重试', 'warning');
+      }
+    }
+    if (renderMap[target]) renderMap[target]();
+  });
   document.getElementById('logout-button').addEventListener('click', logout);
   initializeDefaultDispatchTime();
   bindTeacherForms();
@@ -49,16 +79,13 @@ async function refreshTeacherData() {
   try {
     teacherState.data = await fetchJSON('/api/teacher/bootstrap');
     renderTeacherStats();
+    renderTeacherTodayAlerts();
     renderWeekdayCheckboxes();
     renderStudentCheckboxes();
     renderTasks();
-    renderSummaries();
-    renderCourses();
-    renderLiveSessions();
-    renderQuestions();
-    renderStore();
+    // 模块数据延迟到 tab 激活时加载
   } catch (error) {
-    createToast('数据加载失败：' + error.message, 'error');
+    createToast('数据加载失败，请刷新重试', 'error');
   }
 }
 
@@ -69,8 +96,11 @@ async function loadStudentsOverview() {
     const result = await fetchJSON('/api/teacher/students/overview');
     teacherState.studentsOverview = result;
     renderStudentsOverview(result);
+    // 学生数据加载后刷新统计和风险提醒
+    renderTeacherStats();
+    renderTeacherTodayAlerts();
   } catch (error) {
-    createToast('学生数据加载失败：' + error.message, 'error');
+    createToast('学生数据加载失败，请刷新重试', 'error');
   }
 }
 
@@ -124,7 +154,7 @@ async function loadStudentDetail(studentId) {
     const data = await fetchJSON(`/api/teacher/students/${studentId}/overview`);
     renderStudentDetail(data);
   } catch (error) {
-    createToast('学生详情加载失败：' + error.message, 'error');
+    createToast('学生详情加载失败，请稍后重试', 'error');
   }
 }
 
@@ -194,13 +224,18 @@ function renderStudentDetail(data) {
 
 function renderTeacherStats() {
   const data = teacherState.data;
+  const today = new Date().toISOString().split('T')[0];
+  const pendingSummaries = data.summaries.filter(s => s.taskDate >= today && !s.teacherComment).length;
+  const incompleteCount = (teacherState.studentsOverview?.students || []).filter(s => {
+    const completed = s.todaysCompletedCount || 0;
+    const total = s.todaysTotalCount || s.todaysTaskCount || 0;
+    return total > 0 && completed < total;
+  }).length;
+
   const stats = [
-    { label: '学生人数', value: data.students.length },
-    { label: '规划任务', value: data.tasks.length },
-    { label: '录播课程', value: data.courses.length },
-    { label: '直播场次', value: data.liveSessions.length },
-    { label: '题库题目', value: data.questions.length },
-    { label: '资料商品', value: data.products.length }
+    { label: '今日待处理', value: pendingSummaries + ' 条总结' },
+    { label: '任务未完成学生', value: incompleteCount + ' 人' },
+    { label: '学生总数', value: data.students.length }
   ];
 
   document.getElementById('teacher-stats').innerHTML = stats
@@ -208,11 +243,64 @@ function renderTeacherStats() {
       (item) => `
         <div class="metric-card">
           <span class="muted">${escapeHtml(item.label)}</span>
-          <strong>${escapeHtml(item.value)}</strong>
+          <strong>${escapeHtml(String(item.value))}</strong>
         </div>
       `
     )
     .join('');
+}
+
+function renderTeacherTodayAlerts() {
+  const data = teacherState.data;
+  const area = document.getElementById('teacher-today-alerts');
+  if (!area || !data) return;
+  const alerts = [];
+
+  // 待批改总结
+  const today = new Date().toISOString().split('T')[0];
+  const pendingSummaries = data.summaries.filter(s => s.taskDate >= today && !s.teacherComment);
+  if (pendingSummaries.length) {
+    alerts.push({ type: 'warning', text: '有 ' + pendingSummaries.length + ' 条待批改总结' });
+  }
+
+  // 学生风险提醒
+  if (teacherState.studentsOverview && teacherState.studentsOverview.students) {
+    const students = teacherState.studentsOverview.students;
+
+    // 任务完成率低的学生
+    const lowCompletion = students.filter(s => {
+      const completed = s.todaysCompletedCount || 0;
+      const total = s.todaysTaskCount || 0;
+      return total > 0 && completed / total < 0.3;
+    });
+    if (lowCompletion.length) {
+      const names = lowCompletion.slice(0, 3).map(s => s.displayName).join('、');
+      const suffix = lowCompletion.length > 3 ? `等${lowCompletion.length}人` : '';
+      alerts.push({ type: 'danger', text: names + suffix + ' 今日任务完成率低于30%' });
+    }
+
+    // 连续未提交总结（利用 lastSummaryDate 判断）
+    const noRecentSummary = students.filter(s => {
+      if (!s.lastSummaryDate) return true;
+      const lastDate = new Date(s.lastSummaryDate);
+      const diffDays = Math.floor((Date.now() - lastDate.getTime()) / 86400000);
+      return diffDays >= 3;
+    });
+    if (noRecentSummary.length) {
+      alerts.push({ type: 'warning', text: noRecentSummary.length + ' 名学生超过3天未提交总结' });
+    }
+  }
+
+  if (!alerts.length) {
+    area.innerHTML = '<div class="metric-card" style="background:#dcfce7;border-color:#86efac;"><span class="muted">今日状态</span><strong style="color:#166534;">一切正常</strong></div>';
+    return;
+  }
+
+  const colorMap = { warning: { bg: '#fef3c7', border: '#fcd34d', color: '#92400e' }, danger: { bg: '#fef2f2', border: '#fca5a5', color: '#b91c1c' } };
+  area.innerHTML = alerts.map(a => {
+    const c = colorMap[a.type] || colorMap.warning;
+    return '<div class="metric-card" style="background:' + c.bg + ';border-color:' + c.border + ';"><span class="muted">风险提醒</span><strong style="font-size:14px;color:' + c.color + ';">' + escapeHtml(a.text) + '</strong></div>';
+  }).join('');
 }
 
 function renderWeekdayCheckboxes() {
@@ -319,7 +407,7 @@ async function loadCloudFolder(parentId) {
     teacherState.cloudState.items = result.items || [];
     renderCloudView();
   } catch (error) {
-    createToast('网盘加载失败：' + error.message, 'error');
+    createToast('网盘加载失败，请稍后重试', 'error');
   }
 }
 
@@ -539,7 +627,7 @@ async function loadFlashcards() {
     teacherState.flashcards = result.flashcards;
     renderFlashcards();
   } catch (error) {
-    // 静默
+    console.warn('词汇卡片加载失败:', error);
   }
 }
 
@@ -621,10 +709,12 @@ function bindTeacherForms() {
   document.getElementById('task-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
+    const submitBtn = form.querySelector('button[type="submit"]');
     const formData = new FormData(form);
     const weekdays = Array.from(document.querySelectorAll('input[name="weekday"]:checked')).map((item) => item.value);
     const studentIds = Array.from(document.querySelectorAll('input[name="studentId"]:checked')).map((item) => item.value);
 
+    setButtonLoading(submitBtn, true);
     try {
       await fetchJSON('/api/tasks', {
         method: 'POST',
@@ -645,13 +735,16 @@ function bindTeacherForms() {
       await refreshTeacherData();
     } catch (error) {
       createToast(error.message, 'error');
+    } finally {
+      setButtonLoading(submitBtn, false);
     }
   });
 
   document.getElementById('task-import-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
-    const formData = new FormData(form);
+    const submitBtn = form.querySelector('button[type="submit"]');
+    setButtonLoading(submitBtn, true);
     try {
       const result = await fetchJSON('/api/tasks/import', {
         method: 'POST',
@@ -662,10 +755,14 @@ function bindTeacherForms() {
       await refreshTeacherData();
     } catch (error) {
       createToast(error.message, 'error');
+    } finally {
+      setButtonLoading(submitBtn, false);
     }
   });
 
   document.getElementById('dispatch-daily-button').addEventListener('click', async () => {
+    const btn = document.getElementById('dispatch-daily-button');
+    setButtonLoading(btn, true);
     try {
       const result = await fetchJSON('/api/tasks/dispatch/daily', {
         method: 'POST',
@@ -676,10 +773,14 @@ function bindTeacherForms() {
       await refreshTeacherData();
     } catch (error) {
       createToast(error.message, 'error');
+    } finally {
+      setButtonLoading(btn, false);
     }
   });
 
   document.getElementById('dispatch-due-button').addEventListener('click', async () => {
+    const btn = document.getElementById('dispatch-due-button');
+    setButtonLoading(btn, true);
     try {
       const result = await fetchJSON('/api/tasks/dispatch/due', {
         method: 'POST',
@@ -693,6 +794,8 @@ function bindTeacherForms() {
       await refreshTeacherData();
     } catch (error) {
       createToast(error.message, 'error');
+    } finally {
+      setButtonLoading(btn, false);
     }
   });
 

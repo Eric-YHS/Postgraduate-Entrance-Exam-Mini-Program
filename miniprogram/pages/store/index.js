@@ -4,6 +4,7 @@ const { ensureLogin } = require('../../utils/auth');
 Page({
   data: {
     loading: true,
+    loadError: null,
     activeTab: 'products',
     // 商品
     products: [],
@@ -40,7 +41,7 @@ Page({
   async loadProducts() {
     try {
       const app = getApp();
-      const payload = await app.fetchBootstrap();
+      const payload = await app.fetchBootstrapModules(['products']);
       this.setData({
         loading: false,
         products: (payload.products || []).map(p => ({
@@ -49,8 +50,7 @@ Page({
         }))
       });
     } catch (error) {
-      this.setData({ loading: false });
-      wx.showToast({ title: error.message, icon: 'none' });
+      this.setData({ loading: false, loadError: error.message || '商品加载失败，请重试' });
     }
   },
 
@@ -66,17 +66,17 @@ Page({
         cartCount: cartItems.reduce((sum, i) => sum + i.quantity, 0)
       });
     } catch (e) {
-      // 静默处理
+      console.warn('购物车加载失败:', e);
     }
   },
 
   async loadOrders() {
     try {
       const app = getApp();
-      const payload = await app.fetchBootstrap();
+      const payload = await app.fetchBootstrapModules(['orders']);
       this.setData({ orders: payload.orders || [] });
     } catch (e) {
-      // 静默处理
+      console.warn('订单加载失败:', e);
     }
   },
 
@@ -90,7 +90,7 @@ Page({
         selectedAddressId: defaultAddr ? defaultAddr.id : (addresses[0] ? addresses[0].id : null)
       });
     } catch (e) {
-      // 静默处理
+      console.warn('地址加载失败:', e);
     }
   },
 
@@ -163,6 +163,7 @@ Page({
       wx.showToast({ title: '请填写姓名和地址', icon: 'none' });
       return;
     }
+    this.setData({ savingAddress: true });
     try {
       await request({
         url: '/api/addresses',
@@ -177,10 +178,12 @@ Page({
       wx.showToast({ title: '地址已保存', icon: 'success' });
       this.setData({
         showAddressForm: false,
+        savingAddress: false,
         newAddress: { name: '', phone: '', address: '', isDefault: false }
       });
       this.loadAddresses();
     } catch (error) {
+      this.setData({ savingAddress: false });
       wx.showToast({ title: error.message, icon: 'none' });
     }
   },
@@ -191,6 +194,7 @@ Page({
       wx.showToast({ title: '请选择收货地址', icon: 'none' });
       return;
     }
+    this.setData({ submitting: true });
     try {
       const result = await request({
         url: '/api/cart/checkout',
@@ -200,8 +204,9 @@ Page({
       wx.showToast({ title: `下单成功，共${result.created}件`, icon: 'success' });
       this.loadCart();
       this.loadOrders();
-      this.setData({ activeTab: 'orders' });
+      this.setData({ activeTab: 'orders', submitting: false });
     } catch (error) {
+      this.setData({ submitting: false });
       wx.showToast({ title: error.message, icon: 'none' });
     }
   },
@@ -215,5 +220,14 @@ Page({
   getStatusColor(status) {
     const map = { paid: '#2563eb', shipped: '#ea580c', delivered: '#16a34a', cancelled: '#6b7280' };
     return map[status] || '#6b7280';
+  },
+
+  retry() {
+    this.setData({ loadError: null, loading: true });
+    this.loadProducts();
+  },
+
+  goProducts() {
+    this.setData({ activeTab: 'products' });
   }
 });
