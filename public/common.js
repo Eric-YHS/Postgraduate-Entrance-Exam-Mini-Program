@@ -1,13 +1,24 @@
+// 401 跳转锁，防止多个并行请求重复弹 toast 和跳转
+let _authExpired = false;
+
 async function fetchJSON(url, options = {}) {
   const { headers: customHeaders, ...restOptions } = options;
   const isFormData = typeof FormData !== 'undefined' && restOptions.body instanceof FormData;
+
+  // 自动携带 localStorage 中的 token
+  const savedToken = localStorage.getItem('auth_token');
+  const autoHeaders = {
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
+    ...customHeaders
+  };
+  if (savedToken && !autoHeaders['Authorization'] && !autoHeaders['authorization']) {
+    autoHeaders['Authorization'] = `Bearer ${savedToken}`;
+  }
+
   const response = await fetch(url, {
     credentials: 'include',
     ...restOptions,
-    headers: {
-      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-      ...customHeaders
-    }
+    headers: autoHeaders
   });
 
   let payload = null;
@@ -18,10 +29,13 @@ async function fetchJSON(url, options = {}) {
   }
 
   if (!response.ok) {
-    // 401 登录过期处理
     if (response.status === 401) {
-      createToast('登录已过期，请重新登录', 'error');
-      setTimeout(() => { location.href = '/'; }, 2000);
+      if (!_authExpired) {
+        _authExpired = true;
+        localStorage.removeItem('auth_token');
+        createToast('登录已过期，请重新登录', 'error');
+        setTimeout(() => { location.href = '/'; }, 1500);
+      }
       throw new Error('登录已过期');
     }
     throw new Error(payload?.error || '请求失败');
@@ -159,6 +173,7 @@ async function ensureAuth(requiredRole) {
   }
 
   if (!data.user) {
+    localStorage.removeItem('auth_token');
     location.href = '/';
     return null;
   }
@@ -167,6 +182,11 @@ async function ensureAuth(requiredRole) {
     const roleRoutes = { admin: '/admin', teacher: '/teacher', student: '/student' };
     location.href = roleRoutes[data.user.role] || '/';
     return null;
+  }
+
+  // 持久化 token，确保后续请求能自动携带
+  if (data.token) {
+    localStorage.setItem('auth_token', data.token);
   }
 
   // BUG-006: 验证后从 URL 中移除 token
