@@ -63,4 +63,15 @@
 
   <!-- 课程卡片列表 -->
   <view class="course-grid" wx:if="{{!loading && !loadError && filteredCourses.length}}">
-</view>
+    <view class="course-card" wx:for="{{filteredCourses}}" wx:key="id"
+          bindtap="goDetail" data-id="{{item.course_id || item.id}}">
+      <view class="course-cover">
+        <text class="course-cover-icon">{{item.subject === '考研政治' ? '📜' : (item.subject === '考研英语' ? '📖' : (item.subject === '考研数学' ? '📐' : '🎬'))}}</text>
+      </view>
+      <view class="course-info">
+        <view class="course-title">{{item.title}}</view>
+        <view class="course-desc">{{item.description || item.subject || '录播课程'}}</view>
+        <view class="course-action">开始学习 ›</view>
+      </view>
+    </view>
+  </view>

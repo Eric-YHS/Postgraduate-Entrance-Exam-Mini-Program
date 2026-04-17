@@ -54,14 +54,14 @@
 
           <div class="tab-row">
             <button class="tab-button active" data-target="student-tasks" type="button">今日任务</button>
-            <button class="tab-button" data-target="student-summary" type="button">学习总结</button>
             <button class="tab-button" data-target="student-questions" type="button">题库刷题</button>
             <button class="tab-button" data-target="student-courses" type="button">录播课程</button>
-            <button class="tab-button" data-target="student-live" type="button">直播答疑</button>
-            <button class="tab-button" data-target="student-stats-panel" type="button">学习数据</button>
+            <button class="tab-button" data-target="student-summary" type="button">学习总结</button>
             <div class="tab-more-wrap">
               <button class="tab-more-btn" type="button">更多 ▾</button>
               <div class="tab-dropdown">
+                <button class="tab-dropdown-item" data-target="student-live" type="button">直播答疑</button>
+                <button class="tab-dropdown-item" data-target="student-stats-panel" type="button">学习数据</button>
                 <button class="tab-dropdown-item" data-target="student-forum" type="button">论坛交流</button>
                 <button class="tab-dropdown-item" data-target="student-store" type="button">资料商城</button>
                 <button class="tab-dropdown-item" data-target="student-flashcards" type="button">词汇记忆</button>
@@ -150,17 +150,20 @@
               <button class="tab-button" data-action="load-wrong-review" type="button">错题复习</button>
               <button class="tab-button" data-action="auto-paper" type="button">随机组卷</button>
             </div>
-            <div class="question-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
-              <select id="qf-subject" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
-                <option value="">全部科目</option>
-              </select>
-              <select id="qf-type" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
-                <option value="">全部题型</option>
-              </select>
-              <select id="qf-tag" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
-                <option value="">全部标签</option>
-              </select>
-            </div>
+            <details style="margin-bottom:14px;">
+              <summary style="cursor:pointer;color:var(--brand);font-size:13px;font-weight:600;margin-bottom:8px;">筛选条件</summary>
+              <div class="question-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+                <select id="qf-subject" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+                  <option value="">全部科目</option>
+                </select>
+                <select id="qf-type" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+                  <option value="">全部题型</option>
+                </select>
+                <select id="qf-tag" class="select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+                  <option value="">全部标签</option>
+                </select>
+              </div>
+            </details>
             <div class="tab-row" style="margin-bottom:14px;">
               <button class="tab-button active" data-target="qtab-all" type="button">全部题目</button>
               <button class="tab-button" data-target="qtab-wrong" type="button">错题本</button>

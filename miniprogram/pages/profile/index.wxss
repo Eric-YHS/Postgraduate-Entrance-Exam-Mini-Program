@@ -2,3 +2,69 @@
 .danger-button {
   margin-top: 20rpx;
 }
+
+/* 日历网格 */
+.calendar-header {
+  display: flex;
+  gap: 8rpx;
+  flex-wrap: wrap;
+  margin-top: 16rpx;
+}
+
+.calendar-header text {
+  width: calc(14.28% - 8rpx);
+  text-align: center;
+  font-size: 22rpx;
+  color: #9ca3af;
+}
+
+.calendar-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8rpx;
+  margin-top: 8rpx;
+}
+
+.calendar-cell {
+  width: calc(14.28% - 8rpx);
+  height: 56rpx;
+  border-radius: 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+}
+
+.calendar-cell--active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.calendar-cell--today {
+  color: #2563eb;
+  font-weight: 700;
+  border: 2rpx solid #2563eb;
+}
+
+.calendar-cell--inactive {
+  background: #f3f4f6;
+  color: #9ca3af;
+}
+
+.calendar-cell--empty {
+  background: transparent;
+}
+
+.calendar-summary {
+  margin-top: 12rpx;
+  font-size: 24rpx;
+  color: #6b7280;
+}
+
+/* 快捷入口精简 */
+.quick-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16rpx;
+  margin-top: 16rpx;
+}

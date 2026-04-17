@@ -911,3 +911,10 @@ select {
   70% { transform: scale(0.95); }
   100% { transform: scale(1); opacity: 1; }
 }
+
+/* ========== 通用分隔线 ========== */
+.section-divider {
+  margin: 28px 0;
+  border: none;
+  border-top: 2px solid var(--line);
+}

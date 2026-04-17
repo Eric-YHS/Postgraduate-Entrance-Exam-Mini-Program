@@ -21,7 +21,8 @@ Page({
     selectedImages: [],
     selectedFiles: [],
     expandSupplement: false,
-    lastUpdateTime: ''
+    lastUpdateTime: '',
+    pageError: ''
   },
 
   onShow() {
@@ -81,12 +82,18 @@ Page({
         lastUpdateTime
       });
     } catch (error) {
-      if (error.message) {
-        wx.showToast({ title: error.message, icon: 'none' });
-      }
+      this.setData({
+        loading: false,
+        pageError: error.message || '加载失败，请下拉刷新重试'
+      });
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  retryPage() {
+    this.setData({ pageError: '', loading: true });
+    this.loadData(true);
   },
 
   handleSummaryInput(event) {

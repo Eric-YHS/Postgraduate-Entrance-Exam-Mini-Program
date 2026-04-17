@@ -68,29 +68,48 @@
 
   <!-- 学习数据 Tab -->
   <block wx:if="{{activeTab === 'dashboard'}}">
+    <!-- 加载骨架 -->
+    <block wx:if="{{loading}}">
+      <view class="section animate-in">
+        <view class="skeleton skeleton-title"></view>
+        <view class="skeleton skeleton-text"></view>
+        <view class="skeleton skeleton-text-short"></view>
+      </view>
+      <view class="section animate-in" style="margin-top: 20rpx;">
+        <view class="skeleton skeleton-title"></view>
+        <view class="skeleton skeleton-text"></view>
+      </view>
+    </block>
+
+    <!-- 数据加载失败 -->
+    <empty-state wx:if="{{!loading && dashboardError}}"
+      icon="⚠️"
+      title="数据加载失败"
+      description="{{dashboardError}}"
+      actionText="重试"
+      bind:action="retryDashboard" />
+
+    <!-- 正常内容 -->
+    <block wx:if="{{!loading && !dashboardError}}">
     <!-- 月度热力图 -->
     <view class="section animate-in">
       <view class="section-title">{{calendarMonth}} 学习日历</view>
-      <view style="display: flex; gap: 8rpx; flex-wrap: wrap; margin-top: 16rpx;">
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">日</text>
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">一</text>
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">二</text>
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">三</text>
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">四</text>
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">五</text>
-        <text style="width: calc(14.28% - 8rpx); text-align: center; font-size: 22rpx; color: #9ca3af;">六</text>
+      <view class="calendar-header">
+        <text>日</text>
+        <text>一</text>
+        <text>二</text>
+        <text>三</text>
+        <text>四</text>
+        <text>五</text>
+        <text>六</text>
       </view>
-      <view style="display: flex; flex-wrap: wrap; gap: 8rpx; margin-top: 8rpx;">
+      <view class="calendar-grid">
         <view wx:for="{{calendarGrid}}" wx:key="index"
-              style="width: calc(14.28% - 8rpx); height: 56rpx; border-radius: 12rpx; display: flex; align-items: center; justify-content: center; font-size: 22rpx;
-                background: {{item.active ? '#dbeafe' : (item.day ? '#f3f4f6' : 'transparent')}};
-                color: {{item.today ? '#2563eb' : (item.active ? '#1d4ed8' : '#9ca3af')}};
-                font-weight: {{item.today ? '700' : '400'}};
-                border: {{item.today ? '2rpx solid #2563eb' : 'none'}};">
+              class="calendar-cell {{item.active ? 'calendar-cell--active' : (item.day ? 'calendar-cell--inactive' : 'calendar-cell--empty')}} {{item.today ? 'calendar-cell--today' : ''}}">
           {{item.day}}
         </view>
       </view>
-      <view style="margin-top: 12rpx; font-size: 24rpx; color: #6b7280;">
+      <view class="calendar-summary">
         本月学习 {{streak.monthDays}} 天 | 最长连续 {{streak.longestStreak}} 天
       </view>
     </view>
@@ -128,9 +147,8 @@
         </view>
       </view>
     </view>
+    </block>
   </block>
-
-  <!-- 成就 Tab -->
   <block wx:if="{{activeTab === 'achievements'}}">
     <view class="section animate-in">
       <view class="section-title">成就徽章</view>

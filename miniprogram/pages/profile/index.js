@@ -19,6 +19,8 @@ Page({
     // 热力图
     calendarMonth: '',
     calendarGrid: [],
+    // 错误状态
+    dashboardError: '',
     // Tab
     activeTab: 'dashboard'
   },
@@ -54,7 +56,7 @@ Page({
 
       this.buildCalendarGrid();
     } catch (e) {
-      // 静默处理，降级显示基础信息
+      this.setData({ dashboardError: e.message || '学习数据加载失败' });
     }
   },
 
@@ -109,6 +111,11 @@ Page({
   // Tab 切换
   switchTab(e) {
     this.setData({ activeTab: e.currentTarget.dataset.tab });
+  },
+
+  retryDashboard() {
+    this.setData({ dashboardError: '' });
+    this.loadDashboard();
   },
 
   async handleLogout() {

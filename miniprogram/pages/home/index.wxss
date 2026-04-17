@@ -107,3 +107,147 @@
   color: #9ca3af;
   flex-shrink: 0;
 }
+
+/* 行动卡片变体 */
+.action-card--primary {
+  padding: 28rpx 24rpx;
+  background: #eff6ff;
+  border-color: #93c5fd;
+}
+
+.action-card--primary .action-title {
+  font-size: 32rpx;
+  color: #1d4ed8;
+}
+
+.action-card--secondary {
+  padding: 20rpx 24rpx;
+}
+
+.action-icon--brand {
+  background: #dbeafe !important;
+}
+
+.action-icon--neutral {
+  background: #f3f4f6 !important;
+}
+
+/* 搜索栏 Hero 变体 */
+.search-bar--hero {
+  margin-top: 24rpx;
+  background: rgba(255, 255, 255, 0.15) !important;
+  border-color: rgba(255, 255, 255, 0.3) !important;
+}
+
+.search-bar--hero .search-icon {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.search-bar--hero-text {
+  flex: 1;
+  font-size: 28rpx;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+/* 更新时间 */
+.update-time {
+  margin-top: 16rpx;
+  font-size: 22rpx;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+/* 任务复选框 */
+.task-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+
+.task-checkbox {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  border: 3rpx solid #d1d5db;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-top: 4rpx;
+}
+
+.task-checkbox--done {
+  border-color: var(--success);
+  background: var(--success);
+}
+
+.task-checkbox-check {
+  color: #fff;
+  font-size: 24rpx;
+}
+
+.task-content {
+  flex: 1;
+}
+
+.task-title--done {
+  text-decoration: line-through;
+  color: #9ca3af;
+}
+
+/* 已完成任务整行淡化 */
+.list-item--done {
+  opacity: 0.6;
+}
+
+/* 折叠区头部 */
+.section-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.section-toggle-arrow {
+  font-size: 26rpx;
+  color: #6b7280;
+}
+
+/* 子区块标题 */
+.sub-section {
+  margin-top: 24rpx;
+}
+
+.sub-section-title {
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.sub-section-title-link {
+  font-size: 26rpx;
+  color: var(--brand);
+}
+
+/* 空提示 */
+.empty-hint {
+  padding: 24rpx;
+  text-align: center;
+  color: #9ca3af;
+  font-size: 26rpx;
+}
+
+/* 直播状态标签 */
+.live-status {
+  font-size: 24rpx;
+  padding: 6rpx 16rpx;
+  border-radius: 999rpx;
+}
+
+.live-status--active {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.live-status--upcoming {
+  background: #eff6ff;
+  color: #2563eb;
+}
