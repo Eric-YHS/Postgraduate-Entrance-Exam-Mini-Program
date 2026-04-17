@@ -7,48 +7,42 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
+    <!-- 顶部导航栏 -->
+    <nav class="top-nav">
+      <div class="nav-brand">研</div>
+      <div class="nav-links">
+        <button class="nav-link active" data-target="teacher-tasks" type="button"><span class="nav-icon">📋</span> 任务规划</button>
+        <button class="nav-link" data-target="teacher-students" type="button"><span class="nav-icon">👥</span> 学生管理</button>
+        <button class="nav-link" data-target="teacher-courses" type="button"><span class="nav-icon">📚</span> 录播课程</button>
+        <button class="nav-link" data-target="teacher-live" type="button"><span class="nav-icon">🎙</span> 直播答疑</button>
+      </div>
+      <div class="nav-more-wrap">
+        <button class="nav-more-btn" type="button">更多 ▾</button>
+        <div class="tab-dropdown">
+          <button class="tab-dropdown-item" data-target="teacher-summaries" type="button">📝 学习总结</button>
+          <button class="tab-dropdown-item" data-target="teacher-questions" type="button">❓ 题库管理</button>
+          <button class="tab-dropdown-item" data-target="teacher-store" type="button">🛒 资料商城</button>
+          <button class="tab-dropdown-item" data-target="teacher-forum" type="button">💬 论坛社区</button>
+          <button class="tab-dropdown-item" data-target="teacher-flashcards" type="button">🃏 词汇管理</button>
+        </div>
+      </div>
+      <div class="nav-user">
+        <button class="nav-user-btn" type="button" id="user-menu-btn">⚙ <span id="teacher-name">老师</span> ▾</button>
+        <div class="nav-user-dropdown">
+          <button type="button" data-target="teacher-settings">⚙ 设置</button>
+          <button type="button" id="logout-button">退出登录</button>
+        </div>
+      </div>
+    </nav>
+
     <div class="page-shell">
       <div class="dashboard-grid">
-        <aside class="side-rail">
-          <section class="brand-block">
-            <div class="brand-mark">研</div>
-            <h2 id="teacher-name">老师后台</h2>
-            <p class="muted">围绕考研规划做日程拆分、进度提醒、课程运营与资料管理。</p>
-            <div class="inline-actions">
-              <button class="button" id="logout-button" type="button">退出登录</button>
-              <a class="ghost-button" href="/" style="text-decoration: none;">返回首页</a>
-            </div>
-          </section>
-          <section class="brand-block">
-            <h3>操作说明</h3>
-            <p class="muted">支持摄像头推流直播；任务提醒支持定时和手动触发；题库、商城、论坛均已上线。</p>
-          </section>
-        </aside>
-
         <main>
           <section class="hero">
             <span class="hero-badge">老师工作台</span>
-            <h1>把学生每天的考研节奏，拆到可执行、可提醒、可追踪。</h1>
             <div class="stat-grid" id="teacher-stats"></div>
             <div id="teacher-today-alerts" style="margin-top:12px;"></div>
           </section>
-
-          <div class="tab-row">
-            <button class="tab-button active" data-target="teacher-tasks" type="button">任务规划</button>
-            <button class="tab-button" data-target="teacher-students" type="button">学生管理</button>
-            <button class="tab-button" data-target="teacher-courses" type="button">录播课程</button>
-            <button class="tab-button" data-target="teacher-live" type="button">直播答疑</button>
-            <div class="tab-more-wrap">
-              <button class="tab-more-btn" type="button">更多 ▾</button>
-              <div class="tab-dropdown">
-                <button class="tab-dropdown-item" data-target="teacher-summaries" type="button">学习总结</button>
-                <button class="tab-dropdown-item" data-target="teacher-forum" type="button">论坛社区</button>
-                <button class="tab-dropdown-item" data-target="teacher-questions" type="button">题库管理</button>
-                <button class="tab-dropdown-item" data-target="teacher-store" type="button">资料商城</button>
-                <button class="tab-dropdown-item" data-target="teacher-flashcards" type="button">词汇管理</button>
-              </div>
-            </div>
-          </div>
 
           <section class="panel" id="teacher-tasks">
             <h2>考研任务规划</h2>
@@ -403,6 +397,34 @@
               <p class="muted" style="color:#9ca3af;">暂未开放 — 缺少标准格式模板，功能尚不可用。</p>
             </div>
             <div class="list-grid" id="flashcards-list"></div>
+          </section>
+
+          <section class="panel hidden settings-panel" id="teacher-settings">
+            <h2>设置</h2>
+            <div class="settings-section">
+              <h3>账号信息</h3>
+              <div class="settings-info-grid" id="settings-account-info"></div>
+            </div>
+            <div class="settings-section">
+              <h3>修改密码</h3>
+              <form id="change-password-form" class="form-grid" style="max-width:400px;">
+                <div class="field full-span">
+                  <label>当前密码</label>
+                  <input class="input" type="password" name="oldPassword" required />
+                </div>
+                <div class="field full-span">
+                  <label>新密码</label>
+                  <input class="input" type="password" name="newPassword" required minlength="6" />
+                </div>
+                <div class="field full-span">
+                  <button class="button" type="submit">修改密码</button>
+                </div>
+              </form>
+            </div>
+            <div class="settings-section">
+              <h3>操作说明</h3>
+              <p class="muted">支持摄像头推流直播；任务提醒支持定时和手动触发；题库、商城、论坛均已上线。</p>
+            </div>
           </section>
 
         </main>

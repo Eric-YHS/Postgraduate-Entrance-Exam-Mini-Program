@@ -50,11 +50,12 @@ button {
 .hero {
   position: relative;
   overflow: hidden;
-  padding: 28px;
-  border-radius: 28px;
+  padding: 22px 24px;
+  border-radius: 22px;
   background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
   color: #fff;
   box-shadow: var(--shadow);
+  margin-bottom: 18px;
 }
 
 .hero::after {
@@ -150,33 +151,225 @@ button {
 }
 
 .dashboard-grid {
-  grid-template-columns: 280px minmax(0, 1fr);
+  /* 单栏全宽布局 */
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
-.side-rail {
-  display: grid;
-  gap: 18px;
-  align-content: start;
+/* ========== 顶部导航栏 ========== */
+.top-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 18px;
+  height: 56px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 
-.brand-block {
-  padding: 22px;
-  border-radius: 24px;
-  background: #ffffff;
-  border: 1px solid var(--line);
-  box-shadow: var(--shadow);
-}
-
-.brand-mark {
-  width: 58px;
-  height: 58px;
+.nav-brand {
+  width: 36px;
+  height: 36px;
   display: grid;
   place-items: center;
-  border-radius: 18px;
+  border-radius: 10px;
   background: linear-gradient(135deg, var(--brand) 0%, #60a5fa 100%);
   color: #fff;
-  font-size: 26px;
+  font-size: 18px;
   font-weight: 700;
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+
+.nav-links {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  flex: 1;
+  scrollbar-width: none;
+}
+
+.nav-links::-webkit-scrollbar {
+  display: none;
+}
+
+.nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--subtle);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+  position: relative;
+}
+
+.nav-link:hover {
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
+.nav-link.active {
+  background: var(--brand-light);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.nav-link.active::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  left: 14px;
+  right: 14px;
+  height: 3px;
+  border-radius: 3px 3px 0 0;
+  background: var(--brand);
+}
+
+.nav-link .nav-icon {
+  font-size: 16px;
+}
+
+/* 更多下拉（复用 tab-dropdown 样式结构） */
+.nav-more-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.nav-more-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--subtle);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-more-btn:hover {
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
+.nav-more-btn.active {
+  background: var(--brand-light);
+  color: var(--brand);
+  font-weight: 600;
+}
+
+/* 右侧用户区域 */
+.nav-user {
+  position: relative;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.nav-user-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.nav-user-btn:hover {
+  background: #f1f5f9;
+}
+
+.nav-user-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+  z-index: 110;
+  padding: 6px;
+  display: none;
+}
+
+.nav-user-dropdown.show {
+  display: block;
+  animation: fadeIn 0.15s ease;
+}
+
+.nav-user-dropdown button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.nav-user-dropdown button:hover {
+  background: var(--brand-light);
+  color: var(--brand-dark);
+}
+
+/* ========== 设置面板 ========== */
+.settings-panel {
+  padding: 22px;
+}
+
+.settings-panel .settings-section {
+  margin-bottom: 24px;
+}
+
+.settings-panel .settings-section:last-child {
+  margin-bottom: 0;
+}
+
+.settings-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.settings-info-item {
+  padding: 14px;
+  border-radius: 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.settings-info-item .muted {
+  font-size: 12px;
+}
+
+.settings-info-item strong {
+  display: block;
+  margin-top: 4px;
+  font-size: 15px;
 }
 
 .muted {
@@ -652,7 +845,6 @@ button {
 
 @media (max-width: 980px) {
   .auth-grid,
-  .dashboard-grid,
   .room-grid {
     grid-template-columns: 1fr;
   }
@@ -670,6 +862,15 @@ button {
 
   .hero {
     padding: 22px 18px;
+  }
+
+  .top-nav {
+    padding: 0 10px;
+  }
+
+  .nav-link {
+    padding: 8px 10px;
+    font-size: 13px;
   }
 }
 

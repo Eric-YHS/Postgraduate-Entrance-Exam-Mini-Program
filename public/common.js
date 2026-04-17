@@ -215,11 +215,15 @@ function activateTabs(buttonSelector, sectionSelector, onActivate) {
   const buttons = Array.from(document.querySelectorAll(buttonSelector));
   const sections = Array.from(document.querySelectorAll(sectionSelector));
 
-  // 查找"更多"下拉组件
-  const moreWrap = document.querySelector('.tab-more-wrap');
-  const moreBtn = moreWrap ? moreWrap.querySelector('.tab-more-btn') : null;
-  const dropdown = moreWrap ? moreWrap.querySelector('.tab-dropdown') : null;
-  const dropdownItems = dropdown ? Array.from(dropdown.querySelectorAll('.tab-dropdown-item')) : [];
+  // 查找"更多"下拉组件（兼容旧 tab-more 和新 nav-more）
+  const moreWrap = document.querySelector('.nav-more-wrap') || document.querySelector('.tab-more-wrap');
+  const moreBtn = moreWrap ? (moreWrap.querySelector('.nav-more-btn') || moreWrap.querySelector('.tab-more-btn')) : null;
+  const dropdown = moreWrap ? (moreWrap.querySelector('.tab-dropdown') || moreWrap.querySelector('.nav-more-dropdown')) : null;
+  const dropdownItems = dropdown ? Array.from(dropdown.querySelectorAll('.tab-dropdown-item, .nav-dropdown-item')) : [];
+
+  // 查找用户下拉菜单
+  const userBtn = document.querySelector('.nav-user-btn');
+  const userDropdown = document.querySelector('.nav-user-dropdown');
 
   // 懒加载追踪：记录哪些面板已激活过
   const activatedPanels = new Set();
@@ -254,6 +258,7 @@ function activateTabs(buttonSelector, sectionSelector, onActivate) {
 
     // 关闭下拉
     if (dropdown) dropdown.classList.remove('show');
+    if (userDropdown) userDropdown.classList.remove('show');
   }
 
   // 核心 tab 点击
@@ -284,6 +289,19 @@ function activateTabs(buttonSelector, sectionSelector, onActivate) {
   // 标记首屏已激活的面板
   const activeBtn = buttons.find((b) => b.classList.contains('active'));
   if (activeBtn) activatedPanels.add(activeBtn.dataset.target);
+
+  // 用户下拉菜单 toggle
+  if (userBtn && userDropdown) {
+    userBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      userDropdown.classList.toggle('show');
+    });
+    document.addEventListener('click', (e) => {
+      if (!userBtn.contains(e.target) && !userDropdown.contains(e.target)) {
+        userDropdown.classList.remove('show');
+      }
+    });
+  }
 }
 
 function buildEmptyState(title, description, options = {}) {

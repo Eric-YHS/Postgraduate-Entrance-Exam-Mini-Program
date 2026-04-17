@@ -24,10 +24,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   studentState.user = authResult.user;
   studentState.token = authResult.token;
-  document.getElementById('student-name').textContent = `${authResult.user.displayName} 的研途日程`;
+  const nameEl = document.getElementById('student-name');
+  if (nameEl) nameEl.textContent = authResult.user.displayName;
+  // 设置面板账号信息
+  const accountInfo = document.getElementById('settings-account-info');
+  if (accountInfo) {
+    accountInfo.innerHTML = `
+      <div class="settings-info-item"><span class="muted">用户名</span><strong>${escapeHtml(authResult.user.username)}</strong></div>
+      <div class="settings-info-item"><span class="muted">姓名</span><strong>${escapeHtml(authResult.user.displayName)}</strong></div>
+      <div class="settings-info-item"><span class="muted">班级</span><strong>${escapeHtml(authResult.user.className || '未设置')}</strong></div>
+      <div class="settings-info-item"><span class="muted">角色</span><strong>学生</strong></div>
+    `;
+  }
   const nowInit = new Date();
   document.getElementById('summary-date').value = `${nowInit.getFullYear()}-${String(nowInit.getMonth() + 1).padStart(2, '0')}-${String(nowInit.getDate()).padStart(2, '0')}`;
-  activateTabs('.tab-button', '.panel', async (target) => {
+  activateTabs('.nav-link', '.panel', async (target) => {
     // 延迟加载：非核心面板首次激活时按需请求数据
     if (!studentState.data) return;
     const moduleMap = {
@@ -62,6 +73,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (renderMap[target]) renderMap[target]();
   });
+  // 用户菜单中的"设置"按钮
+  const settingsBtn = document.querySelector('.nav-user-dropdown [data-target="student-settings"]');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      document.querySelectorAll('.nav-link').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach((s) => s.classList.add('hidden'));
+      const panel = document.getElementById('student-settings');
+      if (panel) panel.classList.remove('hidden');
+      const userDrop = document.querySelector('.nav-user-dropdown');
+      if (userDrop) userDrop.classList.remove('show');
+    });
+  }
   document.getElementById('logout-button').addEventListener('click', logout);
 
   // Hero 区域"下一步动作"点击事件委托

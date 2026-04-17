@@ -25,8 +25,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   teacherState.user = authResult.user;
-  document.getElementById('teacher-name').textContent = `${authResult.user.displayName} 的考研总控台`;
-  activateTabs('.tab-button', '.panel', async (target) => {
+  const nameEl = document.getElementById('teacher-name');
+  if (nameEl) nameEl.textContent = authResult.user.displayName;
+  // 设置面板账号信息
+  const accountInfo = document.getElementById('settings-account-info');
+  if (accountInfo) {
+    accountInfo.innerHTML = `
+      <div class="settings-info-item"><span class="muted">用户名</span><strong>${escapeHtml(authResult.user.username)}</strong></div>
+      <div class="settings-info-item"><span class="muted">姓名</span><strong>${escapeHtml(authResult.user.displayName)}</strong></div>
+      <div class="settings-info-item"><span class="muted">班级</span><strong>${escapeHtml(authResult.user.className || '未设置')}</strong></div>
+      <div class="settings-info-item"><span class="muted">角色</span><strong>老师</strong></div>
+    `;
+  }
+  activateTabs('.nav-link', '.panel', async (target) => {
     // 延迟加载：非核心面板首次激活时按需请求数据
     if (!teacherState.data) return;
     const moduleMap = {
@@ -57,12 +68,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (renderMap[target]) renderMap[target]();
   });
+  // 用户菜单中的"设置"按钮
+  const settingsBtn = document.querySelector('.nav-user-dropdown [data-target="teacher-settings"]');
+  if (settingsBtn) {
+    settingsBtn.addEventListener('click', () => {
+      // 激活设置面板
+      document.querySelectorAll('.nav-link').forEach((b) => b.classList.remove('active'));
+      document.querySelectorAll('.panel').forEach((s) => s.classList.add('hidden'));
+      const panel = document.getElementById('teacher-settings');
+      if (panel) panel.classList.remove('hidden');
+      const userDrop = document.querySelector('.nav-user-dropdown');
+      if (userDrop) userDrop.classList.remove('show');
+    });
+  }
   document.getElementById('logout-button').addEventListener('click', logout);
   initializeDefaultDispatchTime();
   bindTeacherForms();
   bindTagForms();
   bindFlashcardForms();
   bindStudentManagement();
+  bindPasswordForm();
   await refreshTeacherData();
   await loadStudentsOverview();
   loadTags();
@@ -1124,6 +1149,29 @@ document.addEventListener('click', (event) => {
     showLightbox(target.dataset.src || target.src);
   }
 });
+
+function bindPasswordForm() {
+  const form = document.getElementById('change-password-form');
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    try {
+      await fetchJSON('/api/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          oldPassword: formData.get('oldPassword'),
+          newPassword: formData.get('newPassword')
+        })
+      });
+      createToast('密码修改成功。', 'success');
+      form.reset();
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+}
 
 // ===== 第二阶段教师端新功能 =====
 
