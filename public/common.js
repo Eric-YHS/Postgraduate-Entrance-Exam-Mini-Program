@@ -30,6 +30,11 @@ async function fetchJSON(url, options = {}) {
 
   if (!response.ok) {
     if (response.status === 401) {
+      // 登录接口的 401 是密码错误，不走全局跳转
+      const isLoginEndpoint = typeof url === 'string' && (url.includes('/api/auth/login') || url.includes('/api/auth/register'));
+      if (isLoginEndpoint) {
+        throw new Error(payload?.error || '账号或密码错误');
+      }
       if (!_authExpired) {
         _authExpired = true;
         localStorage.removeItem('auth_token');
