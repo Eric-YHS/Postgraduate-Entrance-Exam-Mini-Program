@@ -144,6 +144,7 @@ function renderStudentsOverview(result) {
           ${student.lastSummaryDate ? `<span class="badge">最近总结 ${escapeHtml(formatDateTime(student.lastSummaryDate).slice(0, 10))}</span>` : ''}
         </div>
       </article>
+      <div class="hidden student-detail-slot" data-detail-for="${student.id}" style="margin-top:-10px;margin-bottom:12px;"></div>
     `;
   }).join('');
 }
@@ -159,15 +160,22 @@ async function loadStudentDetail(studentId) {
 }
 
 function renderStudentDetail(data) {
-  const root = document.getElementById('student-detail-view');
-  root.classList.remove('hidden');
+  // 先关闭所有已展开的详情
+  document.querySelectorAll('.student-detail-slot:not(.hidden)').forEach((el) => {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+  });
+
+  // 找到对应学生的 slot，插入详情
+  const slot = document.querySelector(`.student-detail-slot[data-detail-for="${data.student.id}"]`);
+  if (!slot) return;
+  slot.classList.remove('hidden');
 
   const taskItems = data.todaysTasks.map((task) => `
     <div class="reply-item" style="display:flex;justify-content:space-between;align-items:center;">
       <div>
         <span class="badge badge-brand">${escapeHtml(task.subject)}</span>
         <strong style="margin-left:8px;">${escapeHtml(task.title)}</strong>
-        <span class="muted" style="margin-left:8px;">${escapeHtml(task.startTime)}-${escapeHtml(task.endTime)}</span>
       </div>
       ${task.completed
         ? '<span class="badge badge-success">已完成</span>'
@@ -184,26 +192,25 @@ function renderStudentDetail(data) {
     `).join('')
     : '<p class="muted">暂无总结记录。</p>';
 
-  root.innerHTML = `
-    <div class="paper-card" style="padding:22px;">
+  slot.innerHTML = `
+    <div class="paper-card" style="padding:22px;border-left:3px solid #3b82f6;">
       <div class="card-head" style="margin-bottom:14px;">
         <div>
-          <h2 style="margin:0;">${escapeHtml(data.student.displayName)}</h2>
-          ${data.student.className ? `<span class="badge" style="margin-top:6px;">${escapeHtml(data.student.className)}</span>` : ''}
+          <h3 style="margin:0;">${escapeHtml(data.student.displayName)} · 详细数据</h3>
         </div>
         <div class="inline-actions">
-          <button class="button" data-action="remind-student" data-student-id="${data.student.id}" type="button">提醒未完成任务</button>
-          <button class="ghost-button" data-action="back-to-students" type="button">返回列表</button>
+          <button class="button" data-action="remind-student" data-student-id="${data.student.id}" type="button" style="font-size:12px;padding:4px 12px;">提醒未完成任务</button>
+          <button class="ghost-button" data-action="collapse-student-detail" type="button" style="font-size:12px;padding:4px 12px;">收起</button>
         </div>
       </div>
 
-      <h3 style="margin:16px 0 8px;">今日任务 (${data.todaysTasks.length})</h3>
+      <h4 style="margin:12px 0 6px;">今日任务 (${data.todaysTasks.length})</h4>
       ${data.todaysTasks.length ? `<div class="reply-list" style="gap:8px;">${taskItems}</div>` : '<p class="muted">今日无任务。</p>'}
 
-      <h3 style="margin:16px 0 8px;">最近总结</h3>
+      <h4 style="margin:12px 0 6px;">最近总结</h4>
       ${summaryItems}
 
-      <h3 style="margin:16px 0 8px;">练习统计</h3>
+      <h4 style="margin:12px 0 6px;">练习统计</h4>
       <div class="stat-grid" style="margin-top:8px;">
         <div class="metric-card" style="padding:14px;">
           <span class="muted">总做题</span>
@@ -220,6 +227,9 @@ function renderStudentDetail(data) {
       </div>
     </div>
   `;
+
+  // 滚动到展开位置
+  slot.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function renderTeacherStats() {
@@ -1070,20 +1080,25 @@ function bindTeacherForms() {
 
 function bindStudentManagement() {
   document.getElementById('students-list').addEventListener('click', async (event) => {
+    // 点击学生卡片 → 展开详情
     const card = event.target.closest('[data-action="view-student"]');
     if (card) {
       await loadStudentDetail(Number(card.dataset.studentId));
       return;
     }
-  });
 
-  document.getElementById('student-detail-view').addEventListener('click', async (event) => {
-    const backButton = event.target.closest('[data-action="back-to-students"]');
-    if (backButton && teacherState.studentsOverview) {
-      renderStudentsOverview(teacherState.studentsOverview);
+    // 收起详情
+    const collapseBtn = event.target.closest('[data-action="collapse-student-detail"]');
+    if (collapseBtn) {
+      const slot = collapseBtn.closest('.student-detail-slot');
+      if (slot) {
+        slot.classList.add('hidden');
+        slot.innerHTML = '';
+      }
       return;
     }
 
+    // 提醒学生
     const remindBtn = event.target.closest('[data-action="remind-student"]');
     if (remindBtn) {
       try {
