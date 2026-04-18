@@ -11,8 +11,10 @@ async function loadQuestionFilters() {
     const subjectSel = document.getElementById('qf-subject');
     const typeSel = document.getElementById('qf-type');
     const tagSel = document.getElementById('qf-tag');
+    const textbookSel = document.getElementById('qf-textbook');
     subjectSel.innerHTML = '<option value="">全部科目</option>' + meta.subjects.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     typeSel.innerHTML = '<option value="">全部题型</option>' + meta.types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
+    if (textbookSel) textbookSel.innerHTML = '<option value="">全部书本</option>' + meta.textbooks.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
     tagSel.innerHTML = '<option value="">全部标签</option>' + meta.tags.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
   } catch (_) {}
 }
@@ -22,6 +24,7 @@ async function loadFilteredQuestions() {
   const params = new URLSearchParams();
   if (f.subject) params.set('subject', f.subject);
   if (f.questionType) params.set('questionType', f.questionType);
+  if (f.textbook) params.set('textbook', f.textbook);
   if (f.tagId) params.set('tagId', f.tagId);
   if (f.mode && f.mode !== 'sequential') params.set('mode', f.mode);
   params.set('page', f.page);

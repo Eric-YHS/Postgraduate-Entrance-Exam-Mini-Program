@@ -234,8 +234,8 @@
                   <label>分类</label>
                   <select class="select" name="category">
                     <option value="subject">科目</option>
-                    <option value="difficulty">难度</option>
-                    <option value="topic">知识点</option>
+                    <option value="type">题型</option>
+                    <option value="textbook">书本</option>
                     <option value="custom">自定义</option>
                   </select>
                 </div>
@@ -245,6 +245,42 @@
               </form>
               <div id="tags-list" style="margin-top:12px;"></div>
             </div>
+
+            <div class="paper-card" style="margin-bottom:18px;">
+              <h3>书本管理</h3>
+              <form id="textbook-form" class="form-grid" style="margin-top:12px;">
+                <div class="field">
+                  <label>书本名称</label>
+                  <input class="input" name="name" required placeholder="例如：张宇高等数学18讲" />
+                </div>
+                <div class="field">
+                  <button class="button" type="submit">添加书本</button>
+                </div>
+              </form>
+              <div id="textbooks-list" style="margin-top:12px;"></div>
+            </div>
+
+            <div class="paper-card" style="margin-bottom:18px;">
+              <h3>知识点管理</h3>
+              <p class="muted">知识点以标签形式存储，录入题目时可关联。</p>
+              <form id="knowledge-form" class="form-grid" style="margin-top:12px;">
+                <div class="field">
+                  <label>知识点名称</label>
+                  <input class="input" name="name" required placeholder="例如：极限与连续" />
+                </div>
+                <div class="field">
+                  <label>所属书本</label>
+                  <select class="select" id="knowledge-textbook-select" name="textbook">
+                    <option value="">未指定</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <button class="button" type="submit">添加知识点</button>
+                </div>
+              </form>
+              <div id="knowledge-list" style="margin-top:12px;"></div>
+            </div>
+
             <form id="question-form" class="form-grid">
               <div class="field">
                 <label>题目标题 <span style="color:#ef4444;">*</span></label>
@@ -288,6 +324,18 @@
                   <div class="field">
                     <label>科目</label>
                     <input class="input" name="subject" value="考研英语" />
+                  </div>
+                  <div class="field">
+                    <label>题型</label>
+                    <select class="select" id="question-type-select" name="questionType">
+                      <option value="">未指定</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>书本</label>
+                    <select class="select" id="question-textbook-select" name="textbook">
+                      <option value="">未指定</option>
+                    </select>
                   </div>
                   <div class="field full-span">
                     <label>题目标签</label>

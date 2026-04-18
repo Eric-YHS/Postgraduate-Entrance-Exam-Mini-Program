@@ -4,6 +4,7 @@ const teacherState = {
   studentsOverview: null,
   selectedStudentId: null,
   tags: [],
+  textbooks: [],
   cloudState: { currentParentId: null, path: [], folders: [], items: [] },
   flashcards: []
 };
@@ -84,12 +85,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   initializeDefaultDispatchTime();
   bindTeacherForms();
   bindTagForms();
+  bindTextbookForms();
+  bindKnowledgeForm();
   bindFlashcardForms();
   bindStudentManagement();
   bindPasswordForm();
   await refreshTeacherData();
   await loadStudentsOverview();
   loadTags();
+  loadTextbooks();
   loadFlashcards();
 });
 
@@ -634,6 +638,7 @@ async function loadTags() {
     const result = await fetchJSON('/api/questions/tags');
     teacherState.tags = result.tags;
     renderTagsList();
+    renderKnowledgeList();
     renderQuestionTagCheckboxes();
   } catch (error) {
     // 标签加载失败不阻塞页面
@@ -679,6 +684,125 @@ function bindTagForms() {
       createToast('标签已创建。', 'success');
       form.reset();
       await loadTags();
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+}
+
+// ── 书本管理 ──
+
+async function loadTextbooks() {
+  try {
+    const result = await fetchJSON('/api/questions/textbooks');
+    teacherState.textbooks = result.textbooks;
+    renderTextbooksList();
+    updateTextbookSelects();
+  } catch (_) {}
+  // 同时加载题型下拉
+  try {
+    const meta = await fetchJSON('/api/questions/meta');
+    const typeSel = document.getElementById('question-type-select');
+    if (typeSel && meta.types) {
+      typeSel.innerHTML = '<option value="">未指定</option>' + meta.types.map((t) =>
+        `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`
+      ).join('');
+    }
+  } catch (_) {}
+}
+
+function renderTextbooksList() {
+  const root = document.getElementById('textbooks-list');
+  if (!teacherState.textbooks.length) {
+    root.innerHTML = '<p class="muted">暂无书本，添加后录入题目时可选择。</p>';
+    return;
+  }
+  root.innerHTML = '<div class="inline-actions" style="flex-wrap:wrap;">' + teacherState.textbooks.map((tb) =>
+    `<span class="badge" style="gap:6px;">📘 ${escapeHtml(tb.textbook)} <span class="muted">(${tb.count}题)</span> <button type="button" class="ghost-button" data-delete-textbook="${escapeHtml(tb.textbook)}" style="font-size:11px;padding:2px 8px;">删除</button></span>`
+  ).join('') + '</div>';
+}
+
+function updateTextbookSelects() {
+  const opts = '<option value="">未指定</option>' + teacherState.textbooks.map((tb) =>
+    `<option value="${escapeHtml(tb.textbook)}">${escapeHtml(tb.textbook)}</option>`
+  ).join('');
+  const qSel = document.getElementById('question-textbook-select');
+  if (qSel) qSel.innerHTML = opts;
+  const kSel = document.getElementById('knowledge-textbook-select');
+  if (kSel) kSel.innerHTML = opts;
+}
+
+function bindTextbookForms() {
+  const form = document.getElementById('textbook-form');
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const name = (formData.get('name') || '').trim();
+    if (!name) return;
+    try {
+      await fetchJSON('/api/questions/textbooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      createToast('书本已添加。', 'success');
+      form.reset();
+      await loadTextbooks();
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+
+  // 删除书本（事件委托）
+  document.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-delete-textbook]');
+    if (!btn) return;
+    const name = btn.dataset.deleteTextbook;
+    const ok = await confirmDialog({ title: '删除书本', message: `将"${name}"下所有题目的书本标记清除，题目不会被删除。确定？`, danger: true });
+    if (!ok) return;
+    try {
+      await fetchJSON(`/api/questions/textbooks/${encodeURIComponent(name)}`, { method: 'DELETE' });
+      createToast('书本已删除。', 'success');
+      await loadTextbooks();
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+}
+
+// ── 知识点管理 ──
+
+function renderKnowledgeList() {
+  const root = document.getElementById('knowledge-list');
+  const knowledgeTags = teacherState.tags.filter((t) => t.category === 'textbook' || t.category === 'custom');
+  if (!knowledgeTags.length) {
+    root.innerHTML = '<p class="muted">暂无知识点。</p>';
+    return;
+  }
+  root.innerHTML = '<div class="inline-actions" style="flex-wrap:wrap;">' + knowledgeTags.map((tag) =>
+    `<span class="badge" style="gap:6px;">📌 ${escapeHtml(tag.name)} <span class="muted">(${tag.count}题)</span></span>`
+  ).join('') + '</div>';
+}
+
+function bindKnowledgeForm() {
+  const form = document.getElementById('knowledge-form');
+  if (!form) return;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const formData = new FormData(form);
+    const name = (formData.get('name') || '').trim();
+    if (!name) return;
+    try {
+      await fetchJSON('/api/questions/tags', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, category: 'textbook' })
+      });
+      createToast('知识点已添加。', 'success');
+      form.reset();
+      await loadTags();
+      renderKnowledgeList();
     } catch (error) {
       createToast(error.message, 'error');
     }

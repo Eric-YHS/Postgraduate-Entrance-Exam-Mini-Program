@@ -157,6 +157,32 @@ module.exports = function registerQuestionRoutes(app, shared) {
     response.json({ ok: true });
   });
 
+  // 书本管理
+  app.get('/api/questions/textbooks', requireAuth, (request, response) => {
+    const rows = db.prepare("SELECT textbook, COUNT(*) AS count FROM questions WHERE textbook != '' GROUP BY textbook ORDER BY textbook").all();
+    response.json({ textbooks: rows });
+  });
+
+  app.post('/api/questions/textbooks', requireTeacher, (request, response) => {
+    const name = sanitizeText(request.body.name);
+    if (!name) {
+      response.status(400).json({ error: '书本名称不能为空。' });
+      return;
+    }
+    const existing = db.prepare("SELECT textbook FROM questions WHERE textbook = ? LIMIT 1").get(name);
+    if (existing) {
+      response.status(400).json({ error: '该书本已存在。' });
+      return;
+    }
+    response.json({ ok: true, name });
+  });
+
+  app.delete('/api/questions/textbooks/:name', requireTeacher, (request, response) => {
+    const name = decodeURIComponent(request.params.name);
+    db.prepare("UPDATE questions SET textbook = '' WHERE textbook = ?").run(name);
+    response.json({ ok: true });
+  });
+
   // 题目标签关联
   app.post('/api/questions/:id/tags', requireTeacher, (request, response) => {
     const { tagIds } = request.body;

@@ -10,7 +10,7 @@ const studentState = {
   token: null,
   cloudState: { currentParentId: null, path: [], folders: [], items: [] },
   flashcardState: { dueCards: [], currentIndex: 0, isFlipped: false, stats: { total: 0, again: 0, hard: 0, good: 0, easy: 0 } },
-  questionFilter: { subject: '', questionType: '', tagId: '', page: 1, mode: 'sequential' },
+  questionFilter: { subject: '', questionType: '', tagId: '', textbook: '', page: 1, mode: 'sequential' },
   questionTimers: {},
   focusTimer: { running: false, paused: false, totalSeconds: 1500, remainingSeconds: 1500, intervalId: null, taskName: '' },
   notificationFilter: 'all'
@@ -409,11 +409,14 @@ function bindStudentForms() {
   });
 
   // 题库筛选器
-  ['qf-subject', 'qf-type', 'qf-tag'].forEach((id) => {
-    document.getElementById(id).addEventListener('change', () => {
+  ['qf-subject', 'qf-type', 'qf-tag', 'qf-textbook'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('change', () => {
       studentState.questionFilter.subject = document.getElementById('qf-subject').value;
       studentState.questionFilter.questionType = document.getElementById('qf-type').value;
       studentState.questionFilter.tagId = document.getElementById('qf-tag').value;
+      studentState.questionFilter.textbook = document.getElementById('qf-textbook')?.value || '';
       studentState.questionFilter.page = 1;
       loadFilteredQuestions();
     });
