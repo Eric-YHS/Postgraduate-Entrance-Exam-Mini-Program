@@ -104,6 +104,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // 未读提醒"查看全部"按钮
+  document.getElementById('unread-summary-area').addEventListener('click', (event) => {
+    const scrollBtn = event.target.closest('[data-action="scroll-notifications"]');
+    if (scrollBtn) {
+      const settingsBtn = document.querySelector('.nav-user-dropdown [data-target="student-settings"]');
+      if (settingsBtn) settingsBtn.click();
+      setTimeout(() => {
+        const notifSection = document.getElementById('notification-list');
+        if (notifSection) notifSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 200);
+    }
+  });
+
   document.getElementById('notification-button').addEventListener('click', async () => {
     if ('Notification' in window) {
       const permission = await Notification.requestPermission();
