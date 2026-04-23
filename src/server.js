@@ -271,6 +271,8 @@ function serializeTask(task) {
     weekdays: task.weekdays,
     weekdaysLabel: formatWeekdaysLabel(task.weekdays),
     priority: task.priority || 2,
+    reminderStart: task.reminder_start || '',
+    reminderEnd: task.reminder_end || '',
     createdAt: task.created_at,
     teacherName: task.teacher_name || '',
     students: students.map((student) => ({
@@ -560,6 +562,19 @@ function getStudentBootstrapData(user) {
 function getStudentCoreBootstrapData(user) {
   const today = dayjs().format('YYYY-MM-DD');
   const todaysTasks = getTasksForStudentOnDate(db, user.id, today).map(serializeTask);
+
+  // 附加子任务及完成状态
+  todaysTasks.forEach((task) => {
+    const subtasks = db.prepare('SELECT id, title, sort_order FROM subtasks WHERE task_id = ? ORDER BY sort_order').all(task.id);
+    task.subtasks = subtasks.map((st) => {
+      const comp = db.prepare('SELECT completed_at FROM subtask_completions WHERE subtask_id = ? AND student_id = ? AND task_date = ?').get(st.id, user.id, today);
+      return { id: st.id, title: st.title, completed: !!(comp && comp.completed_at) };
+    });
+    // 附加学生自选提醒时间
+    const reminder = db.prepare('SELECT reminder_time FROM student_reminders WHERE task_id = ? AND student_id = ?').get(task.id, user.id);
+    task.myReminderTime = reminder ? reminder.reminder_time : '';
+  });
+
   const notifications = db
     .prepare('SELECT * FROM notifications WHERE student_id = ? ORDER BY created_at DESC LIMIT 10')
     .all(user.id)
@@ -863,17 +878,17 @@ function getFieldValue(row, keys) {
   return '';
 }
 
-function createTaskRecord({ title, description, subject, startTime, endTime, weekdays, studentIds, teacherId, priority }) {
+function createTaskRecord({ title, description, subject, startTime, endTime, weekdays, studentIds, teacherId, priority, reminderStart, reminderEnd }) {
   const now = dayjs().toISOString();
   const result = db
     .prepare(
       `
         INSERT INTO tasks (
-          title, description, subject, start_time, end_time, weekdays, student_ids, created_by, created_at, priority
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          title, description, subject, start_time, end_time, weekdays, student_ids, created_by, created_at, priority, reminder_start, reminder_end
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `
     )
-    .run(title, description, subject || '考研规划', startTime, endTime, serializeWeekdays(weekdays), serializeStudentIds(studentIds), teacherId, now, priority || 2);
+    .run(title, description, subject || '考研规划', startTime, endTime, serializeWeekdays(weekdays), serializeStudentIds(studentIds), teacherId, now, priority || 2, reminderStart || '', reminderEnd || '');
 
   return result.lastInsertRowid;
 }

@@ -84,6 +84,36 @@ function initializeDatabase() {
       UNIQUE(task_id, student_id, task_date)
     );
 
+    CREATE TABLE IF NOT EXISTS subtasks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS subtask_completions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      subtask_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      task_date TEXT NOT NULL,
+      completed_at TEXT DEFAULT NULL,
+      FOREIGN KEY (subtask_id) REFERENCES subtasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES users(id),
+      UNIQUE(subtask_id, student_id, task_date)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_reminders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      reminder_time TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES users(id),
+      UNIQUE(task_id, student_id)
+    );
+
     CREATE TABLE IF NOT EXISTS notifications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL,
@@ -326,6 +356,8 @@ function initializeDatabase() {
   // 教师评语字段
   try { db.exec('ALTER TABLE summaries ADD COLUMN teacher_comment TEXT DEFAULT NULL'); } catch (_) {}
   try { db.exec('ALTER TABLE summaries ADD COLUMN commented_at TEXT DEFAULT NULL'); } catch (_) {}
+  try { db.exec('ALTER TABLE tasks ADD COLUMN reminder_start TEXT DEFAULT \'\''); } catch (_) {}
+  try { db.exec('ALTER TABLE tasks ADD COLUMN reminder_end TEXT DEFAULT \'\''); } catch (_) {}
 }
 
 function seedUsers() {

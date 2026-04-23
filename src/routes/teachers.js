@@ -212,8 +212,20 @@ module.exports = function registerTeacherRoutes(app, shared) {
       weekdays: normalizedWeekdays,
       studentIds: normalizedStudentIds,
       teacherId: request.currentUser.id,
-      priority: Number(request.body.priority) || 2
+      priority: Number(request.body.priority) || 2,
+      reminderStart: String(request.body.reminderStart || '').trim(),
+      reminderEnd: String(request.body.reminderEnd || '').trim()
     });
+
+    // 创建子任务
+    const subtasks = Array.isArray(request.body.subtasks) ? request.body.subtasks.filter((s) => s && String(s).trim()) : [];
+    if (subtasks.length) {
+      const insertSubtask = db.prepare('INSERT INTO subtasks (task_id, title, sort_order) VALUES (?, ?, ?)');
+      const insertMany = db.transaction((items) => {
+        items.forEach((s, i) => insertSubtask.run(taskId, sanitizeText(String(s).trim()), i));
+      });
+      insertMany(subtasks);
+    }
 
     response.json({ ok: true, id: taskId });
   });
@@ -286,6 +298,15 @@ module.exports = function registerTeacherRoutes(app, shared) {
           teacherId: request.currentUser.id
         });
 
+        // 导入任务拆分为子任务
+        if (descriptionLines.length) {
+          const taskIdResult = db.prepare('SELECT last_insert_rowid() AS id').get();
+          const insertSubtask = db.prepare('INSERT INTO subtasks (task_id, title, sort_order) VALUES (?, ?, ?)');
+          descriptionLines.forEach((line, i) => {
+            insertSubtask.run(taskIdResult.id, line, i);
+          });
+        }
+
         imported += 1;
       });
 
@@ -293,6 +314,21 @@ module.exports = function registerTeacherRoutes(app, shared) {
       fs.unlink(request.file.path, () => {});
       response.json({ ok: true, imported, skipped });
     });
+  });
+
+  // 查看某个任务下学生的提醒时间设置
+  app.get('/api/tasks/:id/student-reminders', requireTeacher, (request, response) => {
+    const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(request.params.id);
+    if (!task) {
+      response.status(404).json({ error: '任务不存在。' });
+      return;
+    }
+    const reminders = db.prepare(
+      `SELECT sr.student_id, sr.reminder_time, sr.created_at, u.display_name
+       FROM student_reminders sr JOIN users u ON u.id = sr.student_id
+       WHERE sr.task_id = ? ORDER BY u.display_name`
+    ).all(request.params.id);
+    response.json({ reminders });
   });
 
   // 教师评语 — 对学生总结写评语

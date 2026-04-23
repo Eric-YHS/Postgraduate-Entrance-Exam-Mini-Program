@@ -88,9 +88,10 @@ function dispatchDueTaskReminders(db, notifyClient, currentDateTime = dayjs()) {
   const dateString = currentDateTime.format('YYYY-MM-DD');
   const currentMinute = currentDateTime.format('HH:mm');
   const currentDayOfWeek = currentDateTime.day();
-  // 仅查询 start_time 匹配当前分钟的任务，避免全量遍历
-  const tasks = db.prepare('SELECT * FROM tasks WHERE start_time = ?').all(currentMinute);
   const notifications = [];
+
+  // 1. 原有逻辑：task.start_time 匹配当前分钟
+  const tasks = db.prepare('SELECT * FROM tasks WHERE start_time = ?').all(currentMinute);
 
   tasks.forEach((taskRow) => {
     const task = normalizeTaskRow(taskRow);
@@ -115,6 +116,44 @@ function dispatchDueTaskReminders(db, notifyClient, currentDateTime = dayjs()) {
         notifications.push(notification);
       }
     });
+  });
+
+  // 2. 新增逻辑：学生自选提醒时间匹配当前分钟
+  const studentReminders = db.prepare('SELECT sr.*, t.title AS task_title, t.subject, u.openid FROM student_reminders sr JOIN tasks t ON t.id = sr.task_id JOIN users u ON u.id = sr.student_id WHERE sr.reminder_time = ?').all(currentMinute);
+
+  studentReminders.forEach((rem) => {
+    const taskRow = db.prepare('SELECT * FROM tasks WHERE id = ?').get(rem.task_id);
+    if (!taskRow) return;
+    const task = normalizeTaskRow(taskRow);
+    if (!task.weekdays.includes(currentDayOfWeek)) return;
+
+    const scheduleKey = `reminder:${rem.student_id}:${rem.task_id}:${dateString}:${rem.reminder_time}`;
+    const notification = createNotification(db, notifyClient, {
+      studentId: rem.student_id,
+      type: '学习提醒',
+      title: `${rem.subject} 专属提醒`,
+      body: `你设定的 ${rem.reminder_time} 提醒：${rem.task_title}`,
+      taskId: rem.task_id,
+      taskDate: dateString,
+      scheduleKey
+    });
+
+    if (notification && rem.openid && process.env.WX_EVENING_TEMPLATE_ID) {
+      sendSubscribeMessage(
+        rem.openid,
+        process.env.WX_EVENING_TEMPLATE_ID,
+        {
+          thing1: { value: `${rem.subject} 专属提醒` },
+          thing2: { value: rem.task_title.slice(0, 20) },
+          date3: { value: dateString }
+        },
+        'pages/home/index'
+      ).catch((err) => { console.error('微信推送失败:', err.message); });
+    }
+
+    if (notification) {
+      notifications.push(notification);
+    }
   });
 
   return notifications;

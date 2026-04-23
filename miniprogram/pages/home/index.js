@@ -46,6 +46,9 @@ Page({
       const summaries = payload.summaries || [];
       const liveSessions = payload.liveSessions || [];
 
+      tasks.forEach(t => {
+        if (t.subtasks) t.subtasksCompleted = t.subtasks.filter(st => st.completed).length;
+      });
       const tasksCompleted = tasks.filter(t => t.completedAt).length;
       const unreadCount = notifications.filter(n => !n.readAt).length;
 
@@ -248,16 +251,36 @@ Page({
     try {
       const url = completed ? `/api/tasks/${id}/uncomplete` : `/api/tasks/${id}/complete`;
       await request({ url, method: 'POST' });
-      const tasks = this.data.tasks.map(t =>
-        t.id === id ? { ...t, completedAt: completed ? null : new Date().toISOString() } : t
-      );
+      await this.refreshTasks();
+    } catch (error) {
+      wx.showToast({ title: error.message, icon: 'none' });
+    }
+  },
+
+  async toggleSubtask(e) {
+    const { id, completed } = e.currentTarget.dataset;
+    try {
+      const url = completed ? `/api/subtasks/${id}/complete` : `/api/subtasks/${id}/complete`;
+      const method = completed ? 'DELETE' : 'POST';
+      await request({ url, method });
+      await this.refreshTasks();
+    } catch (error) {
+      wx.showToast({ title: error.message, icon: 'none' });
+    }
+  },
+
+  async refreshTasks() {
+    try {
+      const res = await request({ url: '/api/student/bootstrap' });
+      const tasks = res.todaysTasks || [];
+      tasks.forEach(t => {
+        if (t.subtasks) t.subtasksCompleted = t.subtasks.filter(st => st.completed).length;
+      });
       const tasksCompleted = tasks.filter(t => t.completedAt).length;
       this.setData({ tasks, tasksCompleted });
       const app = getApp();
       app.updateBootstrapCache({ todaysTasks: tasks });
-    } catch (error) {
-      wx.showToast({ title: error.message, icon: 'none' });
-    }
+    } catch (_) {}
   },
 
   toggleSupplement() {

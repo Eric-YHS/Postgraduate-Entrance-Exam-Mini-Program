@@ -315,16 +315,44 @@ function renderTasks() {
     const timeLabel = isAllDay ? '' : (escapeHtml(task.startTime) + ' - ' + escapeHtml(task.endTime) + ' · ');
     const subject = escapeHtml(task.subject);
     const statusIcon = task.completedAt ? '<span style="color:#16a34a;font-size:18px;">&#10003;</span>' : '<span style="color:#d1d5db;font-size:18px;">&#9675;</span>';
-    const actionBtn = task.completedAt
-      ? '<span class="badge badge-success" style="font-size:11px;">已完成</span>'
-      : '<button class="button" data-action="complete-task" data-task-title="' + title + '" type="button" style="font-size:12px;padding:4px 14px;">完成</button>';
 
+    const hasSubtasks = task.subtasks && task.subtasks.length > 0;
+    let actionBtn = '';
+    if (task.completedAt) {
+      actionBtn = '<span class="badge badge-success" style="font-size:11px;">已完成</span>';
+    } else if (!hasSubtasks) {
+      actionBtn = '<button class="button" data-action="complete-task" data-task-id="' + task.id + '" data-task-title="' + title + '" type="button" style="font-size:12px;padding:4px 14px;">完成</button>';
+    }
+
+    // 子任务列表
+    let subtaskHtml = '';
+    if (hasSubtasks) {
+      const completedCount = task.subtasks.filter((st) => st.completed).length;
+      const totalCount = task.subtasks.length;
+      subtaskHtml += '<div style="margin-top:8px;padding:8px 10px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">';
+      subtaskHtml += '<div style="font-size:11px;color:#64748b;margin-bottom:6px;">子任务进度 ' + completedCount + '/' + totalCount + '</div>';
+      subtaskHtml += task.subtasks.map((st) => {
+        const checkIcon = st.completed ? '☑' : '☐';
+        const textStyle = st.completed ? 'text-decoration:line-through;color:#94a3b8;' : '';
+        return '<div style="display:flex;align-items:center;gap:6px;padding:3px 0;cursor:pointer;" data-action="toggle-subtask" data-subtask-id="' + st.id + '" data-completed="' + st.completed + '"><span style="font-size:15px;">' + checkIcon + '</span><span style="font-size:13px;' + textStyle + '">' + escapeHtml(st.title) + '</span></div>';
+      }).join('');
+      subtaskHtml += '</div>';
+    }
+
+    // 提醒时间
+    let reminderHtml = '';
+    if (task.reminderStart && task.reminderEnd) {
+      if (task.myReminderTime) {
+        reminderHtml = '<div style="font-size:11px;color:#6366f1;margin-top:4px;">⏰ 已设提醒 ' + escapeHtml(task.myReminderTime) + ' <button class="ghost-button" type="button" data-action="set-reminder" data-task-id="' + task.id + '" data-start="' + escapeHtml(task.reminderStart) + '" data-end="' + escapeHtml(task.reminderEnd) + '" style="font-size:10px;padding:2px 6px;">修改</button></div>';
+      } else {
+        reminderHtml = '<button class="ghost-button" type="button" data-action="set-reminder" data-task-id="' + task.id + '" data-start="' + escapeHtml(task.reminderStart) + '" data-end="' + escapeHtml(task.reminderEnd) + '" style="font-size:11px;padding:2px 8px;margin-top:4px;">⏰ 设置提醒 (' + escapeHtml(task.reminderStart) + '-' + escapeHtml(task.reminderEnd) + ')</button>';
+      }
+    }
+
+    // 解析 description 中的额外信息
     const extra = parseTaskExtra(task.description);
     let detailHtml = '';
     if (extra) {
-      if (extra.tasks && extra.tasks.length) {
-        detailHtml += '<div style="margin-top:4px;">' + extra.tasks.map((t) => '<div style="font-size:12px;color:#64748b;">' + escapeHtml(t) + '</div>').join('') + '</div>';
-      }
       if (extra.link) {
         var urlMatch = extra.link.match(/https?:\/\/[^\s<>"']+/);
         var url = urlMatch ? urlMatch[0] : '';
@@ -342,7 +370,7 @@ function renderTasks() {
       }
     }
 
-    return '<article class="task-card"><div class="card-head"><div style="display:flex;align-items:center;gap:10px;">' + statusIcon + '<div><h3 style="margin:0;">' + title + '</h3><p class="muted" style="margin:2px 0 0;">' + timeLabel + subject + '</p>' + detailHtml + '</div></div></div><div class="inline-actions">' + actionBtn + '</div></article>';
+    return '<article class="task-card"><div class="card-head"><div style="display:flex;align-items:center;gap:10px;">' + statusIcon + '<div><h3 style="margin:0;">' + title + '</h3><p class="muted" style="margin:2px 0 0;">' + timeLabel + subject + '</p>' + detailHtml + subtaskHtml + reminderHtml + '</div></div></div><div class="inline-actions">' + actionBtn + '</div></article>';
   }).join('');
 }
 
@@ -632,7 +660,7 @@ function bindStudentForms() {
 
 function bindFocusTimer() {
   // 任务卡片上的"开始专注"按钮 + "完成任务"按钮
-  document.getElementById('student-tasks-list').addEventListener('click', (event) => {
+  document.getElementById('student-tasks-list').addEventListener('click', async (event) => {
     const goSummaryBtn = event.target.closest('[data-action="go-summary"]');
     if (goSummaryBtn) {
       const summaryTab = document.querySelector('[data-target="student-summary"]');
@@ -648,12 +676,55 @@ function bindFocusTimer() {
 
     const completeBtn = event.target.closest('[data-action="complete-task"]');
     if (completeBtn) {
+      const taskId = completeBtn.dataset.taskId;
+      if (taskId) {
+        try {
+          await fetchJSON('/api/tasks/' + taskId + '/complete', { method: 'POST' });
+        } catch (e) { createToast(e.message, 'error'); return; }
+      }
       showCelebration(completeBtn.dataset.taskTitle || '任务完成');
-      completeBtn.disabled = true;
-      completeBtn.textContent = '已完成';
-      completeBtn.style.background = '#dcfce7';
-      completeBtn.style.color = '#16a34a';
-      completeBtn.style.borderColor = '#86efac';
+      await refreshStudentData();
+      return;
+    }
+
+    // 子任务勾选切换
+    const subtaskRow = event.target.closest('[data-action="toggle-subtask"]');
+    if (subtaskRow) {
+      const subtaskId = subtaskRow.dataset.subtaskId;
+      const isCompleted = subtaskRow.dataset.completed === 'true';
+      try {
+        if (isCompleted) {
+          await fetchJSON('/api/subtasks/' + subtaskId + '/complete', { method: 'DELETE' });
+        } else {
+          await fetchJSON('/api/subtasks/' + subtaskId + '/complete', { method: 'POST' });
+        }
+        await refreshStudentData();
+      } catch (e) {
+        createToast(e.message, 'error');
+      }
+      return;
+    }
+
+    // 设置提醒时间
+    const reminderBtn = event.target.closest('[data-action="set-reminder"]');
+    if (reminderBtn) {
+      const taskId = reminderBtn.dataset.taskId;
+      const start = reminderBtn.dataset.start;
+      const end = reminderBtn.dataset.end;
+      const time = prompt('请输入提醒时间（' + start + ' - ' + '之间，格式 HH:mm）:', start);
+      if (!time) return;
+      try {
+        await fetchJSON('/api/tasks/' + taskId + '/remind-time', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ time })
+        });
+        createToast('提醒时间已设为 ' + time, 'success');
+        await refreshStudentData();
+      } catch (e) {
+        createToast(e.message, 'error');
+      }
+      return;
     }
   });
 

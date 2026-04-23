@@ -83,6 +83,24 @@
                     <textarea class="textarea" name="description" placeholder="写清楚完成标准、刷题数量、复盘要求。"></textarea>
                   </div>
                   <div class="field full-span">
+                    <label>子任务（学生可逐个打卡完成，未完成次日自动顺延）</label>
+                    <div id="subtask-list" style="display:flex;flex-direction:column;gap:6px;margin-top:6px;">
+                      <div class="subtask-row" style="display:flex;gap:6px;align-items:center;">
+                        <input class="input" name="subtask" placeholder="例如：背50个单词" style="flex:1;" />
+                        <button class="ghost-button" type="button" data-action="remove-subtask" style="font-size:12px;padding:4px 8px;">删除</button>
+                      </div>
+                    </div>
+                    <button class="ghost-button" type="button" id="add-subtask-btn" style="font-size:12px;padding:4px 12px;margin-top:6px;">+ 添加子任务</button>
+                  </div>
+                  <div class="field">
+                    <label>提醒时间范围（起）</label>
+                    <input class="input" type="time" name="reminderStart" />
+                  </div>
+                  <div class="field">
+                    <label>提醒时间范围（止）</label>
+                    <input class="input" type="time" name="reminderEnd" />
+                  </div>
+                  <div class="field full-span">
                     <label>重复日期</label>
                     <div class="checkbox-wrap" id="weekday-checkboxes"></div>
                   </div>

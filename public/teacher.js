@@ -943,6 +943,28 @@ function renderStore() {
 }
 
 function bindTeacherForms() {
+  // 子任务动态添加/删除
+  const subtaskList = document.getElementById('subtask-list');
+  if (subtaskList) {
+    subtaskList.addEventListener('click', (event) => {
+      const removeBtn = event.target.closest('[data-action="remove-subtask"]');
+      if (removeBtn) {
+        const rows = subtaskList.querySelectorAll('.subtask-row');
+        if (rows.length > 1) removeBtn.closest('.subtask-row').remove();
+      }
+    });
+  }
+  const addSubtaskBtn = document.getElementById('add-subtask-btn');
+  if (addSubtaskBtn) {
+    addSubtaskBtn.addEventListener('click', () => {
+      const row = document.createElement('div');
+      row.className = 'subtask-row';
+      row.style.cssText = 'display:flex;gap:6px;align-items:center;';
+      row.innerHTML = '<input class="input" name="subtask" placeholder="子任务内容" style="flex:1;" /><button class="ghost-button" type="button" data-action="remove-subtask" style="font-size:12px;padding:4px 8px;">删除</button>';
+      subtaskList.appendChild(row);
+    });
+  }
+
   document.getElementById('task-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -950,6 +972,7 @@ function bindTeacherForms() {
     const formData = new FormData(form);
     const weekdays = Array.from(document.querySelectorAll('input[name="weekday"]:checked')).map((item) => item.value);
     const studentIds = Array.from(document.querySelectorAll('input[name="studentId"]:checked')).map((item) => item.value);
+    const subtasks = Array.from(form.querySelectorAll('input[name="subtask"]')).map((el) => el.value.trim()).filter(Boolean);
 
     setButtonLoading(submitBtn, true);
     try {
@@ -964,11 +987,16 @@ function bindTeacherForms() {
           endTime: formData.get('endTime'),
           weekdays,
           studentIds,
-          priority: Number(formData.get('priority')) || 2
+          priority: Number(formData.get('priority')) || 2,
+          subtasks,
+          reminderStart: formData.get('reminderStart') || '',
+          reminderEnd: formData.get('reminderEnd') || ''
         })
       });
       createToast('任务已创建。', 'success');
       form.reset();
+      // 重置子任务列表为只留一个空行
+      document.getElementById('subtask-list').innerHTML = '<div class="subtask-row" style="display:flex;gap:6px;align-items:center;"><input class="input" name="subtask" placeholder="例如：背50个单词" style="flex:1;" /><button class="ghost-button" type="button" data-action="remove-subtask" style="font-size:12px;padding:4px 8px;">删除</button></div>';
       await refreshTeacherData();
     } catch (error) {
       createToast(error.message, 'error');

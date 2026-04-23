@@ -132,6 +132,85 @@ module.exports = function registerStudentRoutes(app, shared) {
     response.json({ ok: true });
   });
 
+  // ── 子任务完成/取消 ──
+
+  app.post('/api/subtasks/:id/complete', requireStudent, (request, response) => {
+    const subtask = db.prepare('SELECT s.*, t.student_ids FROM subtasks s JOIN tasks t ON t.id = s.task_id WHERE s.id = ?').get(request.params.id);
+    if (!subtask) {
+      response.status(404).json({ error: '子任务不存在。' });
+      return;
+    }
+    const taskStudents = safeJsonParse(subtask.student_ids, []);
+    if (!taskStudents.includes(request.currentUser.id)) {
+      response.status(403).json({ error: '无权操作此子任务。' });
+      return;
+    }
+    const today = dayjs().format('YYYY-MM-DD');
+    const now = dayjs().toISOString();
+    db.prepare(
+      `INSERT INTO subtask_completions (subtask_id, student_id, task_date, completed_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(subtask_id, student_id, task_date) DO UPDATE SET completed_at = excluded.completed_at`
+    ).run(request.params.id, request.currentUser.id, today, now);
+
+    // 检查是否所有子任务都已完成，自动标记父任务完成
+    const allSubtasks = db.prepare('SELECT id FROM subtasks WHERE task_id = ?').all(subtask.task_id);
+    if (allSubtasks.length) {
+      const allDone = allSubtasks.every((st) => {
+        const comp = db.prepare('SELECT completed_at FROM subtask_completions WHERE subtask_id = ? AND student_id = ? AND task_date = ?').get(st.id, request.currentUser.id, today);
+        return comp && comp.completed_at;
+      });
+      if (allDone) {
+        db.prepare(
+          `INSERT INTO task_completions (task_id, student_id, task_date, completed_at) VALUES (?, ?, ?, ?)
+           ON CONFLICT(task_id, student_id, task_date) DO UPDATE SET completed_at = excluded.completed_at`
+        ).run(subtask.task_id, request.currentUser.id, today, now);
+      }
+    }
+    response.json({ ok: true });
+  });
+
+  app.delete('/api/subtasks/:id/complete', requireStudent, (request, response) => {
+    const subtask = db.prepare('SELECT s.*, t.student_ids FROM subtasks s JOIN tasks t ON t.id = s.task_id WHERE s.id = ?').get(request.params.id);
+    if (!subtask) {
+      response.status(404).json({ error: '子任务不存在。' });
+      return;
+    }
+    const today = dayjs().format('YYYY-MM-DD');
+    db.prepare('DELETE FROM subtask_completions WHERE subtask_id = ? AND student_id = ? AND task_date = ?').run(request.params.id, request.currentUser.id, today);
+    // 取消子任务完成时，也取消父任务完成状态
+    db.prepare('UPDATE task_completions SET completed_at = NULL WHERE task_id = ? AND student_id = ? AND task_date = ?').run(subtask.task_id, request.currentUser.id, today);
+    response.json({ ok: true });
+  });
+
+  // ── 学生设置提醒时间 ──
+
+  app.post('/api/tasks/:id/remind-time', requireStudent, (request, response) => {
+    const { time } = request.body;
+    const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
+    if (!timeRegex.test(String(time))) {
+      response.status(400).json({ error: '时间格式无效，请使用 HH:mm。' });
+      return;
+    }
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(request.params.id);
+    if (!task) {
+      response.status(404).json({ error: '任务不存在。' });
+      return;
+    }
+    // 验证时间在老师设定的范围内
+    if (task.reminder_start && task.reminder_end) {
+      if (time < task.reminder_start || time > task.reminder_end) {
+        response.status(400).json({ error: `提醒时间需在 ${task.reminder_start} - ${task.reminder_end} 之间。` });
+        return;
+      }
+    }
+    const now = dayjs().toISOString();
+    db.prepare(
+      `INSERT INTO student_reminders (task_id, student_id, reminder_time, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(task_id, student_id) DO UPDATE SET reminder_time = excluded.reminder_time, created_at = excluded.created_at`
+    ).run(request.params.id, request.currentUser.id, String(time).trim(), now);
+    response.json({ ok: true });
+  });
+
   // 通知已读
   app.post('/api/notifications/:id/read', requireStudent, (request, response) => {
     const result = db.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND student_id = ?').run(dayjs().toISOString(), request.params.id, request.currentUser.id);
