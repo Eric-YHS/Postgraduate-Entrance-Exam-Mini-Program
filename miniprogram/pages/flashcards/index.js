@@ -1,4 +1,5 @@
 const { request } = require('../../utils/request');
+const { ensureLogin } = require('../../utils/auth');
 
 Page({
   data: {
@@ -21,6 +22,7 @@ Page({
   },
 
   onLoad() {
+    if (!ensureLogin()) return;
     this.loadGoal();
     this.loadDueCards();
   },

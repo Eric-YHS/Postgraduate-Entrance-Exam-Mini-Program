@@ -16,6 +16,7 @@ Page({
   },
 
   onLoad() {
+    if (!ensureLogin()) return;
     this.loadHotKeywords();
     this.loadSearchHistory();
   },

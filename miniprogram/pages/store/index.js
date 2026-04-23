@@ -59,7 +59,7 @@ Page({
       const data = await request({ url: '/api/cart' });
       const cartItems = (data.items || []).map(item => ({
         ...item,
-        imageUrl: resolveUrl(item.image_path)
+        imageUrl: resolveUrl(item.imagePath || item.image_path)
       }));
       this.setData({
         cartItems,
@@ -159,9 +159,11 @@ Page({
 
   async saveAddress() {
     const { name, phone, address } = this.data.newAddress;
-    if (!name.trim() || !address.trim()) {
-      wx.showToast({ title: '请填写姓名和地址', icon: 'none' });
-      return;
+    if (!name.trim() || !phone.trim() || !address.trim()) {
+      wx.showToast({ title: '请填写完整信息', icon: 'none' }); return;
+    }
+    if (!/^1[3-9]\d{9}$/.test(phone.trim())) {
+      wx.showToast({ title: '手机号格式不正确', icon: 'none' }); return;
     }
     this.setData({ savingAddress: true });
     try {

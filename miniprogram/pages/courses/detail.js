@@ -78,7 +78,7 @@ Page({
     const courseId = this.data.courseId;
     if (!courseId) return;
 
-    this.data._lastSave = now;
+    this._lastSave = now;
     const percent = Math.round(currentTime / duration * 100);
     this.setData({ progressPercent: percent, progressText: `${percent}% 已观看` });
 

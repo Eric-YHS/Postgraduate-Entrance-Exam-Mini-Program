@@ -68,3 +68,13 @@
   gap: 16rpx;
   margin-top: 16rpx;
 }
+
+/* 通用按钮样式 */
+.retry-btn {
+  background: #2563eb;
+  color: #fff;
+  border-radius: 999px;
+  padding: 12px 24px;
+  font-weight: 600;
+  border: none;
+}

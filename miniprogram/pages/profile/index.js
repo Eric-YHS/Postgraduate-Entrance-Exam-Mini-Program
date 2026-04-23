@@ -251,7 +251,7 @@ Page({
     try {
       await request({ url: `/api/notifications/${id}/read`, method: 'POST' });
       const notifications = this.data.notifications.map(n =>
-        n.id === id ? { ...n, read_at: new Date().toISOString() } : n
+        n.id === id ? { ...n, readAt: new Date().toISOString() } : n
       );
       this.setData({ notifications, unreadCount: Math.max(0, this.data.unreadCount - 1) });
     } catch (e) {
@@ -262,7 +262,7 @@ Page({
   async markAllRead() {
     try {
       await request({ url: '/api/notifications/read-all', method: 'POST' });
-      const notifications = this.data.notifications.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() }));
+      const notifications = this.data.notifications.map(n => ({ ...n, readAt: n.readAt || new Date().toISOString() }));
       this.setData({ notifications, unreadCount: 0 });
       wx.showToast({ title: '已全部标记已读', icon: 'success' });
     } catch (e) {

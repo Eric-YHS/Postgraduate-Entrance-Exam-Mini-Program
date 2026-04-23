@@ -211,7 +211,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
   app.get('/api/questions', requireAuth, (request, response) => {
     const { subject, questionType, textbook, tagId, page, limit, mode } = request.query;
     const maxLimit = Math.min(Number(limit) || 20, 100);
-    const skip = (Number(page) || 1 - 1) * maxLimit;
+    const pageNum = Number(page) || 1;
+    const skip = (pageNum - 1) * maxLimit;
 
     let query = `
       SELECT questions.*, users.display_name AS creator_name
@@ -291,7 +292,10 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 收藏题目列表
   app.get('/api/questions/favorites', requireStudent, (request, response) => {
-    const { subject } = request.query;
+    const { subject, page, limit } = request.query;
+    const maxLimit = Math.min(Number(limit) || 20, 100);
+    const pageNum = Number(page) || 1;
+    const skip = (pageNum - 1) * maxLimit;
     let query = `
       SELECT questions.*, question_favorites.created_at AS favorited_at
       FROM question_favorites
@@ -300,7 +304,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
     `;
     const params = [request.currentUser.id];
     if (subject) { query += ' AND questions.subject = ?'; params.push(subject); }
-    query += ' ORDER BY question_favorites.created_at DESC LIMIT 100';
+    query += ` ORDER BY question_favorites.created_at DESC LIMIT ${maxLimit} OFFSET ${skip}`;
 
     const rows = db.prepare(query).all(...params);
     const questions = rows.map((r) => {
@@ -316,16 +320,19 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 错题列��（增加 subject 筛选）
   app.get('/api/practice/wrong', requireStudent, (request, response) => {
-    const { subject } = request.query;
+    const { subject, page, limit } = request.query;
+    const maxLimit = Math.min(Number(limit) || 20, 100);
+    const pageNum = Number(page) || 1;
+    const skip = (pageNum - 1) * maxLimit;
     let query = `
-      SELECT questions.*, practice_records.selected_answer, practice_records.created_at AS answered_at
+      SELECT questions.*, MAX(practice_records.selected_answer) AS selected_answer, MAX(practice_records.created_at) AS answered_at
       FROM practice_records
       JOIN questions ON questions.id = practice_records.question_id
       WHERE practice_records.student_id = ? AND practice_records.is_correct = 0
     `;
     const params = [request.currentUser.id];
     if (subject) { query += ' AND questions.subject = ?'; params.push(subject); }
-    query += ' ORDER BY practice_records.created_at DESC LIMIT 50';
+    query += ` GROUP BY questions.id ORDER BY MAX(practice_records.created_at) DESC LIMIT ${maxLimit} OFFSET ${skip}`;
 
     const rows = db.prepare(query).all(...params);
     response.json({

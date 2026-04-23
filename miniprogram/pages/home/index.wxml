@@ -128,8 +128,11 @@
                   </block>
                 </view>
                 <!-- 提醒时间 -->
-                <view wx:if="{{item.reminderStart && item.reminderEnd}}" style="margin-top:6rpx;font-size:22rpx;color:#6366f1;">
-                  ⏰ {{item.myReminderTime ? '已设提醒 ' + item.myReminderTime : '可设提醒 ' + item.reminderStart + '-' + item.reminderEnd}}
+                <view wx:if="{{item.reminderStart && item.reminderEnd}}" style="margin-top:6rpx;font-size:22rpx;color:#6366f1;display:flex;align-items:center;gap:8rpx;">
+                  <text>⏰</text>
+                  <picker mode="time" value="{{item.myReminderTime || item.reminderStart}}" start="{{item.reminderStart}}" end="{{item.reminderEnd}}" bindchange="setReminder" data-task-id="{{item.id}}">
+                    <view style="color:#6366f1;text-decoration:underline;">{{item.myReminderTime ? '已设 ' + item.myReminderTime + '（点击修改）' : '点击设置提醒（' + item.reminderStart + '-' + item.reminderEnd + '）'}}</view>
+                  </picker>
                 </view>
               </view>
             </view>
@@ -209,7 +212,7 @@
                   </view>
                 </view>
                 <view style="margin-top: 16rpx;">
-                  <button class="primary-button" data-id="{{item.id}}}" bindtap="openLive"
+                  <button class="primary-button" data-id="{{item.id}}" bindtap="openLive"
                           disabled="{{item.status === 'ended'}}">
                     {{item.status === 'live' ? '进入' : (item.status === 'ended' ? '已结束' : '预约')}}
                   </button>

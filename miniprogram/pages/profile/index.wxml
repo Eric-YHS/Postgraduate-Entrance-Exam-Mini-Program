@@ -252,10 +252,10 @@
       </view>
       <view class="list" wx:if="{{notifications.length}}" style="margin-top:12rpx;">
         <block wx:for="{{notifications}}" wx:key="id">
-          <view class="list-item" style="{{!item.read_at ? 'border-left:6rpx solid #2563eb;background:#eff6ff;' : ''}}" bindtap="markNotificationRead" data-id="{{item.id}}">
+          <view class="list-item" style="{{!item.readAt ? 'border-left:6rpx solid #2563eb;background:#eff6ff;' : ''}}" bindtap="markNotificationRead" data-id="{{item.id}}">
             <view style="display:flex;justify-content:space-between;align-items:center;">
               <view class="item-title">{{item.title}}</view>
-              <text wx:if="{{!item.read_at}}" style="font-size:20rpx;color:#2563eb;background:#dbeafe;padding:2rpx 10rpx;border-radius:8rpx;">未读</text>
+              <text wx:if="{{!item.readAt}}" style="font-size:20rpx;color:#2563eb;background:#dbeafe;padding:2rpx 10rpx;border-radius:8rpx;">未读</text>
             </view>
             <view class="item-meta">{{item.body}}</view>
           </view>

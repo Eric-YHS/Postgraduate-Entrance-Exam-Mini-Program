@@ -280,11 +280,26 @@ Page({
       this.setData({ tasks, tasksCompleted });
       const app = getApp();
       app.updateBootstrapCache({ todaysTasks: tasks });
-    } catch (_) {}
+    } catch (_) {
+      wx.showToast({ title: '刷新失败，请下拉重试', icon: 'none' });
+    }
   },
 
   toggleSupplement() {
     this.setData({ expandSupplement: !this.data.expandSupplement });
+  },
+
+  async setReminder(e) {
+    const { taskId } = e.currentTarget.dataset;
+    const time = e.detail.value;
+    if (!time || !taskId) return;
+    try {
+      await request({ url: `/api/tasks/${taskId}/remind-time`, method: 'POST', data: { time } });
+      wx.showToast({ title: '提醒已设为 ' + time, icon: 'success' });
+      await this.refreshTasks();
+    } catch (error) {
+      wx.showToast({ title: error.message, icon: 'none' });
+    }
   },
 
   scrollToTasks() {

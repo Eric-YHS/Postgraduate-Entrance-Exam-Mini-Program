@@ -5,6 +5,7 @@ Page({
   data: {
     loading: true,
     questions: [],
+    currentQuestion: {},
     currentIndex: 0,
     selectedAnswer: '',
     showAnalysis: false,
@@ -109,6 +110,7 @@ Page({
         sessionAccuracy: 0,
         sessionComplete: false
       });
+      this._updateCurrentQuestion();
       this.startSession();
     } catch (error) {
       this.setData({ loading: false });
@@ -120,8 +122,9 @@ Page({
     // 单题模式下不自动加载更多，改为手动翻页加载
   },
 
-  get currentQuestion() {
-    return this.data.questions[this.data.currentIndex] || {};
+  _updateCurrentQuestion() {
+    const q = this.data.questions[this.data.currentIndex] || {};
+    this.setData({ currentQuestion: q });
   },
 
   // 筛选交互
@@ -216,9 +219,27 @@ Page({
         showAnalysis: false,
         currentResult: null
       });
+      this._updateCurrentQuestion();
     } else {
       // 所有题目完成
       this.setData({ sessionComplete: true });
+    }
+  },
+
+  async addNote(e) {
+    const qId = e.currentTarget.dataset.id;
+    const res = await new Promise((resolve) => {
+      wx.showModal({ title: '添加笔记', content: '请输入你的理解或笔记', editable: true, placeholderText: '记录你对这道题的理解', success: resolve });
+    });
+    if (!res.confirm || !res.content || !res.content.trim()) return;
+    try {
+      await request({ url: `/api/questions/${qId}/notes`, method: 'POST', data: { content: res.content.trim() } });
+      wx.showToast({ title: '笔记已保存', icon: 'success' });
+      const questions = this.data.questions;
+      const idx = questions.findIndex(q => q.id === qId);
+      if (idx >= 0) { questions[idx].myNote = res.content.trim(); this.setData({ questions }); }
+    } catch (error) {
+      wx.showToast({ title: error.message, icon: 'none' });
     }
   },
 
@@ -266,6 +287,7 @@ Page({
         sessionAnswered: 0,
         sessionComplete: false
       });
+      this._updateCurrentQuestion();
       this.startSession();
     } catch (error) {
       this.setData({ loading: false });
