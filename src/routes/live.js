@@ -149,7 +149,7 @@ module.exports = function registerLiveRoutes(app, shared) {
     if (!userId) { response.status(400).json({ error: '参数错误。' }); return; }
     const duration = Number(request.body.durationMinutes) || 10;
     const mutedUntil = dayjs().add(duration, 'minute').toISOString();
-    db.prepare('UPDATE users SET openid = ? WHERE id = ?').run('MUTED:' + mutedUntil, userId);
+    db.prepare('UPDATE users SET muted_until = ? WHERE id = ?').run(mutedUntil, userId);
     response.json({ ok: true, mutedUntil });
   });
 

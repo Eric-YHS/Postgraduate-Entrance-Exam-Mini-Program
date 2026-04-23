@@ -61,6 +61,26 @@
     actionText="{{selectedSubject ? '查看全部' : ''}}"
     bind:action="clearFilter" />
 
+  <!-- 文件夹导航 -->
+  <view class="section" wx:if="{{!loading && folders.length}}" style="margin-top: 16rpx;">
+    <!-- 面包屑 -->
+    <view style="display:flex;align-items:center;gap:8rpx;flex-wrap:wrap;margin-bottom:16rpx;" wx:if="{{folderPath.length}}">
+      <text style="font-size:26rpx;color:#2563eb;" bindtap="enterFolder" data-id="">全部</text>
+      <block wx:for="{{folderPath}}" wx:key="id">
+        <text style="font-size:24rpx;color:#94a3b8;">›</text>
+        <text style="font-size:26rpx;color:#2563eb;" bindtap="enterFolder" data-id="{{item.id}}">{{item.name}}</text>
+      </block>
+    </view>
+    <view style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280rpx,1fr));gap:16rpx;">
+      <view wx:for="{{folders}}" wx:key="id"
+            style="background:#f0f9ff;border-radius:16rpx;padding:24rpx;display:flex;align-items:center;gap:16rpx;"
+            bindtap="enterFolder" data-id="{{item.id}}">
+        <text style="font-size:40rpx;">📁</text>
+        <text style="font-size:28rpx;font-weight:600;">{{item.name}}</text>
+      </view>
+    </view>
+  </view>
+
   <!-- 课程卡片列表 -->
   <view class="course-grid" wx:if="{{!loading && !loadError && filteredCourses.length}}">
     <view class="course-card" wx:for="{{filteredCourses}}" wx:key="id"

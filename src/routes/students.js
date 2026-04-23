@@ -223,14 +223,14 @@ module.exports = function registerStudentRoutes(app, shared) {
 
   // 全部标记已读
   app.post('/api/notifications/read-all', requireAuth, (request, response) => {
-    db.prepare('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL')
+    db.prepare('UPDATE notifications SET read_at = ? WHERE student_id = ? AND read_at IS NULL')
       .run(dayjs().toISOString(), request.currentUser.id);
     response.json({ ok: true });
   });
 
   // 未读通知数
   app.get('/api/notifications/unread-count', requireAuth, (request, response) => {
-    const count = db.prepare('SELECT COUNT(*) AS count FROM notifications WHERE user_id = ? AND read_at IS NULL')
+    const count = db.prepare('SELECT COUNT(*) AS count FROM notifications WHERE student_id = ? AND read_at IS NULL')
       .get(request.currentUser.id).count;
     response.json({ count });
   });

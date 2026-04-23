@@ -260,7 +260,7 @@ Page({
   async toggleSubtask(e) {
     const { id, completed } = e.currentTarget.dataset;
     try {
-      const url = completed ? `/api/subtasks/${id}/complete` : `/api/subtasks/${id}/complete`;
+      const url = completed ? `/api/subtasks/${id}/uncomplete` : `/api/subtasks/${id}/complete`;
       const method = completed ? 'DELETE' : 'POST';
       await request({ url, method });
       await this.refreshTasks();

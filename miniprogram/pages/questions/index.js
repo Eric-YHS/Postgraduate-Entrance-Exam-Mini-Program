@@ -285,6 +285,7 @@ Page({
         currentResult: null,
         sessionCorrect: 0,
         sessionAnswered: 0,
+        sessionAccuracy: 0,
         sessionComplete: false
       });
       this._updateCurrentQuestion();

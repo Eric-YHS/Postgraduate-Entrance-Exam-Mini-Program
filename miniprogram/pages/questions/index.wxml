@@ -129,6 +129,12 @@
           <view class="result-analysis" wx:if="{{currentResult.analysisText}}">{{currentResult.analysisText}}</view>
         </view>
 
+        <!-- 笔记 -->
+        <view style="margin-top:16rpx;display:flex;align-items:center;gap:12rpx;">
+          <button class="ghost-button" size="mini" bindtap="addNote" data-id="{{currentQuestion.id}}" style="font-size:24rpx;">📝 添加笔记</button>
+          <text wx:if="{{currentQuestion.myNote}}" style="font-size:24rpx;color:#64748b;">{{currentQuestion.myNote}}</text>
+        </view>
+
         <!-- 下一题按钮 -->
         <button class="primary-button" bindtap="nextQuestion" style="margin-top: 24rpx;">
           {{currentIndex < questions.length - 1 ? '下一题' : '完成练习'}}

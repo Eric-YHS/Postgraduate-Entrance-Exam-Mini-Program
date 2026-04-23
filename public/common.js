@@ -192,6 +192,8 @@ async function ensureAuth(requiredRole) {
   // 持久化 token，确保后续请求能自动携带
   if (data.token) {
     localStorage.setItem('auth_token', data.token);
+  } else if (queryToken) {
+    localStorage.setItem('auth_token', queryToken);
   }
 
   // BUG-006: 验证后从 URL 中移除 token

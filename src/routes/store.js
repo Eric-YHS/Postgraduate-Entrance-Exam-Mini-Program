@@ -92,8 +92,14 @@ module.exports = function registerStoreRoutes(app, shared) {
       response.status(400).json({ error: '无效的订单状态。' });
       return;
     }
-    const result = db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, request.params.id);
-    if (!result.changes) { response.status(404).json({ error: '订单不存在。' }); return; }
+    // BUG-09: 取消订单时回滚库存 + BUG-14: 校验教师所有权
+    const order = db.prepare('SELECT o.*, p.created_by FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ?').get(request.params.id);
+    if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
+    if (order.created_by !== request.currentUser.id) { response.status(403).json({ error: '无权操作此订单。' }); return; }
+    if (status === 'cancelled' && order.status !== 'cancelled') {
+      db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id);
+    }
+    db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, request.params.id);
     response.json({ ok: true });
   });
 

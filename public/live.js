@@ -97,9 +97,13 @@ function connectLiveSocket() {
     liveState.reconnectTimer = null;
   }
   liveState.reconnectAttempts = (liveState.reconnectAttempts || 0) + 1;
-  if (liveState.reconnectAttempts > 10) return;
+  if (liveState.reconnectAttempts > 10) {
+    setTimeout(() => { liveState.reconnectAttempts = 0; }, 30000);
+    return;
+  }
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const socket = new WebSocket(`${protocol}://${location.host}?token=${encodeURIComponent(liveState.token)}`);
+  const token = liveState.token || localStorage.getItem('auth_token') || '';
+  const socket = new WebSocket(`${protocol}://${location.host}?token=${encodeURIComponent(token)}`);
   if (liveState.socket) {
     liveState.socket.close();
   }

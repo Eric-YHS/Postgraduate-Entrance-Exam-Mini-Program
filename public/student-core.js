@@ -898,9 +898,13 @@ function connectStudentSocket() {
     studentState.reconnectTimer = null;
   }
   studentState.reconnectAttempts = (studentState.reconnectAttempts || 0) + 1;
-  if (studentState.reconnectAttempts > 10) return;
+  if (studentState.reconnectAttempts > 10) {
+    setTimeout(() => { studentState.reconnectAttempts = 0; }, 30000);
+    return;
+  }
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  const socket = new WebSocket(`${protocol}://${location.host}?token=${encodeURIComponent(studentState.token)}`);
+  const token = studentState.token || localStorage.getItem('auth_token') || '';
+  const socket = new WebSocket(`${protocol}://${location.host}?token=${encodeURIComponent(token)}`);
   if (studentState.socket) {
     studentState.socket.close();
   }

@@ -17,7 +17,7 @@ module.exports = function registerForumRoutes(app, shared) {
     const params = [];
     const conditions = [];
     if (category) { conditions.push('forum_topics.category = ?'); params.push(category); }
-    if (search) { conditions.push('(forum_topics.title LIKE ? OR forum_topics.content LIKE ?)'); params.push('%' + search + '%', '%' + search + '%'); }
+    if (search) { const esc = String(search).replace(/[%_]/g, '\\$&'); conditions.push('(forum_topics.title LIKE ? OR forum_topics.content LIKE ?)'); params.push('%' + esc + '%', '%' + esc + '%'); }
     if (hashtag) { conditions.push('forum_topics.hashtags LIKE ?'); params.push('%"' + hashtag + '"%'); }
     if (conditions.length) { query += ' WHERE ' + conditions.join(' AND '); }
 
@@ -59,6 +59,8 @@ module.exports = function registerForumRoutes(app, shared) {
         response.status(400).json({ error: '帖子标题和内容都不能为空。' });
         return;
       }
+      if (title.length > 200) { response.status(400).json({ error: '标题不能超过200字。' }); return; }
+      if (content.length > 10000) { response.status(400).json({ error: '内容不能超过10000字。' }); return; }
 
       const imagePaths = (request.files?.images || []).map((f) => toPublicPath(f.path));
       const videoPaths = (request.files?.videos || []).map((f) => toPublicPath(f.path));

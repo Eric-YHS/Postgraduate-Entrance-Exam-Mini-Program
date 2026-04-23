@@ -579,6 +579,11 @@ function migrate() {
     db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
   }
 
+  // 禁言时间戳字段
+  if (!columns.some(c => c.name === 'muted_until')) {
+    db.exec('ALTER TABLE users ADD COLUMN muted_until TEXT DEFAULT NULL');
+  }
+
   // 升级 users 表 role 约束以支持 admin 角色
   const currentSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
   if (currentSchema && !currentSchema.sql.includes("'admin'")) {

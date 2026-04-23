@@ -92,10 +92,12 @@ function renderRecentSessions(sessions) {
 }
 
 function renderTagAccuracy(tags) {
-  // 找到 stats-subject-accuracy 后面的位置来渲染标签分析
   const root = document.getElementById('stats-subject-accuracy');
   if (!root) return;
   if (!tags || !tags.length) return;
+  // 清除旧的标签分析区域
+  const old = document.getElementById('tag-accuracy-section');
+  if (old) old.remove();
   const tagHtml = `
     <h3 style="margin-top:24px;margin-bottom:12px;">知识点薄弱分析</h3>
     <p class="muted" style="font-size:12px;margin-bottom:10px;">按标签维度统计正确率，排在最前面的知识点最需要加强。</p>
@@ -114,7 +116,7 @@ function renderTagAccuracy(tags) {
       `;
     }).join('')}
   `;
-  root.insertAdjacentHTML('afterend', tagHtml);
+  root.insertAdjacentHTML('afterend', `<div id="tag-accuracy-section">${tagHtml}</div>`);
 }
 
 // ── 周报/月报 ──

@@ -9,13 +9,17 @@ Page({
     filteredCourses: [],
     recentCourses: [],
     selectedSubject: '',
-    subjects: []
+    subjects: [],
+    folders: [],
+    folderPath: [],
+    currentParentId: null
   },
 
   onShow() {
     if (!ensureLogin()) return;
     this.loadCourses();
     this.loadRecent();
+    this.loadFolders(null);
   },
 
   onPullDownRefresh() {
@@ -63,6 +67,25 @@ Page({
       ? this.data.courses.filter(c => c.subject === selectedSubject)
       : this.data.courses;
     this.setData({ selectedSubject, filteredCourses });
+  },
+
+  async loadFolders(parentId) {
+    try {
+      const params = parentId ? `?parentId=${parentId}` : '';
+      const res = await request({ url: `/api/folders${params}` });
+      this.setData({
+        folders: res.folders || [],
+        currentParentId: parentId,
+        folderPath: res.path || []
+      });
+    } catch (_) {
+      this.setData({ folders: [], folderPath: [] });
+    }
+  },
+
+  enterFolder(e) {
+    const id = e.currentTarget.dataset.id || null;
+    this.loadFolders(id);
   },
 
   clearFilter() {

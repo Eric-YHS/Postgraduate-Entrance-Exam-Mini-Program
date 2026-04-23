@@ -51,7 +51,7 @@ Page({
       const topicId = result.topic?.id || result.id;
       if (topicId) {
         setTimeout(() => {
-          wx.navigateTo({ url: `/pages/forum/detail?id=${topicId}` });
+          wx.redirectTo({ url: `/pages/forum/detail?id=${topicId}` });
         }, 800);
       } else {
         setTimeout(() => wx.navigateBack(), 800);

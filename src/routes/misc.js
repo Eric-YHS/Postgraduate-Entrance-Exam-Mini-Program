@@ -620,9 +620,11 @@ module.exports = function registerMiscRoutes(app, shared) {
   app.post('/api/ai/tutor', requireAuth, async (request, response) => {
     const { question, context } = request.body;
     if (!question) { return response.status(400).json({ error: '请输入问题。' }); }
+    const safeQuestion = String(question).slice(0, 2000);
+    const safeContext = context ? String(context).slice(0, 2000) : '';
 
     const systemPrompt = '你是一个专业的考研辅导老师，擅长各科目答疑。请给出详细的解题思路和知识点讲解。';
-    const userPrompt = context ? ('背景：' + context + '\n\n问题：' + question) : question;
+    const userPrompt = safeContext ? ('背景：' + safeContext + '\n\n问题：' + safeQuestion) : safeQuestion;
 
     try {
       const aiResponse = await shared.callAI(systemPrompt, userPrompt);
@@ -639,9 +641,10 @@ module.exports = function registerMiscRoutes(app, shared) {
   app.post('/api/ai/essay-grade', requireAuth, async (request, response) => {
     const { essay, type } = request.body;
     if (!essay) { return response.status(400).json({ error: '请输入作文。' }); }
+    const safeEssay = String(essay).slice(0, 5000);
 
     const systemPrompt = '你是一个考研英语作文批改专家。请评分（满分20分），指出语法错误，给出修改建议和范文参考。';
-    const userPrompt = '作文类型：' + (type || '未知') + '\n\n' + essay;
+    const userPrompt = '作文类型：' + (type || '未知') + '\n\n' + safeEssay;
 
     try {
       const aiResponse = await shared.callAI(systemPrompt, userPrompt);

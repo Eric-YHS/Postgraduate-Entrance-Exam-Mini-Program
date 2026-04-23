@@ -7,7 +7,8 @@ module.exports = function registerSearchRoutes(app, shared) {
   app.get('/api/search', requireAuth, (request, response) => {
     const keyword = String(request.query.q || '').trim();
     if (!keyword || keyword.length < 2) { response.json({ topics: [], questions: [], items: [] }); return; }
-    const like = '%' + keyword + '%';
+    const escaped = keyword.replace(/[%_]/g, '\\$&');
+    const like = '%' + escaped + '%';
 
     const topics = db.prepare(
       `SELECT forum_topics.id, forum_topics.title, forum_topics.created_at, users.display_name AS author_name

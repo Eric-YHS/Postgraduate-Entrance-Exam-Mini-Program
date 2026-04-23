@@ -1027,7 +1027,8 @@ function requireAdmin(request, response, next) {
 
 function fetchJson(url) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, (res) => {
+    const lib = url.startsWith('https') ? https : http;
+    const req = lib.get(url, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
@@ -1266,6 +1267,12 @@ wss.on('connection', (socket, request) => {
     if (socket._chatTimestamps.length >= 3) return;
 
     if (payload.type === 'live-chat' && payload.liveId && payload.content) {
+      // 禁言检查
+      const mutedUser = db.prepare('SELECT muted_until FROM users WHERE id = ?').get(socket.userId);
+      if (mutedUser && mutedUser.muted_until && dayjs(mutedUser.muted_until).isAfter(dayjs())) {
+        socket.send(JSON.stringify({ type: 'error', message: '你已被禁言' }));
+        return;
+      }
       socket._chatTimestamps.push(now);
       // BUG-302: 聊天消息长度限制
       const rawContent = String(payload.content).slice(0, 500);

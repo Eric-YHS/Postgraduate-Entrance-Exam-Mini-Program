@@ -18,7 +18,9 @@ Page({
     selectedAddressId: null,
     // 新地址表单
     showAddressForm: false,
-    newAddress: { name: '', phone: '', address: '', isDefault: false }
+    newAddress: { name: '', phone: '', address: '', isDefault: false },
+    submitting: false,
+    savingAddress: false
   },
 
   onShow() {

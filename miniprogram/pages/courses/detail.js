@@ -73,7 +73,7 @@ Page({
     if (!duration) return;
 
     const now = Date.now();
-    if (this.data._lastSave && now - this.data._lastSave < 30000) return;
+    if (this._lastSave && now - this._lastSave < 30000) return;
 
     const courseId = this.data.courseId;
     if (!courseId) return;
