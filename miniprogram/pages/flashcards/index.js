@@ -12,7 +12,12 @@ Page({
     goal: { daily_new: 20, daily_review: 50 },
     dailyDone: 0,
     showGoalPanel: false,
-    goalForm: { dailyNew: 20, dailyReview: 50 }
+    goalForm: { dailyNew: 20, dailyReview: 50 },
+    cardMode: 'flip',
+    quizOptions: [],
+    quizSelected: '',
+    quizAnswered: false,
+    quizCorrectAnswer: ''
   },
 
   onLoad() {
@@ -47,7 +52,11 @@ Page({
         currentIndex: 0,
         isFlipped: false,
         finished: false,
-        stats: { total: 0, again: 0, hard: 0, good: 0, easy: 0 }
+        stats: { total: 0, again: 0, hard: 0, good: 0, easy: 0 },
+        quizOptions: [],
+        quizSelected: '',
+        quizAnswered: false,
+        quizCorrectAnswer: ''
       });
     } catch (error) {
       this.setData({ loading: false });
@@ -87,8 +96,13 @@ Page({
         isFlipped: false,
         finished,
         stats: newStats,
-        dailyDone: this.data.dailyDone + 1
+        dailyDone: this.data.dailyDone + 1,
+        quizSelected: '',
+        quizAnswered: false
       });
+      if (!finished && this.data.cardMode === 'quiz') {
+        this.generateQuizOptions();
+      }
     } catch (error) {
       wx.showToast({ title: error.message || '提交失败', icon: 'none' });
     }
@@ -96,6 +110,63 @@ Page({
 
   restart() {
     this.loadDueCards();
+  },
+
+  switchMode(e) {
+    const mode = e.currentTarget.dataset.mode;
+    this.setData({
+      cardMode: mode,
+      isFlipped: false,
+      quizSelected: '',
+      quizAnswered: false
+    });
+    if (mode === 'quiz' && this.data.cards.length && !this.data.finished) {
+      this.generateQuizOptions();
+    }
+  },
+
+  generateQuizOptions() {
+    const { cards, currentIndex } = this.data;
+    const card = cards[currentIndex];
+    if (!card) return;
+    const correctAnswer = card.backContent;
+    const others = cards.filter((_, i) => i !== currentIndex);
+    const shuffled = others.sort(() => Math.random() - 0.5);
+    const distractors = [];
+    for (let i = 0; i < shuffled.length && distractors.length < 3; i++) {
+      if (shuffled[i].backContent && shuffled[i].backContent !== correctAnswer) {
+        distractors.push(shuffled[i].backContent);
+      }
+    }
+    while (distractors.length < 3) distractors.push('—');
+    const options = [correctAnswer, ...distractors]
+      .sort(() => Math.random() - 0.5)
+      .map(text => ({ text, border: '#e5e7eb', bg: '#fff' }));
+    this.setData({ quizOptions: options, quizCorrectAnswer: correctAnswer });
+  },
+
+  selectQuizOption(e) {
+    if (this.data.quizAnswered) return;
+    const idx = e.currentTarget.dataset.index;
+    const selected = this.data.quizOptions[idx].text;
+    const options = this.data.quizOptions.map((opt, i) => ({
+      ...opt,
+      border: i === idx ? '#2563eb' : '#e5e7eb',
+      bg: i === idx ? '#eff6ff' : '#fff'
+    }));
+    this.setData({ quizSelected: selected, quizOptions: options });
+  },
+
+  submitQuizAnswer() {
+    if (!this.data.quizSelected || this.data.quizAnswered) return;
+    const { quizSelected, quizCorrectAnswer, quizOptions } = this.data;
+    const isCorrect = quizSelected === quizCorrectAnswer;
+    const options = quizOptions.map(opt => {
+      if (opt.text === quizCorrectAnswer) return { ...opt, border: '#16a34a', bg: '#f0fdf4' };
+      if (opt.text === quizSelected && !isCorrect) return { ...opt, border: '#dc2626', bg: '#fef2f2' };
+      return opt;
+    });
+    this.setData({ quizOptions: options, quizAnswered: true });
   },
 
   // 目标设置

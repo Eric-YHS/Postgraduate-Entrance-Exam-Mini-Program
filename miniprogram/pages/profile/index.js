@@ -22,14 +22,30 @@ Page({
     // 错误状态
     dashboardError: '',
     // Tab
-    activeTab: 'dashboard'
+    activeTab: 'dashboard',
+    reportPeriod: 'weekly',
+    reportOffset: 0,
+    reportData: null,
+    passwordForm: { oldPassword: '', newPassword: '', confirmPassword: '' },
+    changingPassword: false,
+    calendarYear: 2026,
+    calendarMonthIdx: 0,
+    unreadCount: 0
   },
 
   onShow() {
     if (!ensureLogin()) return;
-    this.setData({ user: getUser(), baseUrl: getBaseUrl() });
+    const now = new Date();
+    this.setData({
+      user: getUser(),
+      baseUrl: getBaseUrl(),
+      calendarYear: now.getFullYear(),
+      calendarMonthIdx: now.getMonth()
+    });
     this.loadDashboard();
     this.loadOriginalData();
+    this.loadReport();
+    this.loadUnreadCount();
   },
 
   onPullDownRefresh() {
@@ -41,7 +57,7 @@ Page({
     try {
       const [statsData, streakData, achievementsData] = await Promise.all([
         request({ url: '/api/practice/stats/detailed' }),
-        request({ url: '/api/study/streak' }),
+        request({ url: `/api/study/streak?year=${this.data.calendarYear}&month=${this.data.calendarMonthIdx + 1}` }),
         request({ url: '/api/achievements' })
       ]);
 
@@ -76,11 +92,12 @@ Page({
   },
 
   buildCalendarGrid() {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth();
+    const year = this.data.calendarYear;
+    const month = this.data.calendarMonthIdx;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     const firstDayOfWeek = new Date(year, month, 1).getDay();
+    const now = new Date();
+    const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
     const today = now.getDate();
     const activeDays = new Set(this.data.calendarDays.map(d => {
       const parts = d.date.split('-');
@@ -97,7 +114,7 @@ Page({
       grid.push({
         day: d,
         active: activeDays.has(d),
-        today: d === today
+        today: isCurrentMonth && d === today
       });
     }
 
@@ -150,6 +167,129 @@ Page({
 
   goForum() {
     wx.switchTab({ url: '/pages/forum/index' });
+  },
+
+  // 日历月份切换
+  prevMonth() {
+    let { calendarYear, calendarMonthIdx } = this.data;
+    calendarMonthIdx--;
+    if (calendarMonthIdx < 0) { calendarMonthIdx = 11; calendarYear--; }
+    this.setData({ calendarYear, calendarMonthIdx });
+    this.loadCalendarData(calendarYear, calendarMonthIdx + 1);
+  },
+
+  nextMonth() {
+    let { calendarYear, calendarMonthIdx } = this.data;
+    calendarMonthIdx++;
+    if (calendarMonthIdx > 11) { calendarMonthIdx = 0; calendarYear++; }
+    this.setData({ calendarYear, calendarMonthIdx });
+    this.loadCalendarData(calendarYear, calendarMonthIdx + 1);
+  },
+
+  async loadCalendarData(year, month) {
+    try {
+      const streakData = await request({ url: `/api/study/streak?year=${year}&month=${month}` });
+      this.setData({ streak: streakData, calendarDays: streakData.calendarDays || [] });
+      this.buildCalendarGrid();
+    } catch (e) {
+      console.warn('日历数据加载失败:', e);
+    }
+  },
+
+  // 学习报告
+  async loadReport() {
+    const { reportPeriod, reportOffset } = this.data;
+    try {
+      const url = reportPeriod === 'weekly'
+        ? `/api/practice/stats/weekly?weekOffset=${reportOffset}`
+        : `/api/practice/stats/monthly?monthOffset=${reportOffset}`;
+      const data = await request({ url });
+      if (data.subjectBreakdown) {
+        data.subjectBreakdown = data.subjectBreakdown.map(s => ({
+          ...s,
+          accuracy: s.total > 0 ? Math.round(s.correct / s.total * 100) : 0
+        }));
+      }
+      if (reportPeriod === 'weekly') {
+        data.periodLabel = `${data.weekStart} ~ ${data.weekEnd}`;
+      } else {
+        data.periodLabel = data.monthLabel || `${data.monthStart || ''} ~ ${data.monthEnd || ''}`;
+      }
+      this.setData({ reportData: data });
+    } catch (e) {
+      console.warn('报告加载失败:', e);
+    }
+  },
+
+  toggleReportPeriod(e) {
+    const period = e.currentTarget.dataset.period;
+    this.setData({ reportPeriod: period, reportOffset: 0 });
+    this.loadReport();
+  },
+
+  prevReport() {
+    this.setData({ reportOffset: this.data.reportOffset + 1 });
+    this.loadReport();
+  },
+
+  nextReport() {
+    const offset = Math.max(0, this.data.reportOffset - 1);
+    this.setData({ reportOffset: offset });
+    this.loadReport();
+  },
+
+  // 通知管理
+  async loadUnreadCount() {
+    try {
+      const data = await request({ url: '/api/notifications/unread-count' });
+      this.setData({ unreadCount: data.count || 0 });
+    } catch (e) { /* ignore */ }
+  },
+
+  async markNotificationRead(e) {
+    const id = e.currentTarget.dataset.id;
+    try {
+      await request({ url: `/api/notifications/${id}/read`, method: 'POST' });
+      const notifications = this.data.notifications.map(n =>
+        n.id === id ? { ...n, read_at: new Date().toISOString() } : n
+      );
+      this.setData({ notifications, unreadCount: Math.max(0, this.data.unreadCount - 1) });
+    } catch (e) {
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    }
+  },
+
+  async markAllRead() {
+    try {
+      await request({ url: '/api/notifications/read-all', method: 'POST' });
+      const notifications = this.data.notifications.map(n => ({ ...n, read_at: n.read_at || new Date().toISOString() }));
+      this.setData({ notifications, unreadCount: 0 });
+      wx.showToast({ title: '已全部标记已读', icon: 'success' });
+    } catch (e) {
+      wx.showToast({ title: '操作失败', icon: 'none' });
+    }
+  },
+
+  // 修改密码
+  handlePasswordInput(e) {
+    const field = e.currentTarget.dataset.field;
+    this.setData({ [`passwordForm.${field}`]: e.detail.value });
+  },
+
+  async changePassword() {
+    const { oldPassword, newPassword, confirmPassword } = this.data.passwordForm;
+    if (!oldPassword || !newPassword) { wx.showToast({ title: '请填写完整', icon: 'none' }); return; }
+    if (newPassword !== confirmPassword) { wx.showToast({ title: '两次密码不一致', icon: 'none' }); return; }
+    if (newPassword.length < 6) { wx.showToast({ title: '密码至少6位', icon: 'none' }); return; }
+    this.setData({ changingPassword: true });
+    try {
+      await request({ url: '/api/auth/change-password', method: 'POST', data: { oldPassword, newPassword } });
+      wx.showToast({ title: '密码修改成功', icon: 'success' });
+      this.setData({ passwordForm: { oldPassword: '', newPassword: '', confirmPassword: '' } });
+    } catch (e) {
+      wx.showToast({ title: e.message || '修改失败', icon: 'none' });
+    }
+    this.setData({ changingPassword: false });
   },
 
   // 格式化时间

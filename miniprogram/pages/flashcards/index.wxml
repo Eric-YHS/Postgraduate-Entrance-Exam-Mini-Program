@@ -16,6 +16,14 @@
   </block>
 
   <block wx:if="{{!loading}}">
+  <!-- 模式切换 -->
+  <view style="display:flex;gap:16rpx;margin-bottom:24rpx;">
+    <view style="flex:1;text-align:center;padding:16rpx;border-radius:16rpx;{{cardMode === 'flip' ? 'background:#2563eb;color:#fff;' : 'background:#f3f4f6;color:#64748b;'}}" bindtap="switchMode" data-mode="flip">翻转模式</view>
+    <view style="flex:1;text-align:center;padding:16rpx;border-radius:16rpx;{{cardMode === 'quiz' ? 'background:#2563eb;color:#fff;' : 'background:#f3f4f6;color:#64748b;'}}" bindtap="switchMode" data-mode="quiz">选择题模式</view>
+  </view>
+
+  <!-- 翻转模式 -->
+  <block wx:if="{{cardMode === 'flip'}}">
   <!-- 每日进度条 -->
   <view style="background: #fff; border-radius: 22px; padding: 20px; margin-bottom: 16px; box-shadow: 0 4px 16px rgba(0,0,0,0.05);">
     <view style="display: flex; justify-content: space-between; align-items: center;">
@@ -109,4 +117,70 @@
     </view>
   </view>
   </block>
+
+  <!-- 选择题模式 -->
+  <block wx:elif="{{cardMode === 'quiz'}}">
+  <!-- 空状态 -->
+  <view wx:if="{{!cards.length}}" class="empty-state">
+    <view style="text-align: center;">
+      <text style="font-size: 48px; display: block; margin-bottom: 12px;">🎉</text>
+      <text style="color: #64748b; font-size: 16px;">今天没有需要复习的卡片</text>
+      <text style="color: #94a3b8; font-size: 13px; display: block; margin-top: 8px;">做得很棒！明天再来吧</text>
+    </view>
+  </view>
+
+  <!-- 完成结果 -->
+  <view wx:elif="{{finished}}" class="result-card">
+    <text style="font-size: 48px; display: block; margin-bottom: 12px;">🎊</text>
+    <text class="result-title">复习完成！</text>
+    <text class="result-info">本次复习 {{stats.total}} 张卡片</text>
+    <view class="result-stats">
+      <text class="stat-badge again">忘记 {{stats.again}}</text>
+      <text class="stat-badge hard">困难 {{stats.hard}}</text>
+      <text class="stat-badge good">良好 {{stats.good}}</text>
+      <text class="stat-badge easy">简单 {{stats.easy}}</text>
+    </view>
+    <button class="retry-btn" bindtap="restart">再复习一轮</button>
+  </view>
+
+  <!-- 选择题卡片 -->
+  <view wx:else class="card-area">
+    <view class="progress-bar">
+      <text>{{currentIndex + 1}} / {{cards.length}}</text>
+    </view>
+    <view style="height: 4px; background: #e5e7eb; border-radius: 2px; margin: 8px 0 20px; overflow: hidden;">
+      <view style="height: 100%; width: {{((currentIndex + 1) / cards.length) * 100}}%; background: #2563eb; border-radius: 2px; transition: width 0.3s;"></view>
+    </view>
+
+    <view class="flashcard">
+      <view class="card-face front">
+        <text class="card-subject">{{cards[currentIndex].subject || '通用'}}</text>
+        <text class="card-title">{{cards[currentIndex].title}}</text>
+        <text class="card-content">{{cards[currentIndex].frontContent}}</text>
+      </view>
+    </view>
+
+    <!-- 选项 -->
+    <view style="margin-top: 24rpx;">
+      <view wx:for="{{quizOptions}}" wx:key="index"
+            style="padding:24rpx;margin-bottom:16rpx;border-radius:16rpx;border:2rpx solid {{item.border}};background:{{item.bg}};transition:all 0.2s;"
+            bindtap="selectQuizOption" data-index="{{index}}">
+        <text style="font-size:30rpx;">{{item.text}}</text>
+      </view>
+    </view>
+
+    <!-- 确认答案按钮 -->
+    <button wx:if="{{!quizAnswered && quizSelected}}" class="retry-btn" style="margin-top:16rpx;" bindtap="submitQuizAnswer">确认答案</button>
+
+    <!-- 答题后评分 -->
+    <view wx:if="{{quizAnswered}}" class="rating-buttons">
+      <button class="rating-btn again" bindtap="rateCard" data-quality="0">忘记了</button>
+      <button class="rating-btn hard" bindtap="rateCard" data-quality="1">困难</button>
+      <button class="rating-btn good" bindtap="rateCard" data-quality="2">良好</button>
+      <button class="rating-btn easy" bindtap="rateCard" data-quality="3">简单</button>
+    </view>
+  </view>
+  </block>
+
+</block>
 </view>

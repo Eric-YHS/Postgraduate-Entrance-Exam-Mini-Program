@@ -93,7 +93,11 @@
     <block wx:if="{{!loading && !dashboardError}}">
     <!-- 月度热力图 -->
     <view class="section animate-in">
-      <view class="section-title">{{calendarMonth}} 学习日历</view>
+      <view style="display:flex;justify-content:space-between;align-items:center;">
+        <text style="font-size:28rpx;color:#2563eb;" bindtap="prevMonth">‹ 上月</text>
+        <text class="section-title" style="margin:0;">{{calendarMonth}} 学习日历</text>
+        <text style="font-size:28rpx;color:#2563eb;" bindtap="nextMonth">下月 ›</text>
+      </view>
       <view class="calendar-header">
         <text>日</text>
         <text>一</text>
@@ -147,6 +151,54 @@
         </view>
       </view>
     </view>
+
+    <!-- 学习报告 -->
+    <view class="section animate-in">
+      <view style="display:flex;justify-content:space-between;align-items:center;">
+        <view class="section-title" style="margin:0;">学习报告</view>
+        <view style="display:flex;gap:8rpx;">
+          <view class="filter-pill {{reportPeriod === 'weekly' ? 'active' : ''}}" bindtap="toggleReportPeriod" data-period="weekly">周报</view>
+          <view class="filter-pill {{reportPeriod === 'monthly' ? 'active' : ''}}" bindtap="toggleReportPeriod" data-period="monthly">月报</view>
+        </view>
+      </view>
+      <view wx:if="{{reportData}}" style="margin-top:16rpx;">
+        <view style="display:flex;justify-content:space-between;align-items:center;">
+          <text style="font-size:26rpx;color:#2563eb;" bindtap="prevReport">‹ 上一{{reportPeriod === 'weekly' ? '周' : '月'}}</text>
+          <text style="font-size:24rpx;color:#6b7280;">{{reportData.periodLabel}}</text>
+          <text style="font-size:26rpx;color:#2563eb;" bindtap="nextReport">下一{{reportPeriod === 'weekly' ? '周' : '月'}} ›</text>
+        </view>
+        <view style="display:grid;grid-template-columns:repeat(3,1fr);gap:16rpx;margin-top:16rpx;">
+          <view style="text-align:center;padding:20rpx;background:#f9fafb;border-radius:16rpx;">
+            <text style="font-size:36rpx;font-weight:700;color:#2563eb;">{{reportData.totalQuestions}}</text>
+            <text style="display:block;font-size:22rpx;color:#6b7280;">做题数</text>
+          </view>
+          <view style="text-align:center;padding:20rpx;background:#f9fafb;border-radius:16rpx;">
+            <text style="font-size:36rpx;font-weight:700;color:#16a34a;">{{reportData.accuracy}}%</text>
+            <text style="display:block;font-size:22rpx;color:#6b7280;">正确率</text>
+          </view>
+          <view style="text-align:center;padding:20rpx;background:#f9fafb;border-radius:16rpx;">
+            <text style="font-size:36rpx;font-weight:700;color:#7c3aed;">{{reportData.totalTimeMinutes}}</text>
+            <text style="display:block;font-size:22rpx;color:#6b7280;">分钟</text>
+          </view>
+        </view>
+        <view style="display:grid;grid-template-columns:repeat(2,1fr);gap:16rpx;margin-top:12rpx;">
+          <view style="text-align:center;padding:16rpx;background:#f9fafb;border-radius:12rpx;">
+            <text style="font-size:28rpx;font-weight:600;">{{reportData.flashcardCount || 0}}</text>
+            <text style="display:block;font-size:20rpx;color:#6b7280;">词汇卡</text>
+          </view>
+          <view style="text-align:center;padding:16rpx;background:#f9fafb;border-radius:12rpx;">
+            <text style="font-size:28rpx;font-weight:600;">{{reportData.focusSessions || 0}}</text>
+            <text style="display:block;font-size:20rpx;color:#6b7280;">练习次数</text>
+          </view>
+        </view>
+        <view wx:if="{{reportData.subjectBreakdown.length}}" style="margin-top:16rpx;">
+          <view wx:for="{{reportData.subjectBreakdown}}" wx:key="subject" style="display:flex;justify-content:space-between;align-items:center;padding:12rpx 0;border-bottom:1rpx solid #f3f4f6;">
+            <text style="font-size:26rpx;">{{item.subject}}</text>
+            <text style="font-size:24rpx;color:#6b7280;">{{item.correct}}/{{item.total}} ({{item.accuracy}}%)</text>
+          </view>
+        </view>
+      </view>
+    </view>
     </block>
   </block>
   <block wx:if="{{activeTab === 'achievements'}}">
@@ -194,11 +246,17 @@
 
     <!-- 提醒记录 -->
     <view class="section animate-in">
-      <view class="section-title">提醒记录</view>
-      <view class="list" wx:if="{{notifications.length}}">
+      <view style="display:flex;justify-content:space-between;align-items:center;">
+        <view class="section-title" style="margin:0;">提醒记录</view>
+        <text wx:if="{{unreadCount > 0}}" style="font-size:24rpx;color:#2563eb;" bindtap="markAllRead">全部已读 ({{unreadCount}})</text>
+      </view>
+      <view class="list" wx:if="{{notifications.length}}" style="margin-top:12rpx;">
         <block wx:for="{{notifications}}" wx:key="id">
-          <view class="list-item">
-            <view class="item-title">{{item.title}}</view>
+          <view class="list-item" style="{{!item.read_at ? 'border-left:6rpx solid #2563eb;background:#eff6ff;' : ''}}" bindtap="markNotificationRead" data-id="{{item.id}}">
+            <view style="display:flex;justify-content:space-between;align-items:center;">
+              <view class="item-title">{{item.title}}</view>
+              <text wx:if="{{!item.read_at}}" style="font-size:20rpx;color:#2563eb;background:#dbeafe;padding:2rpx 10rpx;border-radius:8rpx;">未读</text>
+            </view>
             <view class="item-meta">{{item.body}}</view>
           </view>
         </block>
@@ -223,6 +281,31 @@
         </view>
       </view>
       <button class="danger-button" bindtap="handleLogout" style="margin-top: 24rpx;">退出登录</button>
+    </view>
+
+    <!-- 修改密码 -->
+    <view class="section animate-in">
+      <view class="section-title">修改密码</view>
+      <view style="margin-top: 16rpx;">
+        <view style="margin-bottom: 16rpx;">
+          <text style="font-size:26rpx;color:#64748b;display:block;margin-bottom:6rpx;">当前密码</text>
+          <input type="password" password value="{{passwordForm.oldPassword}}" data-field="oldPassword" bindinput="handlePasswordInput"
+                 style="border:2rpx solid #e5e7eb;border-radius:12rpx;padding:16rpx;font-size:28rpx;" />
+        </view>
+        <view style="margin-bottom: 16rpx;">
+          <text style="font-size:26rpx;color:#64748b;display:block;margin-bottom:6rpx;">新密码</text>
+          <input type="password" password value="{{passwordForm.newPassword}}" data-field="newPassword" bindinput="handlePasswordInput"
+                 style="border:2rpx solid #e5e7eb;border-radius:12rpx;padding:16rpx;font-size:28rpx;" />
+        </view>
+        <view style="margin-bottom: 16rpx;">
+          <text style="font-size:26rpx;color:#64748b;display:block;margin-bottom:6rpx;">确认新密码</text>
+          <input type="password" password value="{{passwordForm.confirmPassword}}" data-field="confirmPassword" bindinput="handlePasswordInput"
+                 style="border:2rpx solid #e5e7eb;border-radius:12rpx;padding:16rpx;font-size:28rpx;" />
+        </view>
+        <button class="retry-btn" bindtap="changePassword" disabled="{{changingPassword}}" style="margin-top:8rpx;">
+          {{changingPassword ? '修改中...' : '修改密码'}}
+        </button>
+      </view>
     </view>
   </block>
 </view>
