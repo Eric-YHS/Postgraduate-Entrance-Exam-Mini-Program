@@ -300,10 +300,10 @@ module.exports = function registerTeacherRoutes(app, shared) {
 
         // 导入任务拆分为子任务
         if (descriptionLines.length) {
-          const taskIdResult = db.prepare('SELECT last_insert_rowid() AS id').get();
+          const newTaskId = taskId;
           const insertSubtask = db.prepare('INSERT INTO subtasks (task_id, title, sort_order) VALUES (?, ?, ?)');
           descriptionLines.forEach((line, i) => {
-            insertSubtask.run(taskIdResult.id, line, i);
+            insertSubtask.run(newTaskId, line, i);
           });
         }
 

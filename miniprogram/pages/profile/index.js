@@ -288,8 +288,9 @@ Page({
       this.setData({ passwordForm: { oldPassword: '', newPassword: '', confirmPassword: '' } });
     } catch (e) {
       wx.showToast({ title: e.message || '修改失败', icon: 'none' });
+    } finally {
+      this.setData({ changingPassword: false });
     }
-    this.setData({ changingPassword: false });
   },
 
   // 格式化时间

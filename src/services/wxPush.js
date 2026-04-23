@@ -2,6 +2,7 @@ const https = require('https');
 const config = require('../config');
 
 let accessTokenCache = { token: null, expiresAt: 0 };
+let tokenInFlight = null;
 
 /**
  * 获取微信 access_token（带缓存）
@@ -16,19 +17,23 @@ function getAccessToken() {
     return Promise.resolve(accessTokenCache.token);
   }
 
-  return new Promise((resolve, reject) => {
+  if (tokenInFlight) return tokenInFlight;
+
+  tokenInFlight = new Promise((resolve, reject) => {
     const url = `https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid=${config.wxAppId}&secret=${config.wxAppSecret}`;
     https.get(url, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {
+        tokenInFlight = null;
         try {
           const data = JSON.parse(Buffer.concat(chunks).toString());
           if (data.access_token) {
-            const bufferSeconds = Math.min(300, Math.max(60, data.expires_in * 0.1));
+            const expiresIn = data.expires_in || 7200;
+            const bufferSeconds = Math.min(300, Math.max(60, expiresIn * 0.1));
             accessTokenCache = {
               token: data.access_token,
-              expiresAt: now + (data.expires_in - bufferSeconds) * 1000
+              expiresAt: now + (expiresIn - bufferSeconds) * 1000
             };
             resolve(data.access_token);
           } else {
@@ -39,9 +44,10 @@ function getAccessToken() {
           reject(error);
         }
       });
-      response.on('error', reject);
-    }).on('error', reject);
+      response.on('error', (err) => { tokenInFlight = null; reject(err); });
+    }).on('error', (err) => { tokenInFlight = null; reject(err); });
   });
+  return tokenInFlight;
 }
 
 /**
@@ -81,6 +87,10 @@ async function sendSubscribeMessage(openid, templateId, data, page) {
       response.on('end', () => {
         try {
           const result = JSON.parse(Buffer.concat(chunks).toString());
+          // 检查错误码，token 相关错误时清除缓存
+          if (result.errcode === 42001 || result.errcode === 40001 || result.errcode === 40014) {
+            accessTokenCache = { token: null, expiresAt: 0 };
+          }
           resolve(result);
         } catch (error) {
           reject(error);

@@ -57,8 +57,9 @@ Page({
         setTimeout(() => wx.navigateBack(), 800);
       }
     } catch (error) {
-      this.setData({ submitting: false });
       wx.showToast({ title: error.message, icon: 'none' });
+    } finally {
+      this.setData({ submitting: false });
     }
   },
 

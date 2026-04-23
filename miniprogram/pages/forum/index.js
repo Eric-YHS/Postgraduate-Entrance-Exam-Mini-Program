@@ -42,7 +42,7 @@ Page({
       const newTopics = (data.topics || []).map(t => ({
         ...t,
         imageUrls: (t.imagePaths || []).map(p => resolveUrl(p)).filter(Boolean),
-        replyCount: (t.replies || []).length
+        replyCount: t.replyCount || (t.replies || []).length
       }));
       const topics = reset ? newTopics : this.data.topics.concat(newTopics);
       this.setData({

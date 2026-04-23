@@ -59,6 +59,10 @@ function initializeDatabase() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time);
+    CREATE INDEX IF NOT EXISTS idx_practice_records_student ON practice_records(student_id);
+    CREATE INDEX IF NOT EXISTS idx_task_completions_student ON task_completions(student_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_student ON notifications(student_id);
+    CREATE INDEX IF NOT EXISTS idx_forum_replies_topic ON forum_replies(topic_id);
 
     CREATE TABLE IF NOT EXISTS summaries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1056,7 +1060,8 @@ function migrate() {
       content TEXT DEFAULT '',
       created_at TEXT NOT NULL,
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-      FOREIGN KEY (student_id) REFERENCES users(id)
+      FOREIGN KEY (student_id) REFERENCES users(id),
+      UNIQUE(product_id, student_id)
     );
   `);
 
@@ -1310,7 +1315,8 @@ function migrate() {
       target_days INTEGER NOT NULL DEFAULT 7,
       completed_dates TEXT DEFAULT '[]',
       created_at TEXT NOT NULL,
-      FOREIGN KEY (student_id) REFERENCES users(id)
+      FOREIGN KEY (student_id) REFERENCES users(id),
+      UNIQUE(student_id, habit_name)
     );
   `);
 

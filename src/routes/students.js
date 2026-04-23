@@ -175,6 +175,11 @@ module.exports = function registerStudentRoutes(app, shared) {
       response.status(404).json({ error: '子任务不存在。' });
       return;
     }
+    const taskStudents = safeJsonParse(subtask.student_ids, []);
+    if (!taskStudents.includes(request.currentUser.id)) {
+      response.status(403).json({ error: '无权操作此子任务。' });
+      return;
+    }
     const today = dayjs().format('YYYY-MM-DD');
     db.prepare('DELETE FROM subtask_completions WHERE subtask_id = ? AND student_id = ? AND task_date = ?').run(request.params.id, request.currentUser.id, today);
     // 取消子任务完成时，也取消父任务完成状态

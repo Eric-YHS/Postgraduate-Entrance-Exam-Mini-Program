@@ -115,6 +115,17 @@ function dispatchDueTaskReminders(db, notifyClient, currentDateTime = dayjs()) {
       if (notification) {
         notifications.push(notification);
       }
+
+      // I-16: 发送微信订阅消息推送
+      const student = db.prepare('SELECT openid FROM users WHERE id = ?').get(studentId);
+      if (student && student.openid && typeof notifyClient === 'object' && notifyClient.sendSubscribeMessage) {
+        notifyClient.sendSubscribeMessage(
+          student.openid,
+          'task_reminder',
+          { thing1: { value: task.title }, thing2: { value: task.start_time } },
+          'pages/home/index'
+        ).catch(() => {});
+      }
     });
   });
 
@@ -208,21 +219,25 @@ function dispatchEveningReminder(db, notifyClient) {
 function startScheduler(db, notifyClient) {
   // BUG-305: 整点检查日常提醒（07:00 日报、22:00 晚间提醒）
   cron.schedule('0 * * * *', () => {
-    const now = dayjs();
-
-    if (now.format('HH:mm') === '07:00') {
-      dispatchDailyDigest(db, notifyClient, now);
-    }
-
-    // 每晚 22:00 发送未完成任务提醒
-    if (now.format('HH:mm') === '22:00') {
-      dispatchEveningReminder(db, notifyClient);
+    try {
+      const now = dayjs();
+      if (now.format('HH:mm') === '07:00') {
+        dispatchDailyDigest(db, notifyClient, now);
+      }
+      if (now.format('HH:mm') === '22:00') {
+        dispatchEveningReminder(db, notifyClient);
+      }
+    } catch (err) {
+      console.error('整点 cron 错误:', err);
     }
   });
 
-  // 每分钟检查任务到期提醒（需精确到分钟）
   cron.schedule('* * * * *', () => {
-    dispatchDueTaskReminders(db, notifyClient, dayjs());
+    try {
+      dispatchDueTaskReminders(db, notifyClient, dayjs());
+    } catch (err) {
+      console.error('分钟 cron 错误:', err);
+    }
   });
 }
 

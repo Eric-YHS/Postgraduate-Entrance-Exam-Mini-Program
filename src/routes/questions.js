@@ -178,7 +178,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
   });
 
   app.delete('/api/questions/textbooks/:name', requireTeacher, (request, response) => {
-    const name = decodeURIComponent(request.params.name);
+    let name;
+    try { name = decodeURIComponent(request.params.name); } catch (e) { response.status(400).json({ error: '无效的编码。' }); return; }
     db.prepare("UPDATE questions SET textbook = '' WHERE textbook = ?").run(name);
     response.json({ ok: true });
   });
@@ -304,7 +305,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
     `;
     const params = [request.currentUser.id];
     if (subject) { query += ' AND questions.subject = ?'; params.push(subject); }
-    query += ` ORDER BY question_favorites.created_at DESC LIMIT ${maxLimit} OFFSET ${skip}`;
+    query += ' ORDER BY question_favorites.created_at DESC LIMIT ? OFFSET ?';
+    params.push(maxLimit, skip);
 
     const rows = db.prepare(query).all(...params);
     const questions = rows.map((r) => {
@@ -332,7 +334,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
     `;
     const params = [request.currentUser.id];
     if (subject) { query += ' AND questions.subject = ?'; params.push(subject); }
-    query += ` GROUP BY questions.id ORDER BY MAX(practice_records.created_at) DESC LIMIT ${maxLimit} OFFSET ${skip}`;
+    query += ' GROUP BY questions.id ORDER BY MAX(practice_records.created_at) DESC LIMIT ? OFFSET ?';
+    params.push(maxLimit, skip);
 
     const rows = db.prepare(query).all(...params);
     response.json({

@@ -38,10 +38,10 @@ Page({
     const pending = getApp().consumePendingFilter();
     if (pending && pending.subject && pending.subject !== this.data.filters.subject) {
       this.setData({ 'filters.subject': pending.subject });
+      this.loadMeta();
+      this.loadStats();
+      this.loadQuestions(true);
     }
-    this.loadMeta();
-    this.loadStats();
-    this.loadQuestions(true);
   },
 
   onPullDownRefresh() {

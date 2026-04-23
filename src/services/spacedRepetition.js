@@ -34,11 +34,13 @@ function calculateNextReview(quality, easeFactor, interval, repetitions) {
     newInterval = 1;
   }
 
-  // 更新难度因子
-  newEase = Math.max(
+  // 更新难度因子（仅当 quality >= 2 时更新，符合 SM-2 规范）
+  if (quality >= 2) {
+    newEase = Math.max(
     1.3,
-    newEase + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02))
-  );
+      newEase + (0.1 - (3 - quality) * (0.08 + (3 - quality) * 0.02))
+    );
+  }
 
   // 计算下次复习日期（使用 dayjs 统一时区处理）
   const nextReviewDate = dayjs().add(newInterval, 'day').format('YYYY-MM-DD');

@@ -127,6 +127,7 @@ module.exports = function registerStoreRoutes(app, shared) {
     const quantity = Number(request.body.quantity) || 1;
     const product = db.prepare('SELECT id, stock FROM products WHERE id = ?').get(productId);
     if (!product) { response.status(404).json({ error: '商品不存在。' }); return; }
+    quantity = Math.max(1, Math.floor(Number(quantity) || 1));
     db.prepare(
       `INSERT INTO shopping_cart (student_id, product_id, quantity, created_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(student_id, product_id) DO UPDATE SET quantity = MIN(excluded.quantity, ?)`

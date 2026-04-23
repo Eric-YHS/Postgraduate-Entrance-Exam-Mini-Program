@@ -13,17 +13,17 @@ module.exports = function registerSearchRoutes(app, shared) {
     const topics = db.prepare(
       `SELECT forum_topics.id, forum_topics.title, forum_topics.created_at, users.display_name AS author_name
        FROM forum_topics LEFT JOIN users ON users.id = forum_topics.user_id
-       WHERE forum_topics.title LIKE ? OR forum_topics.content LIKE ?
+       WHERE forum_topics.title LIKE ? ESCAPE '\\' OR forum_topics.content LIKE ? ESCAPE '\\'
        ORDER BY forum_topics.created_at DESC LIMIT 10`
     ).all(like, like);
 
     const questions = db.prepare(
-      `SELECT id, title, subject FROM questions WHERE title LIKE ? OR stem LIKE ?
+      `SELECT id, title, subject FROM questions WHERE title LIKE ? ESCAPE '\\' OR stem LIKE ? ESCAPE '\\'
        ORDER BY created_at DESC LIMIT 10`
     ).all(like, like);
 
     const items = db.prepare(
-      `SELECT id, title, subject, item_type FROM folder_items WHERE title LIKE ?
+      `SELECT id, title, subject, item_type FROM folder_items WHERE title LIKE ? ESCAPE '\\'
        ORDER BY created_at DESC LIMIT 10`
     ).all(like);
 

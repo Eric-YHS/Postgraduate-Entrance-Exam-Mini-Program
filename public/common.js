@@ -72,7 +72,8 @@ function formatDateTime(value) {
 }
 
 function formatMoney(value) {
-  return `¥${Number(value || 0).toFixed(2)}`;
+  const n = Number(value);
+  return `¥${(isNaN(n) ? 0 : n).toFixed(2)}`;
 }
 
 function createToast(message, type = 'info', duration) {

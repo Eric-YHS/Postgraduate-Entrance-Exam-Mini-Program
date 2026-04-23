@@ -32,7 +32,7 @@ Page({
       const payload = await app.fetchBootstrapModules(['courses'], forceRefresh);
       const courses = (payload.courses || []).map(course => ({
         ...course,
-        videoSrc: resolveUrl(course.videoPath) || resolveUrl(course.videoUrl)
+        videoSrc: resolveUrl(course.videoPath || course.video_url) || resolveUrl(course.videoUrl)
       }));
       const subjectSet = new Set(courses.map(c => c.subject).filter(Boolean));
       this.setData({

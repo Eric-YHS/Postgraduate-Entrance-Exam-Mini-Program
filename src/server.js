@@ -46,8 +46,9 @@ if (config.trustProxy) {
 }
 
 // BUG-004: 过滤请求体中的控制字符，防止 500 错误
-app.use((request, response, next) => {
-  const originalBody = request.body;
+// 必须放在 express.json() 之后，此时 body 已解析
+function sanitizeControlChars(req, res, next) {
+  const originalBody = req.body;
   if (originalBody && typeof originalBody === 'object') {
     const sanitize = (value) => {
       if (typeof value === 'string') {
@@ -64,13 +65,14 @@ app.use((request, response, next) => {
       }
       return result;
     };
-    request.body = clean(originalBody);
+    req.body = clean(originalBody);
   }
   next();
-});
+}
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb', charset: 'utf-8' }));
+app.use(sanitizeControlChars);
 app.use(
   session({
     secret: config.sessionSecret,
@@ -140,10 +142,9 @@ const forumUpload = multer({ storage: buildStorage('forum'), fileFilter, limits:
 
 // BUG-012: /uploads 静态文件需要鉴权（支持 cookie session 或 ?token= 查询参数）
 app.use('/uploads', (request, response, next) => {
-  const sessionUser = request.session.userId ? getUserById(request.session.userId) : null;
   const authToken = getBearerToken(request) || request.query.token;
   const tokenUser = authToken ? getUserByToken(authToken) : null;
-  if (sessionUser || tokenUser) {
+  if (request.session.userId || tokenUser) {
     return next();
   }
   response.status(401).send('未登录');

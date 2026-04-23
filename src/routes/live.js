@@ -130,7 +130,9 @@ module.exports = function registerLiveRoutes(app, shared) {
 
   // 直播预约
   app.post('/api/live-sessions/:id/reserve', requireStudent, (request, response) => {
-    const session = db.prepare('SELECT id, status FROM live_sessions WHERE id = ?').get(request.params.id);
+    const sessionId = Number(request.params.id);
+    if (!sessionId) { response.status(400).json({ error: '无效的直播 ID。' }); return; }
+    const session = db.prepare('SELECT id, status FROM live_sessions WHERE id = ?').get(sessionId);
     if (!session) { response.status(404).json({ error: '直播不存在。' }); return; }
     db.prepare(
       'INSERT OR IGNORE INTO live_reservations (live_session_id, student_id, created_at) VALUES (?, ?, ?)'
@@ -147,7 +149,12 @@ module.exports = function registerLiveRoutes(app, shared) {
   app.post('/api/live-sessions/:id/mute', requireTeacher, (request, response) => {
     const userId = Number(request.body.userId);
     if (!userId) { response.status(400).json({ error: '参数错误。' }); return; }
-    const duration = Number(request.body.durationMinutes) || 10;
+    // 验证目标用户是学生，不能禁言管理员/教师
+    const target = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+    if (!target) { response.status(404).json({ error: '用户不存在。' }); return; }
+    if (target.role !== 'student') { response.status(403).json({ error: '不能禁言非学生用户。' }); return; }
+    // 限制最大禁言时长 1440 分钟（24 小时）
+    const duration = Math.min(Number(request.body.durationMinutes) || 10, 1440);
     const mutedUntil = dayjs().add(duration, 'minute').toISOString();
     db.prepare('UPDATE users SET muted_until = ? WHERE id = ?').run(mutedUntil, userId);
     response.json({ ok: true, mutedUntil });
@@ -170,9 +177,15 @@ module.exports = function registerLiveRoutes(app, shared) {
   });
 
   app.post('/api/live-sessions/:id/polls/vote', requireAuth, (request, response) => {
+    const liveId = Number(request.params.id);
     const pollId = Number(request.body.pollId);
     const optionIndex = Number(request.body.optionIndex);
-    if (!pollId) { return response.status(400).json({ error: '缺少参数。' }); }
+    if (!pollId || isNaN(optionIndex) || optionIndex < 0) { return response.status(400).json({ error: '缺少参数。' }); }
+    // 验证 poll 属于当前直播会话且 optionIndex 在范围内
+    const poll = db.prepare('SELECT options FROM live_polls WHERE id = ? AND live_session_id = ?').get(pollId, liveId);
+    if (!poll) { return response.status(404).json({ error: '投票不存在。' }); }
+    const options = JSON.parse(poll.options || '[]');
+    if (optionIndex >= options.length) { return response.status(400).json({ error: '选项无效。' }); }
 
     db.prepare(`
       INSERT INTO live_poll_votes (poll_id, user_id, option_index, created_at) VALUES (?, ?, ?, ?)

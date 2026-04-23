@@ -18,7 +18,11 @@ module.exports = function registerForumRoutes(app, shared) {
     const conditions = [];
     if (category) { conditions.push('forum_topics.category = ?'); params.push(category); }
     if (search) { const esc = String(search).replace(/[%_]/g, '\\$&'); conditions.push('(forum_topics.title LIKE ? OR forum_topics.content LIKE ?)'); params.push('%' + esc + '%', '%' + esc + '%'); }
-    if (hashtag) { conditions.push('forum_topics.hashtags LIKE ?'); params.push('%"' + hashtag + '"%'); }
+    if (hashtag) {
+      const escHt = String(hashtag).replace(/[%_]/g, '\\$&');
+      conditions.push("forum_topics.hashtags LIKE ? ESCAPE '\\'");
+      params.push('%"' + escHt + '"%');
+    }
     if (conditions.length) { query += ' WHERE ' + conditions.join(' AND '); }
 
     if (sort === 'hot') {
@@ -158,6 +162,26 @@ module.exports = function registerForumRoutes(app, shared) {
     });
   });
 
+  // 论坛收藏列表（必须在 :id 路由之前，否则被参数路由遮蔽）
+  app.get('/api/forum/topics/favorites', requireAuth, (request, response) => {
+    const { category } = request.query;
+    let query = `
+      SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role
+      FROM forum_favorites
+      JOIN forum_topics ON forum_topics.id = forum_favorites.topic_id
+      LEFT JOIN users ON users.id = forum_topics.user_id
+      WHERE forum_favorites.user_id = ?
+    `;
+    const params = [request.currentUser.id];
+    if (category) { query += ' AND forum_topics.category = ?'; params.push(category); }
+    query += ' ORDER BY forum_favorites.created_at DESC LIMIT 50';
+    const topics = db.prepare(query).all(...params);
+    const topicIds = topics.map((t) => t.id);
+    const repliesMap = batchLoadForumReplies(topicIds);
+    const likesMap = batchLoadForumLikes(topicIds, request.currentUser.id);
+    response.json({ topics: topics.map((t) => serializeForumTopic(t, repliesMap, likesMap)) });
+  });
+
   // 帖子详情
   app.get('/api/forum/topics/:id', requireAuth, (request, response) => {
     const topic = db.prepare(
@@ -222,26 +246,6 @@ module.exports = function registerForumRoutes(app, shared) {
       favorited = true;
     }
     response.json({ favorited });
-  });
-
-  // 论坛收藏列表
-  app.get('/api/forum/topics/favorites', requireAuth, (request, response) => {
-    const { category } = request.query;
-    let query = `
-      SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role
-      FROM forum_favorites
-      JOIN forum_topics ON forum_topics.id = forum_favorites.topic_id
-      LEFT JOIN users ON users.id = forum_topics.user_id
-      WHERE forum_favorites.user_id = ?
-    `;
-    const params = [request.currentUser.id];
-    if (category) { query += ' AND forum_topics.category = ?'; params.push(category); }
-    query += ' ORDER BY forum_favorites.created_at DESC LIMIT 50';
-    const topics = db.prepare(query).all(...params);
-    const topicIds = topics.map((t) => t.id);
-    const repliesMap = batchLoadForumReplies(topicIds);
-    const likesMap = batchLoadForumLikes(topicIds, request.currentUser.id);
-    response.json({ topics: topics.map((t) => serializeForumTopic(t, repliesMap, likesMap)) });
   });
 
   // 热门话题标签
