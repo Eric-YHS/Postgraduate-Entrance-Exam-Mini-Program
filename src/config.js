@@ -28,10 +28,25 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
   process.exit(1);
 }
 const tokenTtlDays = Number(process.env.TOKEN_TTL_DAYS || 30);
-const sessionSecret = process.env.SESSION_SECRET || 'local-study-planner-secret';
+const nodeEnv = process.env.NODE_ENV || 'development';
+
+// SESSION_SECRET 安全校验
+const rawSessionSecret = process.env.SESSION_SECRET;
+if (nodeEnv === 'production') {
+  if (!rawSessionSecret || rawSessionSecret.length < 32) {
+    console.error('FATAL: 生产环境必须设置 SESSION_SECRET，且长度至少 32 个字符。请运行 npm run generate-secret 生成。');
+    process.exit(1);
+  }
+}
+const sessionSecret = rawSessionSecret && rawSessionSecret.length >= 8
+  ? rawSessionSecret
+  : crypto.randomBytes(32).toString('hex');
+if (!rawSessionSecret) {
+  console.warn('WARN: SESSION_SECRET 未设置，已使用临时随机密钥。请勿在生产环境使用此配置。');
+}
+
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
 const trustProxy = process.env.TRUST_PROXY === 'true';
-const nodeEnv = process.env.NODE_ENV || 'development';
 const wxAppId = process.env.WX_APP_ID || '';
 const wxAppSecret = process.env.WX_APP_SECRET || '';
 
@@ -39,11 +54,6 @@ const wxAppSecret = process.env.WX_APP_SECRET || '';
 const aiApiKey = process.env.AI_API_KEY || '';
 const aiApiUrl = process.env.AI_API_URL || '';
 const aiModel = process.env.AI_MODEL || 'gpt-3.5-turbo';
-
-if (nodeEnv === 'production' && !process.env.SESSION_SECRET) {
-  console.error('FATAL: SESSION_SECRET must be set in production');
-  process.exit(1);
-}
 
 // WebRTC ICE 服务器配置
 // 默认只有 STUN；生产环境应配置 TURN 服务器以保证 NAT 穿透成功率

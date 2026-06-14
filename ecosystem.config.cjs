@@ -10,11 +10,12 @@ module.exports = {
       exec_mode: 'fork',
       env_file: path.join(rootDir, '.env'),
       env: {
+        NODE_ENV: 'development',
+        PORT: 3000
+      },
+      env_production: {
         NODE_ENV: 'production',
-        PORT: 3000,
-        DB_PATH: path.join(rootDir, 'data', 'data.sqlite'),
-        UPLOAD_DIR: path.join(rootDir, 'data', 'uploads'),
-        TRUST_PROXY: 'true'
+        PORT: 3000
       }
     }
   ]

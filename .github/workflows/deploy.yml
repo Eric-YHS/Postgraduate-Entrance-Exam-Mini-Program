@@ -5,7 +5,30 @@ on:
     branches: [main]
 
 jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      - name: Run security audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Deploy via SSH
@@ -15,12 +38,43 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
-            cd /home/ubuntu/study-planner
+            set -e
+            APP_DIR=/home/ubuntu/study-planner
+            BACKUP_DIR=$APP_DIR/backups
+            cd $APP_DIR
+
+            # 备份环境变量
             cp .env .env.backup
+
+            # 部署前备份 SQLite 数据库
+            mkdir -p $BACKUP_DIR
+            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+            cp data/data.sqlite $BACKUP_DIR/data-$TIMESTAMP.sqlite || true
+            cp data/data.sqlite-shm $BACKUP_DIR/data-$TIMESTAMP.sqlite-shm || true
+            cp data/data.sqlite-wal $BACKUP_DIR/data-$TIMESTAMP.sqlite-wal || true
+            # 保留最近 7 天备份
+            find $BACKUP_DIR -name 'data-*.sqlite*' -mtime +7 -delete || true
+
+            # 拉取最新代码
             git fetch origin main
-            git reset --hard origin/main
+            git checkout -f origin/main
+
+            # 恢复环境变量
             cp .env.backup .env
-            npm install --omit=dev
-            pm2 restart study-planner
+
+            # 安装依赖
+            npm ci --omit=dev
+
+            # 使用 PM2 reload 实现零停机部署
+            pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production
+
+            # 健康检查
+            sleep 3
+            curl -fsS http://localhost:3000/healthz > /dev/null || (
+              echo "Health check failed" &&
+              pm2 logs study-planner --lines 50 &&
+              exit 1
+            )
+
             pm2 save
             echo "Deploy completed at $(date)"

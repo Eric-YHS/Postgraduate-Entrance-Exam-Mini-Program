@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
+    "test": "jest --forceExit","generate-secret": "node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"",
     "pm2:start": "pm2 start ecosystem.config.cjs --env production",
     "pm2:stop": "pm2 delete study-planner"
   },
@@ -20,5 +21,9 @@
     "node-cron": "^4.2.1",
     "ws": "^8.18.3",
     "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "jest": "^30.4.2",
+    "supertest": "^7.2.2"
   }
 }
