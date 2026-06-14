@@ -341,21 +341,23 @@ function bindVirtualGoods() {
         loadGroupBuys();
       } catch (err) { createToast(err.message, 'error'); }
     }
-    // 习惯打卡
-    const checkHabitBtn = e.target.closest('[data-action="check-habit"]');
-    if (checkHabitBtn) {
-      try {
-        await fetchJSON('/api/habits/' + checkHabitBtn.dataset.id + '/check', { method: 'POST' });
-        loadHabits();
-      } catch (err) { createToast(err.message, 'error'); }
-    }
-    // 删除习惯
-    const deleteHabitBtn = e.target.closest('[data-action="delete-habit"]');
-    if (deleteHabitBtn) {
-      try {
-        await fetchJSON('/api/habits/' + deleteHabitBtn.dataset.id, { method: 'DELETE' });
-        loadHabits();
-      } catch (err) { createToast(err.message, 'error'); }
-    }
   });
 }
+
+// 习惯打卡/删除 — 绑定到 document 以覆盖 student-checkin 面板
+document.addEventListener('click', async (e) => {
+  const checkHabitBtn = e.target.closest('[data-action="check-habit"]');
+  if (checkHabitBtn) {
+    try {
+      await fetchJSON('/api/habits/' + checkHabitBtn.dataset.id + '/check', { method: 'POST' });
+      loadHabits();
+    } catch (err) { createToast(err.message, 'error'); }
+  }
+  const deleteHabitBtn = e.target.closest('[data-action="delete-habit"]');
+  if (deleteHabitBtn) {
+    try {
+      await fetchJSON('/api/habits/' + deleteHabitBtn.dataset.id, { method: 'DELETE' });
+      loadHabits();
+    } catch (err) { createToast(err.message, 'error'); }
+  }
+});

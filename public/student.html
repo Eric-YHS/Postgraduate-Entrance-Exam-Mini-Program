@@ -19,6 +19,7 @@
       <div class="nav-more-wrap">
         <button class="nav-more-btn" type="button">更多 ▾</button>
         <div class="tab-dropdown">
+          <button class="tab-dropdown-item" data-target="student-search" type="button">🔍 全局搜索</button>
           <button class="tab-dropdown-item" data-target="student-live" type="button">🎙 直播答疑</button>
           <button class="tab-dropdown-item" data-target="student-stats-panel" type="button">📊 学习数据</button>
           <button class="tab-dropdown-item" data-target="student-flashcards" type="button">🃏 词汇记忆</button>
@@ -254,6 +255,26 @@
             <div id="daily-questions-list" class="list-grid" style="margin-top:14px;"></div>
           </section>
 
+          <section class="panel hidden" id="student-search">
+            <h2>全局搜索</h2>
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:14px;">
+              <input class="input" type="text" id="global-search-input" placeholder="搜索帖子、题目、课程资料..." style="flex:1;padding:10px 14px;font-size:14px;border-radius:12px;" />
+              <button class="button" id="global-search-btn" type="button" style="padding:10px 20px;">搜索</button>
+            </div>
+            <div id="search-history" class="hidden" style="margin-bottom:14px;padding:10px 14px;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
+              <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                <span style="font-size:12px;font-weight:600;">搜索历史</span>
+                <button class="ghost-button" type="button" style="font-size:11px;padding:2px 8px;" onclick="localStorage.removeItem('search_history');document.getElementById('history-tags').innerHTML='';">清空</button>
+              </div>
+              <div id="history-tags" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+            </div>
+            <div style="margin-bottom:14px;">
+              <span style="font-size:12px;color:var(--subtle);">热门搜索：</span>
+              <span id="hot-search-tags"></span>
+            </div>
+            <div id="global-search-results" class="hidden" class="list-grid"></div>
+          </section>
+
           <section class="panel hidden settings-panel" id="student-settings">
             <h2>设置</h2>
             <div class="settings-section">
@@ -292,7 +313,7 @@
     </div>
 
     <!-- 专注计时器 overlay -->
-    <div class="hidden" id="focus-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:1000;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#fff;">
+    <div class="hidden focus-overlay" id="focus-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.92);z-index:1000;color:#fff;">
       <div style="text-align:center;">
         <p style="font-size:14px;margin-bottom:8px;" id="focus-task-name">专注学习中</p>
         <div style="width:200px;height:200px;border-radius:50%;border:4px solid rgba(255,255,255,0.2);display:grid;place-items:center;margin:0 auto;">

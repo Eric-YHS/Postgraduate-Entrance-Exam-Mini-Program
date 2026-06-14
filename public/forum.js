@@ -129,17 +129,23 @@ function bindEvents() {
   });
 
   // 帖子列表事件委托
-  document.getElementById('topics-list').addEventListener('click', (event) => {
+  document.getElementById('topics-list').addEventListener('click', async (event) => {
     const titleEl = event.target.closest('.topic-title');
     if (titleEl) {
       location.href = '/forum/topic/' + titleEl.dataset.topicId;
       return;
     }
-    // 展开全文
+    // 展开全文 — 通过 data-content-id 定位内容元素，避免 previousElementSibling 获取到标签 div
     const expandBtn = event.target.closest('[data-action="expand-content"]');
     if (expandBtn) {
-      const contentEl = expandBtn.previousElementSibling;
-      contentEl.classList.remove('topic-content-collapsed');
+      const contentEl = document.getElementById(expandBtn.dataset.contentId);
+      if (contentEl) {
+        contentEl.classList.remove('topic-content-collapsed');
+        // 从缓存取完整内容
+        const topicId = expandBtn.dataset.contentId.replace('topic-content-', '');
+        const topic = forumState.topics.find((t) => String(t.id) === topicId);
+        if (topic) contentEl.innerHTML = renderHashtagsInText(topic.content);
+      }
       expandBtn.remove();
       return;
     }
@@ -160,6 +166,68 @@ function bindEvents() {
       forumState.selectedHashtag = tag;
       loadHashtags();
       loadTopics();
+      return;
+    }
+    // 赞同
+    const endorseBtn = event.target.closest('[data-action="endorse"]');
+    if (endorseBtn) {
+      try {
+        const res = await fetchJSON('/api/forum/topics/' + endorseBtn.dataset.id + '/endorse', { method: 'POST' });
+        endorseBtn.textContent = res.endorsed ? '已赞同' : '赞同';
+        endorseBtn.style.color = res.endorsed ? '#22c55e' : '';
+        loadTopics();
+      } catch (err) { createToast(err.message, 'error'); }
+      return;
+    }
+    // 举报
+    const reportBtn = event.target.closest('[data-action="report"]');
+    if (reportBtn) {
+      const reason = prompt('请输入举报原因：');
+      if (!reason) return;
+      try {
+        await fetchJSON('/api/reports', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ targetType: 'topic', targetId: reportBtn.dataset.id, reason })
+        });
+        createToast('举报已提交，感谢反馈。', 'success');
+      } catch (err) { createToast(err.message, 'error'); }
+      return;
+    }
+    // 关注
+    const followBtn = event.target.closest('[data-action="follow"]');
+    if (followBtn) {
+      try {
+        const res = await fetchJSON('/api/users/' + followBtn.dataset.userId + '/follow', { method: 'POST' });
+        followBtn.textContent = res.following ? '已关注' : '关注';
+        followBtn.style.color = res.following ? '#22c55e' : '';
+      } catch (err) { createToast(err.message, 'error'); }
+      return;
+    }
+    // 置顶
+    const pinBtn = event.target.closest('[data-action="pin"]');
+    if (pinBtn) {
+      try {
+        await fetchJSON('/api/forum/topics/' + pinBtn.dataset.id + '/pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pinned: pinBtn.dataset.val === '1' ? 0 : 1 })
+        });
+        loadTopics();
+      } catch (err) { createToast(err.message, 'error'); }
+      return;
+    }
+    // 精华
+    const featureBtn = event.target.closest('[data-action="feature"]');
+    if (featureBtn) {
+      try {
+        await fetchJSON('/api/forum/topics/' + featureBtn.dataset.id + '/feature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ featured: featureBtn.dataset.val === '1' ? 0 : 1 })
+        });
+        loadTopics();
+      } catch (err) { createToast(err.message, 'error'); }
       return;
     }
   });
@@ -190,7 +258,17 @@ async function loadTopics() {
 }
 
 function renderHashtagsInText(text) {
-  return text.replace(/#([^#\s]+)#/g, '<span class="hashtag-highlight" style="cursor:pointer;">#$1#</span>');
+  // 先提取标签占位，再对文本 escapeHtml，最后还原标签
+  const placeholders = [];
+  const stripped = text.replace(/#([^#\s]+)#/g, (match, tag) => {
+    const idx = placeholders.length;
+    placeholders.push(tag);
+    return `\x00TAG${idx}\x00`;
+  });
+  const escaped = escapeHtml(stripped);
+  return escaped.replace(/\x00TAG(\d+)\x00/g, (_, idx) => {
+    return '<span class="hashtag-highlight" style="cursor:pointer;">#' + escapeHtml(placeholders[Number(idx)]) + '#</span>';
+  });
 }
 
 function renderTopics() {
@@ -206,6 +284,7 @@ function renderTopics() {
     const authorInitial = (topic.authorName || '?')[0];
     const replyCount = topic.replies ? topic.replies.length : 0;
     const isLong = (topic.content || '').length > 100;
+    const contentId = 'topic-content-' + topic.id;
     const contentPreview = isLong ? topic.content.slice(0, 100) : topic.content;
 
     // 图片九宫格
@@ -253,8 +332,8 @@ function renderTopics() {
           </div>
         </div>
         <h3 class="topic-title" data-topic-id="${topic.id}">${badges.join('')}${escapeHtml(topic.title)}</h3>
-        <div class="topic-content topic-content-collapsed">${renderHashtagsInText(escapeHtml(contentPreview))}</div>
-        ${isLong ? `<button class="expand-btn" data-action="expand-content" type="button">展开全文</button>` : ''}
+        <div class="topic-content topic-content-collapsed" id="${contentId}">${renderHashtagsInText(escapeHtml(contentPreview))}</div>
+        ${isLong ? `<button class="expand-btn" data-action="expand-content" data-content-id="${contentId}" type="button">展开全文</button>` : ''}
         ${tagsHtml}
         ${imagesHtml}
         <div class="topic-footer">
@@ -270,17 +349,7 @@ function renderTopics() {
   }).join('');
 }
 
-// Lightbox (全局)
-document.addEventListener('click', (event) => {
-  const target = event.target.closest('[data-action="lightbox"]');
-  if (target) {
-    const overlay = document.createElement('div');
-    overlay.className = 'lightbox-overlay';
-    overlay.innerHTML = `<img src="${escapeHtml(target.dataset.src || target.src)}" />`;
-    overlay.addEventListener('click', () => overlay.remove());
-    document.body.appendChild(overlay);
-  }
-});
+// Lightbox 由 topics-list 内的事件委托处理（见第 147 行），无需全局重复注册
 
 // ===== 第二阶段论坛增强 =====
 
@@ -302,73 +371,9 @@ async function loadTrending() {
 }
 
 // 在帖子卡片中添加置顶/精华标识和赞同/举报按钮
-function renderTopicEnhancements() {
-  document.getElementById('topics-list').addEventListener('click', async (e) => {
-    // 赞同
-    const endorseBtn = e.target.closest('[data-action="endorse"]');
-    if (endorseBtn) {
-      try {
-        const res = await fetchJSON('/api/forum/topics/' + endorseBtn.dataset.id + '/endorse', { method: 'POST' });
-        endorseBtn.textContent = res.endorsed ? '已赞同' : '赞同';
-        endorseBtn.style.color = res.endorsed ? '#22c55e' : '';
-        loadTopics();
-      } catch (err) { createToast(err.message, 'error'); }
-      return;
-    }
-    // 举报
-    const reportBtn = e.target.closest('[data-action="report"]');
-    if (reportBtn) {
-      const reason = prompt('请输入举报原因：');
-      if (!reason) return;
-      try {
-        await fetchJSON('/api/reports', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ targetType: 'topic', targetId: reportBtn.dataset.id, reason })
-        });
-        createToast('举报已提交，感谢反馈。', 'success');
-      } catch (err) { createToast(err.message, 'error'); }
-      return;
-    }
-    // 关注
-    const followBtn = e.target.closest('[data-action="follow"]');
-    if (followBtn) {
-      try {
-        const res = await fetchJSON('/api/users/' + followBtn.dataset.userId + '/follow', { method: 'POST' });
-        followBtn.textContent = res.following ? '已关注' : '关注';
-        followBtn.style.color = res.following ? '#22c55e' : '';
-      } catch (err) { createToast(err.message, 'error'); }
-      return;
-    }
-    // 置顶
-    const pinBtn = e.target.closest('[data-action="pin"]');
-    if (pinBtn) {
-      try {
-        await fetchJSON('/api/forum/topics/' + pinBtn.dataset.id + '/pin', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pinned: pinBtn.dataset.val === '1' ? 0 : 1 })
-        });
-        loadTopics();
-      } catch (err) { createToast(err.message, 'error'); }
-      return;
-    }
-    // 精华
-    const featureBtn = e.target.closest('[data-action="feature"]');
-    if (featureBtn) {
-      try {
-        await fetchJSON('/api/forum/topics/' + featureBtn.dataset.id + '/feature', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ featured: featureBtn.dataset.val === '1' ? 0 : 1 })
-        });
-        loadTopics();
-      } catch (err) { createToast(err.message, 'error'); }
-      return;
-    }
-  });
-}
+// W-19: 增强功能已合并到 bindEvents 中的 topics-list 事件委托，不再重复注册
 
-// 初始化增强功能
-loadTrending();
-renderTopicEnhancements();
+// 初始化增强功能 — 等待 DOM 就绪
+document.addEventListener('DOMContentLoaded', () => {
+  loadTrending();
+});

@@ -250,6 +250,8 @@ function bindPracticeMode() {
     const mode = modeBtn.dataset.practiceMode;
     studentState.questionFilter.mode = mode;
     studentState.questionFilter.page = 1;
+    // W-10: 切换模式时清空 answerResults
+    studentState.answerResults = {};
     questionPanel.querySelectorAll('[data-practice-mode]').forEach((b) => b.classList.remove('active'));
     modeBtn.classList.add('active');
     loadFilteredQuestions();
@@ -290,10 +292,9 @@ function bindAutoPaper() {
         });
         if (!res.questionIds.length) { createToast('没有找到题目。', 'error'); return; }
         createToast('已生成 ' + res.questionIds.length + ' 道随机题目，开始练习。', 'success');
-        // 加载这些题目
-        const qRes = await fetchJSON('/api/questions?limit=200');
-        const filtered = (qRes.questions || []).filter((q) => res.questionIds.includes(q.id));
-        document.getElementById('qtab-all').innerHTML = filtered.map((q) => renderQuestionCard(q)).join('');
+        // 用服务器端 ID 过滤获取完整题目
+        const qRes = await fetchJSON('/api/questions?ids=' + res.questionIds.join(','));
+        document.getElementById('qtab-all').innerHTML = (qRes.questions || []).map((q) => renderQuestionCard(q)).join('');
       } catch (err) { createToast(err.message, 'error'); }
     }
   });

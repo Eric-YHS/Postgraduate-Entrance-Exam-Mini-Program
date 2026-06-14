@@ -14,6 +14,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('user-search').addEventListener('input', renderUsers);
   document.getElementById('user-role-filter').addEventListener('change', renderUsers);
+
+  // 事件委托：审批申请
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    const action = btn.dataset.action;
+    const id = Number(btn.dataset.id);
+    if (action === 'approve-app') approveApplication(id);
+    else if (action === 'reject-app') rejectApplication(id);
+    // W-20: 分页事件委托
+    else if (action === 'admin-page') {
+      adminState._userPage = Number(btn.dataset.page);
+      renderUsers();
+    }
+    // W-20: 删除用户事件委托
+    else if (action === 'delete-user') {
+      deleteUser(Number(btn.dataset.userId), btn.dataset.userName);
+    }
+  });
 });
 
 async function loadBootstrap() {
@@ -58,8 +77,8 @@ function renderApplications() {
               <p class="muted" style="margin-top: 4px; font-size: 12px;">申请时间：${formatDateTime(app.createdAt)}</p>
             </div>
             <div style="display: flex; gap: 8px;">
-              <button class="button" style="padding: 6px 16px; font-size: 13px;" onclick="approveApplication(${app.id})">批准</button>
-              <button class="ghost-button" style="padding: 6px 16px; font-size: 13px; color: var(--danger);" onclick="rejectApplication(${app.id})">拒绝</button>
+              <button class="button" style="padding: 6px 16px; font-size: 13px;" data-action="approve-app" data-id="${app.id}">批准</button>
+              <button class="ghost-button" style="padding: 6px 16px; font-size: 13px; color: var(--danger);" data-action="reject-app" data-id="${app.id}">拒绝</button>
             </div>
           </div>
         </div>`;
@@ -134,7 +153,7 @@ function renderUsers() {
         <td style="padding: 8px;">${escapeHtml(user.className || '-')}</td>
         <td style="padding: 8px; font-size: 13px;">${formatDateTime(user.createdAt)}</td>
         <td style="padding: 8px; text-align: right;">
-          ${user.role !== 'admin' ? `<button class="ghost-button" style="font-size: 12px; color: var(--danger); padding: 4px 10px;" data-user-id="${user.id}" data-user-name="${escapeHtml(user.displayName)}" onclick="deleteUser(Number(this.dataset.userId), this.dataset.userName)">删除</button>` : ''}
+          ${user.role !== 'admin' ? `<button class="ghost-button" style="font-size: 12px; color: var(--danger); padding: 4px 10px;" data-action="delete-user" data-user-id="${user.id}" data-user-name="${escapeHtml(user.displayName)}">删除</button>` : ''}
         </td>
       </tr>`;
   });
@@ -143,9 +162,9 @@ function renderUsers() {
 
   if (totalPages > 1) {
     html += '<div style="display:flex;justify-content:center;align-items:center;gap:12px;margin-top:16px;font-size:14px;">';
-    html += `<button class="ghost-button" style="padding:6px 14px;" onclick="adminState._userPage=${page - 1};renderUsers();" ${page <= 1 ? 'disabled' : ''}>上一页</button>`;
+    html += `<button class="ghost-button" style="padding:6px 14px;" data-action="admin-page" data-page="${page - 1}" ${page <= 1 ? 'disabled' : ''}>上一页</button>`;
     html += `<span class="muted">第 ${page} / ${totalPages} 页（共 ${filtered.length} 条）</span>`;
-    html += `<button class="ghost-button" style="padding:6px 14px;" onclick="adminState._userPage=${page + 1};renderUsers();" ${page >= totalPages ? 'disabled' : ''}>下一页</button>`;
+    html += `<button class="ghost-button" style="padding:6px 14px;" data-action="admin-page" data-page="${page + 1}" ${page >= totalPages ? 'disabled' : ''}>下一页</button>`;
     html += '</div>';
   }
 

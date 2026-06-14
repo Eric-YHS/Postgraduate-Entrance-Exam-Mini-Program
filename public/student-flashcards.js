@@ -18,6 +18,19 @@ function bindFlashcardControls() {
     document.getElementById('flashcard-mode-flip').classList.remove('active');
     renderFlashcardSession();
   });
+
+  // W-15: 事件委托处理 flashcard 评分按钮，替代 inline onclick
+  document.getElementById('flashcard-container').addEventListener('click', (event) => {
+    const rateBtn = event.target.closest('[data-action="rate-flashcard"]');
+    if (rateBtn) {
+      const quality = Number(rateBtn.dataset.quality);
+      rateFlashcard(quality);
+    }
+    const reloadBtn = event.target.closest('[data-action="reload-flashcards"]');
+    if (reloadBtn) {
+      loadDueFlashcards();
+    }
+  });
 }
 
 // ── 词汇记忆 ──
@@ -68,7 +81,7 @@ function renderFlashcardSession() {
           <span class="badge rating-good">良好 ${fs.stats.good}</span>
           <span class="badge rating-easy">简单 ${fs.stats.easy}</span>
         </div>
-        <button class="button" style="margin-top:16px;" onclick="loadDueFlashcards()">再复习一轮</button>
+        <button class="button" style="margin-top:16px;" data-action="reload-flashcards">再复习一轮</button>
       </div>
     `;
     return;
@@ -185,7 +198,7 @@ function renderQuizMode(card, cardRoot, fs) {
     document.getElementById('quiz-feedback').innerHTML = `
       <strong>${isCorrect ? '回答正确！' : `回答错误。正确答案：${escapeHtml(correctAnswer)}`}</strong>
       ${!isCorrect ? backImg : ''}
-      <button class="button" style="margin-top:10px;" onclick="rateFlashcard(${quality})">${isCorrect ? '下一题' : '继续'}</button>
+      <button class="button" style="margin-top:10px;" data-action="rate-flashcard" data-quality="${quality}">${isCorrect ? '下一题' : '继续'}</button>
     `;
   });
 }
@@ -269,8 +282,8 @@ function renderCheckinCalendar(year, month, activeDays) {
   `;
 }
 
-// 打卡日历月份切换事件
-document.addEventListener('click', (event) => {
+// 打卡日历月份切换事件 — 委托到 checkin-calendar 容器而非 document
+document.getElementById('checkin-calendar').addEventListener('click', (event) => {
   const prevBtn = event.target.closest('[data-action="prev-month"]');
   const nextBtn = event.target.closest('[data-action="next-month"]');
   if (!prevBtn && !nextBtn) return;
@@ -347,15 +360,18 @@ async function loadFlashcardGoal() {
     document.getElementById('goal-daily-new').value = result.goal.dailyNew || 20;
     document.getElementById('goal-daily-review').value = result.goal.dailyReview || 50;
 
-    // 显示进度
+    // 显示进度 — 使用服务端返回的 todayDone 而非本地 stats.total
     const fs = studentState.flashcardState;
+    const todayDone = result.todayDone || 0;
     const dueCount = fs.dueCards.length;
     const progressRoot = document.getElementById('flashcard-goal-progress');
+    const dailyReview = result.goal.dailyReview || 50;
+    const pct = Math.min(Math.round((todayDone / Math.max(dailyReview, 1)) * 100), 100);
     progressRoot.innerHTML = `
       <div style="font-size:12px;color:#475569;">
-        今日待复习：<strong>${dueCount}</strong> 张（目标 ${result.goal.dailyReview} 张）
+        今日已复习：<strong>${todayDone}</strong> / ${dailyReview} 张（待复习 ${dueCount} 张）
         <div style="margin-top:4px;background:#e2e8f0;border-radius:6px;height:6px;overflow:hidden;">
-          <div style="background:var(--brand);height:100%;width:${Math.min(Math.round((fs.stats.total / Math.max(result.goal.dailyReview, 1)) * 100), 100)}%;border-radius:6px;"></div>
+          <div style="background:var(--brand);height:100%;width:${pct}%;border-radius:6px;"></div>
         </div>
       </div>
     `;

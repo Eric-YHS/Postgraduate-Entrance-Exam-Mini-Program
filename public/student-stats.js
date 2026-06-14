@@ -10,7 +10,6 @@ async function loadDetailedStats() {
     renderDailyActivity(data.dailyActivity);
     renderRecentSessions(data.recentSessions);
     renderTagAccuracy(data.tagAccuracy);
-    renderRecentSessions(data.recentSessions);
   } catch (_) {}
 }
 
@@ -436,17 +435,24 @@ async function loadHeatmap() {
     const weeks = [];
     const startDate = new Date(year, 0, 1);
     const endDate = new Date(year, 11, 31);
+    // 对齐到周日开始
+    const dayOfWeek = startDate.getDay();
     let current = new Date(startDate);
-    while (current <= endDate) {
+    current.setDate(current.getDate() - dayOfWeek);
+    while (current <= endDate || current.getDay() !== 0) {
       const week = [];
       for (let d = 0; d < 7; d++) {
-        if (current > endDate) break;
-        const dateStr = current.toISOString().split('T')[0];
+        if (current > endDate && current.getFullYear() > year) break;
+        const mm = String(current.getMonth() + 1).padStart(2, '0');
+        const dd = String(current.getDate()).padStart(2, '0');
+        const dateStr = `${current.getFullYear()}-${mm}-${dd}`;
         const count = res.heatmap[dateStr] || 0;
         const color = count === 0 ? '#ebedf0' : count <= 2 ? '#9be9a8' : count <= 5 ? '#40c463' : count <= 10 ? '#30a14e' : '#216e39';
-        week.push({ date: dateStr, count, color });
+        const inYear = current.getFullYear() === year;
+        week.push({ date: dateStr, count: inYear ? count : 0, color: inYear ? color : '#fff' });
         current.setDate(current.getDate() + 1);
       }
+      if (current.getFullYear() > year && current.getDay() <= 1) break;
       weeks.push(week);
     }
 

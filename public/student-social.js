@@ -27,7 +27,7 @@ async function doGlobalSearch() {
     if (result.topics.length) {
       html += '<h3 style="margin:14px 0 8px;">帖子</h3>';
       html += result.topics.map((t) => `
-        <div class="paper-card" style="padding:12px;margin-bottom:8px;cursor:pointer;" onclick="location.href='/forum/topic/${t.id}'">
+        <div class="paper-card" style="padding:12px;margin-bottom:8px;cursor:pointer;" data-action="goto-topic" data-topic-id="${t.id}">
           <strong>${escapeHtml(t.title)}</strong>
           <span class="muted" style="margin-left:8px;font-size:12px;">${escapeHtml(t.authorName)} · ${escapeHtml(formatDateTime(t.createdAt))}</span>
         </div>
@@ -53,6 +53,11 @@ async function doGlobalSearch() {
     }
     if (!html) html = '<p class="muted">未找到相关结果。</p>';
     root.innerHTML = html;
+    // 事件委托：搜索结果点击
+    root.addEventListener('click', (e) => {
+      const card = e.target.closest('[data-action="goto-topic"]');
+      if (card) location.href = '/forum/topic/' + card.dataset.topicId;
+    });
   } catch (error) {
     createToast(error.message, 'error');
   }
@@ -83,8 +88,10 @@ function bindSearchSuggestions() {
   loadSearchHistory();
 
   const input = document.getElementById('global-search-input');
+  if (!input) return;
   input.addEventListener('focus', () => {
-    document.getElementById('search-history').classList.remove('hidden');
+    const historyEl = document.getElementById('search-history');
+    if (historyEl) historyEl.classList.remove('hidden');
   });
 }
 
@@ -92,6 +99,7 @@ async function loadHotSearch() {
   try {
     const result = await fetchJSON('/api/search/hot');
     const tags = document.getElementById('hot-search-tags');
+    if (!tags) return;
     if (result.keywords.length) {
       tags.innerHTML = result.keywords.map((k) =>
         `<a style="color:var(--brand);cursor:pointer;margin-right:8px;" data-search-keyword="${escapeHtml(k.keyword)}">${escapeHtml(k.keyword)}</a>`
@@ -111,11 +119,13 @@ async function loadHotSearch() {
 function loadSearchHistory() {
   const history = JSON.parse(localStorage.getItem('search_history') || '[]');
   const root = document.getElementById('history-tags');
+  const historyPanel = document.getElementById('search-history');
+  if (!root || !historyPanel) return;
   if (!history.length) {
-    document.getElementById('search-history').classList.add('hidden');
+    historyPanel.classList.add('hidden');
     return;
   }
-  document.getElementById('search-history').classList.remove('hidden');
+  historyPanel.classList.remove('hidden');
   root.innerHTML = history.slice(0, 8).map((kw) =>
     `<a style="color:var(--subtle);cursor:pointer;margin-right:8px;" data-history-keyword="${escapeHtml(kw)}">${escapeHtml(kw)}</a>`
   ).join('');

@@ -167,7 +167,8 @@ function bindStudentCloud() {
     }
 
     // 定期保存进度（每15秒）
-    const saveInterval = setInterval(async () => {
+    if (studentState._saveInterval) clearInterval(studentState._saveInterval);
+    studentState._saveInterval = setInterval(async () => {
       if (video.paused || video.ended) return;
       try {
         await fetchJSON('/api/courses/' + itemId + '/progress', {
@@ -268,7 +269,8 @@ function bindStudentCloud() {
     });
 
     document.getElementById('close-player-btn').addEventListener('click', () => {
-      clearInterval(saveInterval);
+      clearInterval(studentState._saveInterval);
+      studentState._saveInterval = null;
       playerRoot.innerHTML = '';
     });
 
@@ -338,8 +340,13 @@ async function loadRecentCourses() {
       return;
     }
     root.innerHTML = result.items.map((item) => {
-      const icon = item.item_type === 'video' ? '&#127909;' : '&#128196;';
-      const pct = item.duration_seconds > 0 ? Math.round((item.position_seconds / item.duration_seconds) * 100) : 0;
+      const itemType = item.itemType || item.item_type;
+      const filePath = item.filePath || item.file_path;
+      const fileUrl = item.fileUrl || item.file_url;
+      const durationSec = item.durationSeconds || item.duration_seconds || 0;
+      const positionSec = item.positionSeconds || item.position_seconds || 0;
+      const icon = itemType === 'video' ? '&#127909;' : '&#128196;';
+      const pct = durationSec > 0 ? Math.round((positionSec / durationSec) * 100) : 0;
       return `
         <div class="paper-card cloud-item">
           <div class="cloud-item-icon">${icon}</div>
@@ -351,7 +358,7 @@ async function loadRecentCourses() {
             </div>
             <span class="muted" style="font-size:11px;">${pct}% 已观看</span>
           </div>
-          ${item.item_type === 'video' && (item.file_path || item.file_url) ? `<button class="ghost-button" data-action="play-video" data-item-id="${item.id}" data-src="${escapeHtml(item.file_path || item.file_url)}" data-title="${escapeHtml(item.title)}" type="button" style="font-size:12px;padding:4px 10px;">续播</button>` : ''}
+          ${itemType === 'video' && (filePath || fileUrl) ? `<button class="ghost-button" data-action="play-video" data-item-id="${item.id}" data-src="${escapeHtml(filePath || fileUrl)}" data-title="${escapeHtml(item.title)}" type="button" style="font-size:12px;padding:4px 10px;">续播</button>` : ''}
         </div>
       `;
     }).join('');

@@ -1,5 +1,5 @@
 const liveState = {
-  liveId: Number(location.pathname.split('/').pop()) || 0,
+  liveId: Number(location.pathname.split('/').filter(Boolean).pop()) || 0,
   user: null,
   liveSession: null,
   socket: null,
@@ -55,18 +55,24 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 async function loadLiveSession() {
-  const payload = await fetchJSON(`/api/live-sessions/${liveState.liveId}`);
-  liveState.liveSession = payload.liveSession;
-  // BUG-027: 直播不存在时显示提示
-  if (!payload.liveSession) {
-    document.getElementById('live-title').textContent = '直播不存在或已结束';
-    return;
+  try {
+    const payload = await fetchJSON(`/api/live-sessions/${liveState.liveId}`);
+    liveState.liveSession = payload.liveSession;
+    // BUG-027: 直播不存在时显示提示
+    if (!payload.liveSession) {
+      document.getElementById('live-title').textContent = '直播不存在或已结束';
+      return;
+    }
+    document.getElementById('live-role-badge').textContent = liveState.user.role === 'teacher' ? '老师直播控制台' : '学生听课房间';
+    document.getElementById('live-title').textContent = payload.liveSession.title;
+    document.getElementById('live-description').textContent = payload.liveSession.description || '直播间已就绪，可进行语音视频推流和实时聊天。';
+    document.getElementById('live-status').textContent = payload.liveSession.status;
+    renderChatMessages(payload.messages);
+  } catch (error) {
+    createToast('直播加载失败：' + error.message, 'error');
+    document.getElementById('live-title').textContent = '加载失败';
+    document.getElementById('live-description').textContent = error.message || '无法连接到直播服务，请稍后重试。';
   }
-  document.getElementById('live-role-badge').textContent = liveState.user.role === 'teacher' ? '老师直播控制台' : '学生听课房间';
-  document.getElementById('live-title').textContent = payload.liveSession.title;
-  document.getElementById('live-description').textContent = payload.liveSession.description || '直播间已就绪，可进行语音视频推流和实时聊天。';
-  document.getElementById('live-status').textContent = payload.liveSession.status;
-  renderChatMessages(payload.messages);
 }
 
 function updateConnectionStatus(status) {
@@ -103,7 +109,7 @@ function connectLiveSocket() {
   }
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const token = liveState.token || localStorage.getItem('auth_token') || '';
-  const socket = new WebSocket(`${protocol}://${location.host}?token=${encodeURIComponent(token)}`);
+  const socket = new WebSocket(`${protocol}://${location.host}`);
   if (liveState.socket) {
     liveState.socket.close();
   }
@@ -112,6 +118,7 @@ function connectLiveSocket() {
   socket.addEventListener('open', () => {
     liveState.reconnectAttempts = 0;
     updateConnectionStatus('connected');
+    socket.send(JSON.stringify({ type: 'auth', token }));
     socket.send(
       JSON.stringify({
         type: 'join-live',
@@ -516,7 +523,8 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-// 教师创建投票按钮
+// 教师创建投票按钮 — 延迟到 DOMContentLoaded 后执行
+document.addEventListener('DOMContentLoaded', () => {
 if (liveState.user && liveState.user.role === 'teacher') {
   const chatForm = document.getElementById('chat-form');
   if (chatForm) {
@@ -544,3 +552,4 @@ if (liveState.user && liveState.user.role === 'teacher') {
     chatForm.appendChild(pollBtn);
   }
 }
+});

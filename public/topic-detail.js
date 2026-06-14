@@ -1,7 +1,7 @@
 const detailState = {
   user: null,
   token: null,
-  topicId: Number(location.pathname.split('/').pop()) || 0,
+  topicId: Number(location.pathname.split('/').filter(Boolean).pop()) || 0,
   topic: null,
   replyingTo: null // { id, authorName }
 };
