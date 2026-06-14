@@ -36,7 +36,7 @@ function escapeHtml(value) {
  * @returns {string}
  */
 function sanitizeText(value) {
-  return String(value || '').trim();
+  return stripHtml(String(value || '').trim());
 }
 
 /**
@@ -46,7 +46,12 @@ function sanitizeText(value) {
  * @returns {string}
  */
 function stripHtml(value) {
-  return String(value || '').replace(/<[^>]*>/g, '').trim();
+  // 多轮替换：先移除正常闭合标签，再移除未闭合的 <... 序列
+  return String(value || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/<[^>]*$/g, '')
+    .replace(/</g, '&lt;')
+    .trim();
 }
 
 module.exports = {

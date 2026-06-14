@@ -17,7 +17,7 @@ module.exports = function registerForumRoutes(app, shared) {
     const params = [];
     const conditions = [];
     if (category) { conditions.push('forum_topics.category = ?'); params.push(category); }
-    if (search) { const esc = String(search).replace(/[%_]/g, '\\$&'); conditions.push('(forum_topics.title LIKE ? OR forum_topics.content LIKE ?)'); params.push('%' + esc + '%', '%' + esc + '%'); }
+    if (search) { const esc = String(search).replace(/[%_]/g, '\\$&'); conditions.push("(forum_topics.title LIKE ? ESCAPE '\\' OR forum_topics.content LIKE ? ESCAPE '\\')"); params.push('%' + esc + '%', '%' + esc + '%'); }
     if (hashtag) {
       const escHt = String(hashtag).replace(/[%_]/g, '\\$&');
       conditions.push("forum_topics.hashtags LIKE ? ESCAPE '\\'");
@@ -26,7 +26,9 @@ module.exports = function registerForumRoutes(app, shared) {
     if (conditions.length) { query += ' WHERE ' + conditions.join(' AND '); }
 
     if (sort === 'hot') {
-      query += ' ORDER BY forum_topics.is_pinned DESC, ((SELECT COUNT(*) FROM forum_likes WHERE topic_id = forum_topics.id) * 2 + (SELECT COUNT(*) FROM forum_replies WHERE topic_id = forum_topics.id) * 3) / MAX(julianday("now") - julianday(forum_topics.created_at), 0.5) DESC';
+      query += ' LEFT JOIN (SELECT topic_id, COUNT(*) AS like_cnt FROM forum_likes GROUP BY topic_id) lk ON lk.topic_id = forum_topics.id';
+      query += ' LEFT JOIN (SELECT topic_id, COUNT(*) AS reply_cnt FROM forum_replies GROUP BY topic_id) rp ON rp.topic_id = forum_topics.id';
+      query += ' ORDER BY forum_topics.is_pinned DESC, (COALESCE(lk.like_cnt, 0) * 2 + COALESCE(rp.reply_cnt, 0) * 3) / MAX(julianday("now") - julianday(forum_topics.created_at), 0.5) DESC';
     } else {
       query += ' ORDER BY forum_topics.is_pinned DESC, forum_topics.created_at DESC';
     }
@@ -93,8 +95,8 @@ module.exports = function registerForumRoutes(app, shared) {
         dayjs().toISOString()
       );
 
-      // 检查成就
-      checkAndUnlockAchievements(request.currentUser.id);
+      // 检查成就 — B-18: 异步执行，避免阻塞响应
+      setImmediate(() => checkAndUnlockAchievements(request.currentUser.id));
 
       // @提及通知
       sendMentionNotifications(content, request.currentUser.id, title);
@@ -104,6 +106,8 @@ module.exports = function registerForumRoutes(app, shared) {
   });
 
   app.post('/api/forum/topics/:id/replies', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     forumUpload(request, response, (error) => {
       if (error) {
         response.status(400).json({ error: '上传失败。' });
@@ -116,7 +120,7 @@ module.exports = function registerForumRoutes(app, shared) {
         return;
       }
 
-      const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(request.params.id);
+      const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(id);
       if (!topic) {
         response.status(404).json({ error: '帖子不存在。' });
         return;
@@ -134,7 +138,7 @@ module.exports = function registerForumRoutes(app, shared) {
       if (replyToIdRaw) {
         const parentReply = db.prepare(
           'SELECT forum_replies.id, users.display_name FROM forum_replies LEFT JOIN users ON users.id = forum_replies.user_id WHERE forum_replies.id = ? AND forum_replies.topic_id = ?'
-        ).get(Number(replyToIdRaw), request.params.id);
+        ).get(Number(replyToIdRaw), id);
         if (parentReply) {
           replyToId = parentReply.id;
           replyToUser = parentReply.display_name || '';
@@ -147,7 +151,7 @@ module.exports = function registerForumRoutes(app, shared) {
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
-        request.params.id, request.currentUser.id, content,
+        id, request.currentUser.id, content,
         JSON.stringify(imagePaths), JSON.stringify(attachmentPaths),
         JSON.stringify(videoPaths), JSON.stringify(links),
         replyToId, replyToUser,
@@ -155,7 +159,7 @@ module.exports = function registerForumRoutes(app, shared) {
       );
 
       // @提及通知
-      const topicTitle = db.prepare('SELECT title FROM forum_topics WHERE id = ?').get(request.params.id);
+      const topicTitle = db.prepare('SELECT title FROM forum_topics WHERE id = ?').get(id);
       sendMentionNotifications(content, request.currentUser.id, topicTitle ? topicTitle.title : '回复');
 
       response.json({ ok: true });
@@ -184,12 +188,14 @@ module.exports = function registerForumRoutes(app, shared) {
 
   // 帖子详情
   app.get('/api/forum/topics/:id', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const topic = db.prepare(
       `SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role
        FROM forum_topics
        LEFT JOIN users ON users.id = forum_topics.user_id
        WHERE forum_topics.id = ?`
-    ).get(request.params.id);
+    ).get(id);
 
     if (!topic) {
       response.status(404).json({ error: '帖子不存在。' });
@@ -203,7 +209,9 @@ module.exports = function registerForumRoutes(app, shared) {
 
   // 帖子点赞/取消
   app.post('/api/forum/topics/:id/like', requireAuth, (request, response) => {
-    const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(id);
     if (!topic) {
       response.status(404).json({ error: '帖子不存在。' });
       return;
@@ -211,7 +219,7 @@ module.exports = function registerForumRoutes(app, shared) {
 
     const existing = db.prepare(
       'SELECT id FROM forum_likes WHERE topic_id = ? AND user_id = ?'
-    ).get(request.params.id, request.currentUser.id);
+    ).get(id, request.currentUser.id);
 
     let liked;
     if (existing) {
@@ -220,29 +228,31 @@ module.exports = function registerForumRoutes(app, shared) {
     } else {
       db.prepare(
         'INSERT INTO forum_likes (topic_id, user_id, created_at) VALUES (?, ?, ?)'
-      ).run(request.params.id, request.currentUser.id, dayjs().toISOString());
+      ).run(id, request.currentUser.id, dayjs().toISOString());
       liked = true;
     }
 
     const likeCount = db.prepare(
       'SELECT COUNT(*) AS count FROM forum_likes WHERE topic_id = ?'
-    ).get(request.params.id).count;
+    ).get(id).count;
 
     response.json({ liked, likeCount });
   });
 
   // 论坛收藏切换
   app.post('/api/forum/topics/:id/favorite', requireAuth, (request, response) => {
-    const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(id);
     if (!topic) { response.status(404).json({ error: '帖子不存在。' }); return; }
 
-    const existing = db.prepare('SELECT id FROM forum_favorites WHERE topic_id = ? AND user_id = ?').get(request.params.id, request.currentUser.id);
+    const existing = db.prepare('SELECT id FROM forum_favorites WHERE topic_id = ? AND user_id = ?').get(id, request.currentUser.id);
     let favorited;
     if (existing) {
       db.prepare('DELETE FROM forum_favorites WHERE id = ?').run(existing.id);
       favorited = false;
     } else {
-      db.prepare('INSERT INTO forum_favorites (topic_id, user_id, created_at) VALUES (?, ?, ?)').run(request.params.id, request.currentUser.id, dayjs().toISOString());
+      db.prepare('INSERT INTO forum_favorites (topic_id, user_id, created_at) VALUES (?, ?, ?)').run(id, request.currentUser.id, dayjs().toISOString());
       favorited = true;
     }
     response.json({ favorited });
@@ -265,8 +275,10 @@ module.exports = function registerForumRoutes(app, shared) {
     if (request.currentUser.role !== 'teacher' && request.currentUser.role !== 'admin') {
       return response.status(403).json({ error: '无权限操作。' });
     }
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const pinned = Number(request.body.pinned) || 0;
-    db.prepare('UPDATE forum_topics SET is_pinned = ? WHERE id = ?').run(pinned, request.params.id);
+    db.prepare('UPDATE forum_topics SET is_pinned = ? WHERE id = ?').run(pinned, id);
     response.json({ ok: true });
   });
 
@@ -275,7 +287,9 @@ module.exports = function registerForumRoutes(app, shared) {
       return response.status(403).json({ error: '无权限操作。' });
     }
     const featured = Number(request.body.featured) || 0;
-    db.prepare('UPDATE forum_topics SET is_featured = ? WHERE id = ?').run(featured, request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    db.prepare('UPDATE forum_topics SET is_featured = ? WHERE id = ?').run(featured, id);
     response.json({ ok: true });
   });
 
@@ -314,5 +328,24 @@ module.exports = function registerForumRoutes(app, shared) {
     }).sort((a, b) => b.score - a.score).slice(0, 20);
 
     response.json({ trending });
+  });
+
+  // 删除帖子（仅作者或管理员/教师可删）
+  app.delete('/api/forum/topics/:id', requireAuth, (request, response) => {
+    const topicId = Number(request.params.id);
+    const topic = db.prepare('SELECT user_id FROM forum_topics WHERE id = ?').get(topicId);
+    if (!topic) { return response.status(404).json({ error: '帖子不存在。' }); }
+    const role = request.currentUser.role;
+    if (topic.user_id !== request.currentUser.id && role !== 'admin' && role !== 'teacher') {
+      return response.status(403).json({ error: '无权删除此帖子。' });
+    }
+    db.transaction(() => {
+      db.prepare('DELETE FROM forum_likes WHERE topic_id = ?').run(topicId);
+      db.prepare('DELETE FROM forum_endorsements WHERE topic_id = ?').run(topicId);
+      db.prepare('DELETE FROM forum_favorites WHERE topic_id = ?').run(topicId);
+      db.prepare('DELETE FROM forum_replies WHERE topic_id = ?').run(topicId);
+      db.prepare('DELETE FROM forum_topics WHERE id = ?').run(topicId);
+    })();
+    response.json({ ok: true });
   });
 };

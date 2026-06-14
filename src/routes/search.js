@@ -7,6 +7,7 @@ module.exports = function registerSearchRoutes(app, shared) {
   app.get('/api/search', requireAuth, (request, response) => {
     const keyword = String(request.query.q || '').trim();
     if (!keyword || keyword.length < 2) { response.json({ topics: [], questions: [], items: [] }); return; }
+    if (keyword.length > 100) return response.json({ topics: [], questions: [], items: [] });
     const escaped = keyword.replace(/[%_]/g, '\\$&');
     const like = '%' + escaped + '%';
 

@@ -2,7 +2,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerLiveRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, safeJsonParse } = shared;
+  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, safeJsonParse, liveRooms } = shared;
 
   app.post('/api/live-sessions', requireTeacher, (request, response) => {
     const title = sanitizeText(request.body.title);
@@ -29,7 +29,9 @@ module.exports = function registerLiveRoutes(app, shared) {
   });
 
   app.post('/api/live-sessions/:id/start', requireTeacher, (request, response) => {
-    const session = db.prepare('SELECT * FROM live_sessions WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const session = db.prepare('SELECT * FROM live_sessions WHERE id = ?').get(id);
     if (!session) {
       response.status(404).json({ error: '直播间不存在。' });
       return;
@@ -50,13 +52,15 @@ module.exports = function registerLiveRoutes(app, shared) {
         SET status = 'live', started_at = COALESCE(started_at, ?), ended_at = NULL
         WHERE id = ?
       `
-    ).run(dayjs().toISOString(), request.params.id);
+    ).run(dayjs().toISOString(), id);
 
     response.json({ ok: true });
   });
 
   app.post('/api/live-sessions/:id/end', requireTeacher, (request, response) => {
-    const session = db.prepare('SELECT * FROM live_sessions WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const session = db.prepare('SELECT * FROM live_sessions WHERE id = ?').get(id);
     if (!session) {
       response.status(404).json({ error: '直播间不存在。' });
       return;
@@ -77,13 +81,17 @@ module.exports = function registerLiveRoutes(app, shared) {
         SET status = 'ended', ended_at = ?
         WHERE id = ?
       `
-    ).run(dayjs().toISOString(), request.params.id);
+    ).run(dayjs().toISOString(), id);
 
-    broadcastToLiveRoom(request.params.id, { type: 'live-ended', liveId: Number(request.params.id) });
+    broadcastToLiveRoom(id, { type: 'live-ended', liveId: id });
+    // 清理 WebSocket 房间内存
+    liveRooms.delete(id);
     response.json({ ok: true });
   });
 
   app.get('/api/live-sessions/:id', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const sessionRow = db
       .prepare(
         `
@@ -93,7 +101,7 @@ module.exports = function registerLiveRoutes(app, shared) {
           WHERE live_sessions.id = ?
         `
       )
-      .get(request.params.id);
+      .get(id);
 
     if (!sessionRow) {
       response.status(404).json({ error: '直播不存在。' });
@@ -110,7 +118,7 @@ module.exports = function registerLiveRoutes(app, shared) {
           ORDER BY live_messages.created_at ASC
         `
       )
-      .all(request.params.id)
+      .all(id)
       .map((message) => ({
         id: message.id,
         liveSessionId: message.live_session_id,
@@ -136,17 +144,20 @@ module.exports = function registerLiveRoutes(app, shared) {
     if (!session) { response.status(404).json({ error: '直播不存在。' }); return; }
     db.prepare(
       'INSERT OR IGNORE INTO live_reservations (live_session_id, student_id, created_at) VALUES (?, ?, ?)'
-    ).run(request.params.id, request.currentUser.id, dayjs().toISOString());
+    ).run(sessionId, request.currentUser.id, dayjs().toISOString());
     response.json({ ok: true });
   });
 
   app.delete('/api/live-sessions/:id/reserve', requireStudent, (request, response) => {
-    db.prepare('DELETE FROM live_reservations WHERE live_session_id = ? AND student_id = ?').run(request.params.id, request.currentUser.id);
+    const sessionId = Number(request.params.id);
+    db.prepare('DELETE FROM live_reservations WHERE live_session_id = ? AND student_id = ?').run(sessionId, request.currentUser.id);
     response.json({ ok: true });
   });
 
   // 直播禁言（教师端）
   app.post('/api/live-sessions/:id/mute', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const userId = Number(request.body.userId);
     if (!userId) { response.status(400).json({ error: '参数错误。' }); return; }
     // 验证目标用户是学生，不能禁言管理员/教师
@@ -156,7 +167,7 @@ module.exports = function registerLiveRoutes(app, shared) {
     // 限制最大禁言时长 1440 分钟（24 小时）
     const duration = Math.min(Number(request.body.durationMinutes) || 10, 1440);
     const mutedUntil = dayjs().add(duration, 'minute').toISOString();
-    db.prepare('UPDATE users SET muted_until = ? WHERE id = ?').run(mutedUntil, userId);
+    db.prepare('INSERT OR REPLACE INTO live_mutes (live_session_id, user_id, muted_until, created_at) VALUES (?, ?, ?, ?)').run(id, userId, mutedUntil, dayjs().toISOString());
     response.json({ ok: true, mutedUntil });
   });
 
@@ -184,7 +195,8 @@ module.exports = function registerLiveRoutes(app, shared) {
     // 验证 poll 属于当前直播会话且 optionIndex 在范围内
     const poll = db.prepare('SELECT options FROM live_polls WHERE id = ? AND live_session_id = ?').get(pollId, liveId);
     if (!poll) { return response.status(404).json({ error: '投票不存在。' }); }
-    const options = JSON.parse(poll.options || '[]');
+    let options;
+    try { options = JSON.parse(poll.options || '[]'); } catch (_) { options = []; }
     if (optionIndex >= options.length) { return response.status(400).json({ error: '选项无效。' }); }
 
     db.prepare(`

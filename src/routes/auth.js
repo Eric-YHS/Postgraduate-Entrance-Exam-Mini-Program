@@ -60,6 +60,7 @@ module.exports = function registerAuthRoutes(app, shared) {
         expiresInDays: config.tokenTtlDays
       });
     } catch (error) {
+      console.error('微信登录异常:', error);
       response.status(500).json({ error: '微信登录失败，请重试。' });
     }
   });
@@ -87,10 +88,14 @@ module.exports = function registerAuthRoutes(app, shared) {
     }
 
     // BUG-304: 登录后重新生成 session，防止 Session Fixation
-    request.session.regenerate(() => {
+    request.session.regenerate((err) => {
+      if (err) {
+        response.status(500).json({ error: '登录失败，请重试。' });
+        return;
+      }
       request.session.userId = user.id;
-      // BUG-008: 复用已有未过期 Token，避免 token 表膨胀
-      const token = getOrCreateAuthToken(user.id);
+      // 每次登录创建新 Token，避免多设备共享 Token 导致互相踢出
+      const token = createAuthToken(user.id);
       response.json({
         user: sanitizeUser(user),
         token,
@@ -117,7 +122,13 @@ module.exports = function registerAuthRoutes(app, shared) {
     // 只清除当前请求携带的 Token，不影响其他设备
     clearAuthToken(authToken);
 
-    request.session.destroy(() => {
+    // B-31: 检查 session 销毁错误
+    request.session.destroy((err) => {
+      if (err) {
+        console.error('Session 销毁失败:', err);
+        response.status(500).json({ error: '退出登录失败，请重试。' });
+        return;
+      }
       response.json({ ok: true });
     });
   });
@@ -138,6 +149,10 @@ module.exports = function registerAuthRoutes(app, shared) {
     }
 
     const user = db.prepare('SELECT * FROM users WHERE id = ?').get(request.currentUser.id);
+    if (!user) {
+      response.status(404).json({ error: '用户不存在。' });
+      return;
+    }
     if (!bcrypt.compareSync(String(oldPassword).trim(), user.password)) {
       response.status(401).json({ error: '旧密码不正确。' });
       return;

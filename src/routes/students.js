@@ -87,7 +87,9 @@ module.exports = function registerStudentRoutes(app, shared) {
 
   // 学生标记任务完成
   app.post('/api/tasks/:id/complete', requireStudent, (request, response) => {
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
     if (!task) {
       response.status(404).json({ error: '任务不存在。' });
       return;
@@ -99,20 +101,29 @@ module.exports = function registerStudentRoutes(app, shared) {
       return;
     }
 
-    const today = dayjs().format('YYYY-MM-DD');
+    const taskDate = request.body.taskDate
+      ? dayjs(request.body.taskDate).format('YYYY-MM-DD')
+      : dayjs().format('YYYY-MM-DD');
+    // 限制补签范围：最多 7 天前
+    if (dayjs(taskDate).isBefore(dayjs().subtract(7, 'day'))) {
+      response.status(400).json({ error: '最多补签 7 天内的任务。' });
+      return;
+    }
     const now = dayjs().toISOString();
 
     db.prepare(
       `INSERT INTO task_completions (task_id, student_id, task_date, completed_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(task_id, student_id, task_date) DO UPDATE SET completed_at = excluded.completed_at`
-    ).run(request.params.id, request.currentUser.id, today, now);
+    ).run(id, request.currentUser.id, taskDate, now);
 
     response.json({ ok: true });
   });
 
   // 学生取消任务完成
   app.post('/api/tasks/:id/uncomplete', requireStudent, (request, response) => {
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
     if (!task) {
       response.status(404).json({ error: '任务不存在。' });
       return;
@@ -124,10 +135,12 @@ module.exports = function registerStudentRoutes(app, shared) {
       return;
     }
 
-    const today = dayjs().format('YYYY-MM-DD');
+    const taskDate = request.body.taskDate
+      ? dayjs(request.body.taskDate).format('YYYY-MM-DD')
+      : dayjs().format('YYYY-MM-DD');
     db.prepare(
       'UPDATE task_completions SET completed_at = NULL WHERE task_id = ? AND student_id = ? AND task_date = ?'
-    ).run(request.params.id, request.currentUser.id, today);
+    ).run(id, request.currentUser.id, taskDate);
 
     response.json({ ok: true });
   });
@@ -135,7 +148,9 @@ module.exports = function registerStudentRoutes(app, shared) {
   // ── 子任务完成/取消 ──
 
   app.post('/api/subtasks/:id/complete', requireStudent, (request, response) => {
-    const subtask = db.prepare('SELECT s.*, t.student_ids FROM subtasks s JOIN tasks t ON t.id = s.task_id WHERE s.id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const subtask = db.prepare('SELECT s.*, t.student_ids FROM subtasks s JOIN tasks t ON t.id = s.task_id WHERE s.id = ?').get(id);
     if (!subtask) {
       response.status(404).json({ error: '子任务不存在。' });
       return;
@@ -150,7 +165,7 @@ module.exports = function registerStudentRoutes(app, shared) {
     db.prepare(
       `INSERT INTO subtask_completions (subtask_id, student_id, task_date, completed_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(subtask_id, student_id, task_date) DO UPDATE SET completed_at = excluded.completed_at`
-    ).run(request.params.id, request.currentUser.id, today, now);
+    ).run(id, request.currentUser.id, today, now);
 
     // 检查是否所有子任务都已完成，自动标记父任务完成
     const allSubtasks = db.prepare('SELECT id FROM subtasks WHERE task_id = ?').all(subtask.task_id);
@@ -170,7 +185,9 @@ module.exports = function registerStudentRoutes(app, shared) {
   });
 
   app.delete('/api/subtasks/:id/complete', requireStudent, (request, response) => {
-    const subtask = db.prepare('SELECT s.*, t.student_ids FROM subtasks s JOIN tasks t ON t.id = s.task_id WHERE s.id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const subtask = db.prepare('SELECT s.*, t.student_ids FROM subtasks s JOIN tasks t ON t.id = s.task_id WHERE s.id = ?').get(id);
     if (!subtask) {
       response.status(404).json({ error: '子任务不存在。' });
       return;
@@ -181,7 +198,7 @@ module.exports = function registerStudentRoutes(app, shared) {
       return;
     }
     const today = dayjs().format('YYYY-MM-DD');
-    db.prepare('DELETE FROM subtask_completions WHERE subtask_id = ? AND student_id = ? AND task_date = ?').run(request.params.id, request.currentUser.id, today);
+    db.prepare('DELETE FROM subtask_completions WHERE subtask_id = ? AND student_id = ? AND task_date = ?').run(id, request.currentUser.id, today);
     // 取消子任务完成时，也取消父任务完成状态
     db.prepare('UPDATE task_completions SET completed_at = NULL WHERE task_id = ? AND student_id = ? AND task_date = ?').run(subtask.task_id, request.currentUser.id, today);
     response.json({ ok: true });
@@ -190,13 +207,15 @@ module.exports = function registerStudentRoutes(app, shared) {
   // ── 学生设置提醒时间 ──
 
   app.post('/api/tasks/:id/remind-time', requireStudent, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const { time } = request.body;
     const timeRegex = /^([01]\d|2[0-3]):([0-5]\d)$/;
     if (!timeRegex.test(String(time))) {
       response.status(400).json({ error: '时间格式无效，请使用 HH:mm。' });
       return;
     }
-    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(request.params.id);
+    const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
     if (!task) {
       response.status(404).json({ error: '任务不存在。' });
       return;
@@ -212,13 +231,15 @@ module.exports = function registerStudentRoutes(app, shared) {
     db.prepare(
       `INSERT INTO student_reminders (task_id, student_id, reminder_time, created_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(task_id, student_id) DO UPDATE SET reminder_time = excluded.reminder_time, created_at = excluded.created_at`
-    ).run(request.params.id, request.currentUser.id, String(time).trim(), now);
+    ).run(id, request.currentUser.id, String(time).trim(), now);
     response.json({ ok: true });
   });
 
   // 通知已读
   app.post('/api/notifications/:id/read', requireStudent, (request, response) => {
-    const result = db.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND student_id = ?').run(dayjs().toISOString(), request.params.id, request.currentUser.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const result = db.prepare('UPDATE notifications SET read_at = ? WHERE id = ? AND student_id = ?').run(dayjs().toISOString(), id, request.currentUser.id);
     if (!result.changes) {
       response.status(404).json({ error: '通知不存在或不属于当前用户。' });
       return;
@@ -275,19 +296,23 @@ module.exports = function registerStudentRoutes(app, shared) {
 
   // 课程播放进度
   app.get('/api/courses/:id/progress', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const row = db.prepare('SELECT position_seconds, duration_seconds, updated_at FROM course_progress WHERE course_id = ? AND student_id = ?')
-      .get(request.params.id, request.currentUser.id);
+      .get(id, request.currentUser.id);
     response.json(row ? { positionSeconds: row.position_seconds, durationSeconds: row.duration_seconds, updatedAt: row.updated_at } : { positionSeconds: 0, durationSeconds: 0 });
   });
 
   app.post('/api/courses/:id/progress', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const positionSeconds = Number(request.body.positionSeconds) || 0;
     const durationSeconds = Number(request.body.durationSeconds) || 0;
     db.prepare(`
       INSERT INTO course_progress (course_id, student_id, position_seconds, duration_seconds, updated_at)
       VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(course_id, student_id) DO UPDATE SET position_seconds = excluded.position_seconds, duration_seconds = excluded.duration_seconds, updated_at = excluded.updated_at
-    `).run(request.params.id, request.currentUser.id, positionSeconds, durationSeconds, dayjs().toISOString());
+    `).run(id, request.currentUser.id, positionSeconds, durationSeconds, dayjs().toISOString());
     response.json({ ok: true });
   });
 

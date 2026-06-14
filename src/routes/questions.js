@@ -22,7 +22,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
       let imported = 0;
       let skipped = 0;
 
-      rows.forEach((row) => {
+      const importQuestions = db.transaction(() => {
+        rows.forEach((row) => {
         const title = sanitizeText(getFieldValue(row, ['题目标题', 'title', 'Title']));
         const subject = sanitizeText(getFieldValue(row, ['科目', 'subject', 'Subject']) || '考研英语');
         const questionType = sanitizeText(getFieldValue(row, ['题型', 'questionType', 'QuestionType']));
@@ -59,6 +60,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
         imported += 1;
       });
+      });
+      importQuestions();
 
       fs.unlink(request.file.path, () => {});
       response.json({ ok: true, imported, skipped });
@@ -152,8 +155,10 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // BUG-007: 标签删除改为仅管理员可用（标签是全局资源）
   app.delete('/api/questions/tags/:id', requireAdmin, (request, response) => {
-    db.prepare('DELETE FROM question_tag_relations WHERE tag_id = ?').run(request.params.id);
-    db.prepare('DELETE FROM question_tags WHERE id = ?').run(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    db.prepare('DELETE FROM question_tag_relations WHERE tag_id = ?').run(id);
+    db.prepare('DELETE FROM question_tags WHERE id = ?').run(id);
     response.json({ ok: true });
   });
 
@@ -169,12 +174,13 @@ module.exports = function registerQuestionRoutes(app, shared) {
       response.status(400).json({ error: '书本名称不能为空。' });
       return;
     }
-    const existing = db.prepare("SELECT textbook FROM questions WHERE textbook = ? LIMIT 1").get(name);
+    const existing = db.prepare("SELECT id FROM knowledge_tags WHERE name = ? AND category = 'textbook'").get(name);
     if (existing) {
       response.status(400).json({ error: '该书本已存在。' });
       return;
     }
-    response.json({ ok: true, name });
+    const result = db.prepare("INSERT INTO knowledge_tags (name, category, created_at) VALUES (?, 'textbook', ?)").run(name, dayjs().toISOString());
+    response.json({ ok: true, name, id: result.lastInsertRowid });
   });
 
   app.delete('/api/questions/textbooks/:name', requireTeacher, (request, response) => {
@@ -186,22 +192,24 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 题目标签关联
   app.post('/api/questions/:id/tags', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const { tagIds } = request.body;
     if (!Array.isArray(tagIds)) {
       response.status(400).json({ error: 'tagIds 必须为数组。' });
       return;
     }
 
-    const question = db.prepare('SELECT id FROM questions WHERE id = ?').get(request.params.id);
+    const question = db.prepare('SELECT id FROM questions WHERE id = ?').get(id);
     if (!question) {
       response.status(404).json({ error: '题目不存在。' });
       return;
     }
 
-    db.prepare('DELETE FROM question_tag_relations WHERE question_id = ?').run(request.params.id);
+    db.prepare('DELETE FROM question_tag_relations WHERE question_id = ?').run(id);
     const insertRelation = db.prepare('INSERT OR IGNORE INTO question_tag_relations (question_id, tag_id) VALUES (?, ?)');
     const insertMany = db.transaction((ids) => {
-      ids.forEach((tagId) => insertRelation.run(request.params.id, tagId));
+      ids.forEach((tagId) => insertRelation.run(id, tagId));
     });
     insertMany(tagIds);
 
@@ -210,7 +218,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 题库筛选（学生可用）
   app.get('/api/questions', requireAuth, (request, response) => {
-    const { subject, questionType, textbook, tagId, page, limit, mode } = request.query;
+    const { subject, questionType, textbook, tagId, page, limit, mode, ids } = request.query;
     const maxLimit = Math.min(Number(limit) || 20, 100);
     const pageNum = Number(page) || 1;
     const skip = (pageNum - 1) * maxLimit;
@@ -222,6 +230,16 @@ module.exports = function registerQuestionRoutes(app, shared) {
     `;
     const params = [];
     const conditions = [];
+
+    // 按 ID 列表批量查询
+    if (ids) {
+      const idList = String(ids).split(',').map(Number).filter((n) => n > 0);
+      if (idList.length) {
+        const placeholders = idList.map(() => '?').join(',');
+        conditions.push(`questions.id IN (${placeholders})`);
+        params.push(...idList);
+      }
+    }
 
     if (subject) { conditions.push('questions.subject = ?'); params.push(subject); }
     if (questionType) { conditions.push('questions.question_type = ?'); params.push(questionType); }
@@ -276,16 +294,18 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 题目收藏切换
   app.post('/api/questions/:id/favorite', requireStudent, (request, response) => {
-    const question = db.prepare('SELECT id FROM questions WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const question = db.prepare('SELECT id FROM questions WHERE id = ?').get(id);
     if (!question) { response.status(404).json({ error: '题目不存在。' }); return; }
 
-    const existing = db.prepare('SELECT id FROM question_favorites WHERE question_id = ? AND student_id = ?').get(request.params.id, request.currentUser.id);
+    const existing = db.prepare('SELECT id FROM question_favorites WHERE question_id = ? AND student_id = ?').get(id, request.currentUser.id);
     let favorited;
     if (existing) {
       db.prepare('DELETE FROM question_favorites WHERE id = ?').run(existing.id);
       favorited = false;
     } else {
-      db.prepare('INSERT INTO question_favorites (question_id, student_id, created_at) VALUES (?, ?, ?)').run(request.params.id, request.currentUser.id, dayjs().toISOString());
+      db.prepare('INSERT INTO question_favorites (question_id, student_id, created_at) VALUES (?, ?, ?)').run(id, request.currentUser.id, dayjs().toISOString());
       favorited = true;
     }
     response.json({ favorited });
@@ -415,8 +435,10 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 答题
   app.post('/api/questions/:id/answer', requireStudent, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const selectedAnswer = String(request.body.selectedAnswer || '').trim().toUpperCase();
-    const question = db.prepare('SELECT * FROM questions WHERE id = ?').get(request.params.id);
+    const question = db.prepare('SELECT * FROM questions WHERE id = ?').get(id);
 
     if (!question) {
       response.status(404).json({ error: '题目不存在。' });
@@ -439,11 +461,14 @@ module.exports = function registerQuestionRoutes(app, shared) {
     ).run(question.id, request.currentUser.id, selectedAnswer, isCorrect, sessionId, timeSpentMs, dayjs().toISOString());
 
     updateStudyStreak(request.currentUser.id);
-    checkAndUnlockAchievements(request.currentUser.id);
+    // B-18: 异步执行成就检查，避免阻塞答题响应
+    setImmediate(() => checkAndUnlockAchievements(request.currentUser.id));
 
     // 错题智能复习调度（3/7/15天间隔）
     if (!isCorrect) {
       const now = dayjs();
+      // 删除该题已有的未完成复习记录，避免重复
+      db.prepare('DELETE FROM wrong_review_schedule WHERE question_id = ? AND student_id = ? AND reviewed_at IS NULL').run(question.id, request.currentUser.id);
       const intervals = [3, 7, 15];
       for (const days of intervals) {
         db.prepare(
@@ -466,23 +491,29 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 题目笔记
   app.get('/api/questions/:id/notes', requireAuth, (request, response) => {
-    const note = db.prepare('SELECT * FROM question_notes WHERE question_id = ? AND student_id = ?').get(request.params.id, request.currentUser.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const note = db.prepare('SELECT * FROM question_notes WHERE question_id = ? AND student_id = ?').get(id, request.currentUser.id);
     response.json({ note: note || null });
   });
 
   app.post('/api/questions/:id/notes', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const content = sanitizeText(request.body.content || '');
     if (!content) { return response.status(400).json({ error: '笔记内容不能为空。' }); }
     const now = dayjs().toISOString();
     db.prepare(`
       INSERT INTO question_notes (question_id, student_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)
       ON CONFLICT(question_id, student_id) DO UPDATE SET content = excluded.content, updated_at = excluded.updated_at
-    `).run(Number(request.params.id), request.currentUser.id, content, now, now);
+    `).run(id, request.currentUser.id, content, now, now);
     response.json({ ok: true });
   });
 
   app.delete('/api/questions/:id/notes', requireAuth, (request, response) => {
-    db.prepare('DELETE FROM question_notes WHERE question_id = ? AND student_id = ?').run(Number(request.params.id), request.currentUser.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    db.prepare('DELETE FROM question_notes WHERE question_id = ? AND student_id = ?').run(id, request.currentUser.id);
     response.json({ ok: true });
   });
 
@@ -633,7 +664,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
     const flashcardCount = db.prepare(`
       SELECT COUNT(*) AS cnt FROM flashcard_records
-      WHERE student_id = ? AND updated_at >= ? AND updated_at <= ?
+      WHERE student_id = ? AND created_at >= ? AND created_at <= ?
     `).get(studentId, weekStart.toISOString(), weekEnd.toISOString()).cnt;
 
     const focusSessions = db.prepare(`
@@ -690,7 +721,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
     const flashcardCount = db.prepare(`
       SELECT COUNT(*) AS cnt FROM flashcard_records
-      WHERE student_id = ? AND updated_at >= ? AND updated_at <= ?
+      WHERE student_id = ? AND created_at >= ? AND created_at <= ?
     `).get(studentId, monthStart.toISOString(), monthEnd.toISOString()).cnt;
 
     const summaryCount = db.prepare(

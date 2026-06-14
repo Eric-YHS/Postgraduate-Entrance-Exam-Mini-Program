@@ -118,7 +118,7 @@ function dispatchDueTaskReminders(db, notifyClient, currentDateTime = dayjs()) {
 
       // I-16: 发送微信订阅消息推送
       const student = db.prepare('SELECT openid FROM users WHERE id = ?').get(studentId);
-      if (student && student.openid && typeof notifyClient === 'object' && notifyClient.sendSubscribeMessage) {
+      if (student && student.openid && notifyClient && (typeof notifyClient === 'function' || (typeof notifyClient === 'object' && notifyClient.sendSubscribeMessage))) {
         notifyClient.sendSubscribeMessage(
           student.openid,
           'task_reminder',
@@ -237,6 +237,30 @@ function startScheduler(db, notifyClient) {
       dispatchDueTaskReminders(db, notifyClient, dayjs());
     } catch (err) {
       console.error('分钟 cron 错误:', err);
+    }
+  });
+
+  // B-29: 每天凌晨清理超过 30 天的搜索日志
+  cron.schedule('0 3 * * *', () => {
+    try {
+      const result = db.prepare("DELETE FROM search_logs WHERE created_at < datetime('now', '-30 days')").run();
+      if (result.changes > 0) {
+        console.log(`已清理 ${result.changes} 条过期搜索日志。`);
+      }
+    } catch (err) {
+      console.error('清理搜索日志失败:', err);
+    }
+  });
+
+  // B-30: 每天凌晨清理超过 90 天的 AI 对话记录
+  cron.schedule('0 3 * * *', () => {
+    try {
+      const result = db.prepare("DELETE FROM ai_conversations WHERE created_at < datetime('now', '-90 days')").run();
+      if (result.changes > 0) {
+        console.log(`已清理 ${result.changes} 条过期 AI 对话记录。`);
+      }
+    } catch (err) {
+      console.error('清理 AI 对话记录失败:', err);
     }
   });
 }

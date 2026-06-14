@@ -6,6 +6,10 @@ const { sanitizeText, escapeHtml, stripHtml } = require('../utils/sanitize');
 const { calculateNextReview } = require('../services/spacedRepetition');
 
 function serializeFlashcard(row) {
+  let collocations = [];
+  try { collocations = row.collocations ? JSON.parse(row.collocations) : []; } catch (_) { collocations = []; }
+  let tags = [];
+  try { tags = row.tags ? JSON.parse(row.tags) : []; } catch (_) { tags = []; }
   return {
     id: row.id,
     title: row.title,
@@ -18,9 +22,9 @@ function serializeFlashcard(row) {
     exampleSentence: row.example_sentence || '',
     wordRoot: row.word_root || '',
     affix: row.affix || '',
-    collocations: row.collocations ? JSON.parse(row.collocations) : [],
+    collocations,
     phonetic: row.phonetic || '',
-    tags: row.tags ? JSON.parse(row.tags) : [],
+    tags,
     createdBy: row.created_by,
     createdAt: row.created_at
   };
@@ -98,6 +102,7 @@ module.exports = function registerMiscRoutes(app, shared) {
       let imported = 0;
       let skipped = 0;
 
+      const importUsers = db.transaction(() => {
       rows.forEach((row) => {
         const username = getFieldValue(row, ['用户名', 'username', 'Username']);
         const password = getFieldValue(row, ['密码', 'password', 'Password']);
@@ -133,6 +138,8 @@ module.exports = function registerMiscRoutes(app, shared) {
 
         imported += 1;
       });
+      });
+      importUsers();
 
       fs.unlink(request.file.path, () => {});
       response.json({ ok: true, imported, skipped });
@@ -156,6 +163,7 @@ module.exports = function registerMiscRoutes(app, shared) {
       let imported = 0;
       let skipped = 0;
 
+      const importFlashcards = db.transaction(() => {
       rows.forEach((row) => {
         const title = sanitizeText(getFieldValue(row, ['标题', 'title', 'Title']));
         const subject = sanitizeText(getFieldValue(row, ['科目', 'subject', 'Subject']));
@@ -178,6 +186,8 @@ module.exports = function registerMiscRoutes(app, shared) {
 
         imported += 1;
       });
+      });
+      importFlashcards();
 
       fs.unlink(request.file.path, () => {});
       response.json({ ok: true, imported, skipped });
@@ -228,28 +238,7 @@ module.exports = function registerMiscRoutes(app, shared) {
     });
   });
 
-  // 手动解锁成就
-  app.post('/api/achievements/unlock', requireAuth, (request, response) => {
-    const { code, value } = request.body;
-    const ach = db.prepare('SELECT * FROM achievements WHERE code = ?').get(code);
-    if (!ach) { response.json({ unlocked: false }); return; }
-
-    const alreadyUnlocked = db.prepare('SELECT id FROM user_achievements WHERE user_id = ? AND achievement_id = ?').get(request.currentUser.id, ach.id);
-    if (alreadyUnlocked) { response.json({ unlocked: false }); return; }
-
-    if (ach.condition_type === 'focus_minutes' && value >= ach.condition_value) {
-      db.prepare('INSERT INTO user_achievements (user_id, achievement_id, unlocked_at) VALUES (?, ?, ?)').run(request.currentUser.id, ach.id, dayjs().toISOString());
-      response.json({ unlocked: true, achievement: { id: ach.id, code: ach.code, title: ach.title, icon: ach.icon } });
-      return;
-    }
-    if (ach.condition_type === 'early_bird' && value >= 1) {
-      db.prepare('INSERT INTO user_achievements (user_id, achievement_id, unlocked_at) VALUES (?, ?, ?)').run(request.currentUser.id, ach.id, dayjs().toISOString());
-      response.json({ unlocked: true, achievement: { id: ach.id, code: ach.code, title: ach.title, icon: ach.icon } });
-      return;
-    }
-
-    response.json({ unlocked: false });
-  });
+  // 成就解锁已改为服务端自动检测（checkAndUnlockAchievements），不再接受客户端手动触发
 
   // 词汇卡片 API
   app.get('/api/flashcards', requireAuth, (request, response) => {
@@ -286,7 +275,12 @@ module.exports = function registerMiscRoutes(app, shared) {
       } : null
     }));
 
-    response.json({ flashcards });
+    // 当日已复习数量
+    const todayDone = db.prepare(
+      'SELECT COUNT(*) AS cnt FROM flashcard_records WHERE student_id = ? AND DATE(created_at) = ?'
+    ).get(request.currentUser.id, today).cnt;
+
+    response.json({ flashcards, todayDone: todayDone || 0 });
   });
 
   app.post('/api/flashcards', requireTeacher, (request, response) => {
@@ -349,7 +343,8 @@ module.exports = function registerMiscRoutes(app, shared) {
     }
 
     updateStudyStreak(request.currentUser.id);
-    checkAndUnlockAchievements(request.currentUser.id);
+    // B-18: 异步执行成就检查，避免阻塞响应
+    setImmediate(() => checkAndUnlockAchievements(request.currentUser.id));
 
     response.json({ ok: true, nextReview: next });
   });
@@ -399,11 +394,18 @@ module.exports = function registerMiscRoutes(app, shared) {
     if (!submission) { return response.status(404).json({ error: '未开始考试。' }); }
     if (submission.submitted_at) { return response.status(400).json({ error: '已提交。' }); }
 
+    // B-22: 检查是否超时
+    const exam = db.prepare('SELECT * FROM mock_exams WHERE id = ?').get(examId);
+    if (exam && exam.duration_minutes && submission.started_at) {
+      if (dayjs().diff(dayjs(submission.started_at), 'minute') > exam.duration_minutes) {
+        return response.status(400).json({ error: '考试已超时，无法提交。' });
+      }
+    }
+
     const answers = request.body.answers || {};
     const timeSpent = Number(request.body.timeSpentMs) || 0;
 
     // 批量判分
-    const exam = db.prepare('SELECT * FROM mock_exams WHERE id = ?').get(examId);
     const qIds = safeJsonParse(exam.question_ids, []);
     let score = 0;
     const totalScore = 100;
@@ -503,7 +505,10 @@ module.exports = function registerMiscRoutes(app, shared) {
   // 闪卡每日目标
   app.get('/api/flashcards/goal', requireStudent, (request, response) => {
     const goal = db.prepare('SELECT * FROM flashcard_goals WHERE student_id = ?').get(request.currentUser.id);
-    response.json({ goal: goal || { daily_new: 20, daily_review: 50 } });
+    const todayDone = db.prepare(
+      'SELECT COUNT(*) AS cnt FROM flashcard_records WHERE student_id = ? AND DATE(created_at) = ?'
+    ).get(request.currentUser.id, dayjs().format('YYYY-MM-DD')).cnt;
+    response.json({ goal: goal || { daily_new: 20, daily_review: 50 }, todayDone: todayDone || 0 });
   });
 
   app.post('/api/flashcards/goal', requireStudent, (request, response) => {
@@ -616,8 +621,22 @@ module.exports = function registerMiscRoutes(app, shared) {
     response.json({ ok: true });
   });
 
-  // AI 智能功能
+  // AI 智能功能（含速率限制：每用户每天 50 次）
+  const aiRateLimiter = {};
+  function checkAiRateLimit(userId) {
+    const today = dayjs().format('YYYY-MM-DD');
+    const key = userId + ':' + today;
+    if (!aiRateLimiter[key]) { aiRateLimiter[key] = 0; }
+    if (aiRateLimiter[key] >= 50) { return false; }
+    aiRateLimiter[key]++;
+    // 清理过期条目
+    const yesterday = dayjs().subtract(1, 'day').format('YYYY-MM-DD');
+    Object.keys(aiRateLimiter).forEach((k) => { if (k.endsWith(yesterday)) { delete aiRateLimiter[k]; } });
+    return true;
+  }
+
   app.post('/api/ai/tutor', requireAuth, async (request, response) => {
+    if (!checkAiRateLimit(request.currentUser.id)) { return response.status(429).json({ error: 'AI 调用次数已达每日上限。' }); }
     const { question, context } = request.body;
     if (!question) { return response.status(400).json({ error: '请输入问题。' }); }
     const safeQuestion = String(question).slice(0, 2000);
@@ -639,6 +658,7 @@ module.exports = function registerMiscRoutes(app, shared) {
   });
 
   app.post('/api/ai/essay-grade', requireAuth, async (request, response) => {
+    if (!checkAiRateLimit(request.currentUser.id)) { return response.status(429).json({ error: 'AI 调用次数已达每日上限。' }); }
     const { essay, type } = request.body;
     if (!essay) { return response.status(400).json({ error: '请输入作文。' }); }
     const safeEssay = String(essay).slice(0, 5000);
@@ -659,6 +679,7 @@ module.exports = function registerMiscRoutes(app, shared) {
   });
 
   app.post('/api/ai/study-plan', requireAuth, async (request, response) => {
+    if (!checkAiRateLimit(request.currentUser.id)) { return response.status(429).json({ error: 'AI 调用次数已达每日上限。' }); }
     const userId = request.currentUser.id;
 
     // 收集用户数据
@@ -686,6 +707,7 @@ module.exports = function registerMiscRoutes(app, shared) {
   });
 
   app.post('/api/ai/generate-questions', requireAuth, async (request, response) => {
+    if (!checkAiRateLimit(request.currentUser.id)) { return response.status(429).json({ error: 'AI 调用次数已达每日上限。' }); }
     if (request.currentUser.role !== 'teacher') { return response.status(403).json({ error: '无权限。' }); }
     const { subject, topic, count, type } = request.body;
 
@@ -705,6 +727,7 @@ module.exports = function registerMiscRoutes(app, shared) {
   });
 
   app.post('/api/ai/summary', requireAuth, async (request, response) => {
+    if (!checkAiRateLimit(request.currentUser.id)) { return response.status(429).json({ error: 'AI 调用次数已达每日上限。' }); }
     const { content, type } = request.body;
     if (!content) { return response.status(400).json({ error: '请提供内容。' }); }
 

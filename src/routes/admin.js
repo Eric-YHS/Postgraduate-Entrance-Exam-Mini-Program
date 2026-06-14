@@ -51,7 +51,9 @@ module.exports = function registerAdminRoutes(app, shared) {
 
   // 管理后台 - 审核教师申请
   app.post('/api/admin/applications/:id/approve', requireAdmin, (request, response) => {
-    const application = db.prepare('SELECT * FROM teacher_applications WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const application = db.prepare('SELECT * FROM teacher_applications WHERE id = ?').get(id);
     if (!application) {
       response.status(404).json({ error: '申请不存在。' });
       return;
@@ -74,7 +76,7 @@ module.exports = function registerAdminRoutes(app, shared) {
 
         // BUG-080: 审批后清除申请中的密码
         db.prepare('UPDATE teacher_applications SET status = \'approved\', reviewed_by = ?, reviewed_at = ?, password = \'\' WHERE id = ?')
-          .run(request.currentUser.id, now, request.params.id);
+          .run(request.currentUser.id, now, id);
       });
 
       approveTransaction();
@@ -90,7 +92,9 @@ module.exports = function registerAdminRoutes(app, shared) {
   });
 
   app.post('/api/admin/applications/:id/reject', requireAdmin, (request, response) => {
-    const application = db.prepare('SELECT * FROM teacher_applications WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const application = db.prepare('SELECT * FROM teacher_applications WHERE id = ?').get(id);
     if (!application) {
       response.status(404).json({ error: '申请不存在。' });
       return;
@@ -103,7 +107,7 @@ module.exports = function registerAdminRoutes(app, shared) {
 
     const now = dayjs().toISOString();
     db.prepare('UPDATE teacher_applications SET status = \'rejected\', reviewed_by = ?, reviewed_at = ? WHERE id = ?')
-      .run(request.currentUser.id, now, request.params.id);
+      .run(request.currentUser.id, now, id);
 
     response.json({ ok: true });
   });
@@ -144,7 +148,9 @@ module.exports = function registerAdminRoutes(app, shared) {
   });
 
   app.put('/api/admin/users/:id', requireAdmin, (request, response) => {
-    const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     if (!targetUser) {
       response.status(404).json({ error: '用户不存在。' });
       return;
@@ -185,13 +191,15 @@ module.exports = function registerAdminRoutes(app, shared) {
       return;
     }
 
-    params.push(request.params.id);
+    params.push(id);
     db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
     response.json({ ok: true });
   });
 
   app.delete('/api/admin/users/:id', requireAdmin, (request, response) => {
-    const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const targetUser = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
     if (!targetUser) {
       response.status(404).json({ error: '用户不存在。' });
       return;
@@ -228,7 +236,7 @@ module.exports = function registerAdminRoutes(app, shared) {
       db.prepare('DELETE FROM notifications WHERE student_id = ?').run(uid);
       db.prepare('DELETE FROM summaries WHERE student_id = ?').run(uid);
       db.prepare('DELETE FROM orders WHERE student_id = ?').run(uid);
-      db.prepare('DELETE FROM addresses WHERE student_id = ?').run(uid);
+      db.prepare('DELETE FROM address_book WHERE student_id = ?').run(uid);
       db.prepare('DELETE FROM live_messages WHERE user_id = ?').run(uid);
       db.prepare('DELETE FROM forum_replies WHERE user_id = ?').run(uid);
       db.prepare('DELETE FROM forum_topics WHERE user_id = ?').run(uid);

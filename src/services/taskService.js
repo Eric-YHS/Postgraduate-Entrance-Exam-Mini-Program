@@ -90,9 +90,17 @@ function taskMatchesDate(task, dateString) {
 }
 
 function getTasksForStudentOnDate(db, studentId, dateString) {
-  return getAllTasks(db)
-    .filter((task) => taskMatchesStudent(task, studentId) && taskMatchesDate(task, dateString))
-    .sort((left, right) => left.start_time.localeCompare(right.start_time));
+  const day = dayjs(dateString).day();
+  // 使用 SQL LIKE 做初步筛选，避免全表加载
+  const strId = String(studentId);
+  const rows = db.prepare(
+    `SELECT tasks.*, users.display_name AS teacher_name
+     FROM tasks LEFT JOIN users ON users.id = tasks.created_by
+     WHERE (student_ids LIKE ? OR student_ids LIKE ? OR student_ids LIKE ? OR student_ids = ?)
+     ORDER BY tasks.start_time ASC`
+  ).all(`%[${strId},%`, `%,${strId},%`, `%,${strId}]%`, `[${strId}]`);
+  return rows.map(normalizeTaskRow)
+    .filter((task) => taskMatchesStudent(task, studentId) && taskMatchesDate(task, dateString));
 }
 
 function getStudentsByIds(db, studentIds) {
