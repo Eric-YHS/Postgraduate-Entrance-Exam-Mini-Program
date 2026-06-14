@@ -65,16 +65,25 @@ jobs:
             # 安装依赖
             npm ci --omit=dev
 
-            # 使用 PM2 reload 实现零停机部署
-            pm2 reload ecosystem.config.cjs --env production || pm2 start ecosystem.config.cjs --env production
+            # 清理并重新启动应用（避免旧配置残留导致 reload 异常）
+            pm2 delete study-planner || true
+            pm2 start ecosystem.config.cjs --env production
 
-            # 健康检查
-            sleep 3
-            curl -fsS http://localhost:3000/healthz > /dev/null || (
-              echo "Health check failed" &&
-              pm2 logs study-planner --lines 50 &&
-              exit 1
-            )
+            # 健康检查：等待应用启动
+            echo "Waiting for application to start..."
+            for i in {1..12}; do
+              if curl -fsS http://localhost:3000/healthz > /dev/null 2>&1; then
+                echo "Health check passed"
+                break
+              fi
+              if [ $i -eq 12 ]; then
+                echo "Health check failed after 60 seconds"
+                pm2 status
+                pm2 logs study-planner --lines 100 --nostream
+                exit 1
+              fi
+              sleep 5
+            done
 
             pm2 save
             echo "Deploy completed at $(date)"
