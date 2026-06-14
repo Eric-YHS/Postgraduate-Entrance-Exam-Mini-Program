@@ -18,6 +18,7 @@ Page({
 
   onLoad(options) {
     if (!ensureLogin()) return;
+    this._pageVisible = true;
     const courseId = options.id;
     if (!courseId) {
       wx.showToast({ title: '课程不存在', icon: 'none' });
@@ -28,6 +29,14 @@ Page({
     this.loadCourse(courseId);
     this.loadProgress(courseId);
     this.loadNotes(courseId);
+  },
+
+  onShow() {
+    this._pageVisible = true;
+  },
+
+  onHide() {
+    this._pageVisible = false;
   },
 
   async loadCourse(courseId) {
@@ -69,6 +78,7 @@ Page({
   },
 
   onTimeUpdate(e) {
+    if (!this._pageVisible) return;
     const { currentTime, duration } = e.detail;
     if (!duration) return;
 

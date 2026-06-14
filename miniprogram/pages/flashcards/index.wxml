@@ -162,7 +162,7 @@
 
     <!-- 选项 -->
     <view style="margin-top: 24rpx;">
-      <view wx:for="{{quizOptions}}" wx:key="index"
+      <view wx:for="{{quizOptions}}" wx:key="id"
             style="padding:24rpx;margin-bottom:16rpx;border-radius:16rpx;border:2rpx solid {{item.border}};background:{{item.bg}};transition:all 0.2s;"
             bindtap="selectQuizOption" data-index="{{index}}">
         <text style="font-size:30rpx;">{{item.text}}</text>

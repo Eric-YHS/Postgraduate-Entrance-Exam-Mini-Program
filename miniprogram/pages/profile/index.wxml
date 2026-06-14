@@ -108,7 +108,7 @@
         <text>六</text>
       </view>
       <view class="calendar-grid">
-        <view wx:for="{{calendarGrid}}" wx:key="index"
+        <view wx:for="{{calendarGrid}}" wx:key="id"
               class="calendar-cell {{item.active ? 'calendar-cell--active' : (item.day ? 'calendar-cell--inactive' : 'calendar-cell--empty')}} {{item.today ? 'calendar-cell--today' : ''}}">
           {{item.day}}
         </view>
@@ -205,10 +205,7 @@
     <view class="section animate-in">
       <view class="section-title">成就徽章</view>
       <view style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 20rpx; margin-top: 20rpx;">
-        <view wx:for="{{achievements}}" wx:key="id"
-              style="text-align: center; padding: 24rpx 12rpx; border-radius: 20rpx;
-                background: {{item.unlocked ? '#eff6ff' : '#f3f4f6'}};
-                border: 2rpx solid {{item.unlocked ? '#93c5fd' : '#e5e7eb'}};">
+        <view wx:for="{{achievements}}" wx:key="id" style="text-align: center; padding: 24rpx 12rpx; border-radius: 20rpx; background: {{item.unlocked ? '#eff6ff' : '#f3f4f6'}}; border: 2rpx solid {{item.unlocked ? '#93c5fd' : '#e5e7eb'}};">
           <view style="font-size: 48rpx; {{item.unlocked ? '' : 'filter: grayscale(1); opacity: 0.5;'}}">{{item.icon}}</view>
           <view style="font-size: 24rpx; font-weight: 600; margin-top: 8rpx; color: {{item.unlocked ? '#1f2937' : '#9ca3af'}};">{{item.title}}</view>
           <view style="font-size: 20rpx; color: #6b7280; margin-top: 4rpx;">{{item.description}}</view>

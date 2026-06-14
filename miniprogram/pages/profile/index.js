@@ -35,13 +35,16 @@ Page({
 
   onShow() {
     if (!ensureLogin()) return;
-    const now = new Date();
-    this.setData({
-      user: getUser(),
-      baseUrl: getBaseUrl(),
-      calendarYear: now.getFullYear(),
-      calendarMonthIdx: now.getMonth()
-    });
+    // 只在首次加载时初始化日历到当前月份
+    if (!this._inited) {
+      const now = new Date();
+      this.setData({
+        calendarYear: now.getFullYear(),
+        calendarMonthIdx: now.getMonth()
+      });
+      this._inited = true;
+    }
+    this.setData({ user: getUser(), baseUrl: getBaseUrl() });
     this.loadDashboard();
     this.loadOriginalData();
     this.loadReport();
@@ -50,7 +53,12 @@ Page({
 
   onPullDownRefresh() {
     this.setData({ loading: true });
-    Promise.all([this.loadDashboard(), this.loadOriginalData()]).finally(() => wx.stopPullDownRefresh());
+    Promise.all([this.loadDashboard(), this.loadOriginalData()])
+      .catch(() => {})
+      .finally(() => {
+        this.setData({ loading: false });
+        wx.stopPullDownRefresh();
+      });
   },
 
   async loadDashboard() {
@@ -100,18 +108,21 @@ Page({
     const isCurrentMonth = year === now.getFullYear() && month === now.getMonth();
     const today = now.getDate();
     const activeDays = new Set(this.data.calendarDays.map(d => {
+      if (!d || !d.date) return -1;
       const parts = d.date.split('-');
-      return parseInt(parts[2]);
+      return parseInt(parts[2]) || -1;
     }));
 
     const grid = [];
+    let gridId = 0;
     // 前面的空白格
     for (let i = 0; i < firstDayOfWeek; i++) {
-      grid.push({ day: '', active: false, today: false });
+      grid.push({ id: gridId++, day: '', active: false, today: false });
     }
     // 日期格
     for (let d = 1; d <= daysInMonth; d++) {
       grid.push({
+        id: gridId++,
         day: d,
         active: activeDays.has(d),
         today: isCurrentMonth && d === today

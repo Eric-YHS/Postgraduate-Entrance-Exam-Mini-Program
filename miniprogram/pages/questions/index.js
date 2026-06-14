@@ -38,16 +38,19 @@ Page({
     const pending = getApp().consumePendingFilter();
     if (pending && pending.subject && pending.subject !== this.data.filters.subject) {
       this.setData({ 'filters.subject': pending.subject });
+    }
+    // 每次都刷新统计
+    this.loadStats();
+    // 首次进入或筛选变化时加载数据
+    if (!this._loaded || (pending && pending.subject)) {
+      this._loaded = true;
       this.loadMeta();
-      this.loadStats();
       this.loadQuestions(true);
     }
   },
 
   onPullDownRefresh() {
-    this.loadStats();
-    this.loadQuestions(true);
-    setTimeout(() => wx.stopPullDownRefresh(), 800);
+    Promise.all([this.loadStats(), this.loadQuestions(true)]).finally(() => wx.stopPullDownRefresh());
   },
 
   async loadMeta() {
@@ -87,8 +90,10 @@ Page({
 
     if (mode === 'favorites') {
       url = '/api/questions/favorites?page=' + page + '&limit=10';
+      if (subject) url += '&subject=' + encodeURIComponent(subject);
     } else if (mode === 'wrong') {
       url = '/api/practice/wrong?page=' + page + '&limit=10';
+      if (subject) url += '&subject=' + encodeURIComponent(subject);
     }
 
     try {
@@ -253,6 +258,12 @@ Page({
   },
 
   async startSession() {
+    // 关闭旧 session
+    if (this.data.currentSessionId) {
+      try {
+        await request({ url: '/api/practice/sessions/' + this.data.currentSessionId + '/end', method: 'POST' });
+      } catch (_) { /* 静默 */ }
+    }
     try {
       const data = await request({
         url: '/api/practice/sessions',
@@ -276,6 +287,7 @@ Page({
         questions: data.questions || [],
         loading: false,
         'filters.mode': 'daily',
+        'filters.subject': '',
         modeLabel: '每日推荐',
         totalCount: (data.questions || []).length,
         hasMore: false,

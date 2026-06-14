@@ -70,6 +70,14 @@ Page({
     this._searchTimer = setTimeout(() => this.loadTopics(true), 500);
   },
 
+  onHide() {
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+  },
+
+  onUnload() {
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+  },
+
   selectCategory(e) {
     const category = e.currentTarget.dataset.category;
     this.setData({ selectedCategory: this.data.selectedCategory === category ? '' : category });

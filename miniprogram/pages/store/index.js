@@ -43,13 +43,14 @@ Page({
   async loadProducts() {
     try {
       const app = getApp();
-      const payload = await app.fetchBootstrapModules(['products']);
+      const payload = await app.fetchBootstrapModules(['products', 'orders']);
       this.setData({
         loading: false,
         products: (payload.products || []).map(p => ({
           ...p,
           imageUrl: resolveUrl(p.imagePath)
-        }))
+        })),
+        orders: payload.orders || []
       });
     } catch (error) {
       this.setData({ loading: false, loadError: error.message || '商品加载失败，请重试' });
@@ -73,6 +74,8 @@ Page({
   },
 
   async loadOrders() {
+    // 如果 loadProducts 已经通过 fetchBootstrapModules(['products', 'orders']) 加载了订单数据，则跳过重复请求
+    if (this.data.orders && this.data.orders.length) return;
     try {
       const app = getApp();
       const payload = await app.fetchBootstrapModules(['orders']);
@@ -215,15 +218,15 @@ Page({
     }
   },
 
-  // 订单状态文本
-  getStatusText(status) {
-    const map = { paid: '已支付', shipped: '已发货', delivered: '已送达', cancelled: '已取消' };
-    return map[status] || status;
-  },
-
-  getStatusColor(status) {
-    const map = { paid: '#2563eb', shipped: '#ea580c', delivered: '#16a34a', cancelled: '#6b7280' };
-    return map[status] || '#6b7280';
+  async confirmReceive(e) {
+    const orderId = e.currentTarget.dataset.id;
+    try {
+      await request({ url: `/api/orders/${orderId}/confirm`, method: 'POST' });
+      wx.showToast({ title: '已确认收货', icon: 'success' });
+      this.loadOrders();
+    } catch (err) {
+      wx.showToast({ title: err.message, icon: 'none' });
+    }
   },
 
   retry() {

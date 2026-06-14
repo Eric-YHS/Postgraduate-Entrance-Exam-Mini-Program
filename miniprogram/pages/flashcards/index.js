@@ -27,6 +27,14 @@ Page({
     this.loadDueCards();
   },
 
+  onShow() {
+    if (!ensureLogin()) return;
+    if (this._loaded) {
+      this.loadDueCards();
+    }
+    this._loaded = true;
+  },
+
   onPullDownRefresh() {
     this.loadDueCards().finally(() => wx.stopPullDownRefresh());
   },
@@ -54,6 +62,7 @@ Page({
         currentIndex: 0,
         isFlipped: false,
         finished: false,
+        dailyDone: result.todayDone || 0,
         stats: { total: 0, again: 0, hard: 0, good: 0, easy: 0 },
         quizOptions: [],
         quizSelected: '',
@@ -143,7 +152,7 @@ Page({
     while (distractors.length < 3) distractors.push('—');
     const options = [correctAnswer, ...distractors]
       .sort(() => Math.random() - 0.5)
-      .map(text => ({ text, border: '#e5e7eb', bg: '#fff' }));
+      .map((text, i) => ({ id: i, text, border: '#e5e7eb', bg: '#fff' }));
     this.setData({ quizOptions: options, quizCorrectAnswer: correctAnswer });
   },
 
@@ -159,9 +168,10 @@ Page({
     this.setData({ quizSelected: selected, quizOptions: options });
   },
 
-  submitQuizAnswer() {
+  async submitQuizAnswer() {
     if (!this.data.quizSelected || this.data.quizAnswered) return;
-    const { quizSelected, quizCorrectAnswer, quizOptions } = this.data;
+    const { cards, currentIndex, quizSelected, quizCorrectAnswer, quizOptions } = this.data;
+    const currentCard = cards[currentIndex];
     const isCorrect = quizSelected === quizCorrectAnswer;
     const options = quizOptions.map(opt => {
       if (opt.text === quizCorrectAnswer) return { ...opt, border: '#16a34a', bg: '#f0fdf4' };
@@ -169,6 +179,13 @@ Page({
       return opt;
     });
     this.setData({ quizOptions: options, quizAnswered: true });
+    // 记录复习结果到间隔重复系统
+    if (currentCard && currentCard.id) {
+      try {
+        const quality = isCorrect ? 3 : 1;
+        await request({ url: `/api/flashcards/${currentCard.id}/review`, method: 'POST', data: { quality } });
+      } catch (e) { /* 静默失败 */ }
+    }
   },
 
   // 目标设置

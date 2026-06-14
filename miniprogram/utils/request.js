@@ -1,4 +1,11 @@
 const DEFAULT_BASE_URL = 'https://xiaoeduhub.online';
+let __DEV__ = false;
+try {
+  const accountInfo = wx.getAccountInfoSync();
+  __DEV__ = accountInfo.miniProgram.envVersion !== 'release';
+} catch (_) {
+  __DEV__ = true; // 如果获取失败，默认为开发模式
+}
 
 function getBaseUrl() {
   return wx.getStorageSync('baseUrl') || DEFAULT_BASE_URL;
@@ -40,9 +47,16 @@ function handleAuthExpired() {
 
 function request({ url, method = 'GET', data = {}, header = {} }) {
   const token = getToken();
+  const fullUrl = `${getBaseUrl()}${url}`;
+
+  // 安全检查：拒绝非 HTTPS 请求（开发模式除外）
+  if (!__DEV__ && !fullUrl.startsWith('https://')) {
+    return Promise.reject(new Error('安全限制：仅允许 HTTPS 请求'));
+  }
+
   return new Promise((resolve, reject) => {
     wx.request({
-      url: `${getBaseUrl()}${url}`,
+      url: fullUrl,
       method,
       data,
       header: {
@@ -74,9 +88,16 @@ function request({ url, method = 'GET', data = {}, header = {} }) {
 
 function uploadFile({ url, filePath, name, formData = {} }) {
   const token = getToken();
+  const fullUrl = `${getBaseUrl()}${url}`;
+
+  // 安全检查：拒绝非 HTTPS 请求（开发模式除外）
+  if (!__DEV__ && !fullUrl.startsWith('https://')) {
+    return Promise.reject(new Error('安全限制：仅允许 HTTPS 请求'));
+  }
+
   return new Promise((resolve, reject) => {
     wx.uploadFile({
-      url: `${getBaseUrl()}${url}`,
+      url: fullUrl,
       filePath,
       name,
       formData,

@@ -36,7 +36,10 @@ Page({
   },
 
   async loadData(forceRefresh) {
-    this.setData({ loading: true });
+    // 已有数据时不重置 loading，避免骨架屏闪烁
+    if (forceRefresh || !this.data.tasks || !this.data.tasks.length) {
+      this.setData({ loading: true });
+    }
     try {
       const app = getApp();
       const payload = await app.fetchBootstrap(forceRefresh);
@@ -140,6 +143,10 @@ Page({
 
   async submitSummary() {
     if (this.data.submittingSummary) return;
+    if (!this.data.summaryDate) {
+      wx.showToast({ title: '日期尚未加载', icon: 'none' });
+      return;
+    }
     try {
       const { summaryDate, summaryContent, selectedImages, selectedFiles } = this.data;
       const hasContent = (summaryContent || '').trim().length > 0;
@@ -152,24 +159,26 @@ Page({
       this.setData({ submittingSummary: true });
 
       if (hasFiles) {
+        // 先通过 JSON 接口创建总结记录（含文本内容），���逐个上传附件合并进去
         const allFiles = [
           ...selectedImages.map(p => ({ path: p, name: 'images' })),
           ...selectedFiles.map(p => ({ path: p, name: 'attachments' }))
         ];
 
-        await uploadFile({
+        // 第一步：创建总结（仅文本，服务端 upsert）
+        await request({
           url: '/api/summaries',
-          filePath: allFiles[0].path,
-          name: allFiles[0].name,
-          formData: { taskDate: summaryDate, content: summaryContent }
+          method: 'POST',
+          data: { taskDate: summaryDate, content: summaryContent }
         });
 
-        for (let i = 1; i < allFiles.length; i++) {
+        // 第二步：逐个上传文件，服务端会合并到同一天的记录
+        for (let i = 0; i < allFiles.length; i++) {
           await uploadFile({
             url: '/api/summaries',
             filePath: allFiles[i].path,
             name: allFiles[i].name,
-            formData: { taskDate: summaryDate }
+            formData: { taskDate: summaryDate, content: '' }
           });
         }
       } else {
@@ -182,7 +191,7 @@ Page({
 
       wx.showToast({ title: '总结已提交', icon: 'success' });
       const today = this.data.today;
-      const newSummary = { taskDate: today, content: summaryContent, imagePaths: [], attachmentPaths: [], updatedAt: new Date().toISOString() };
+      const newSummary = { id: 'temp_' + Date.now(), taskDate: today, content: summaryContent, imagePaths: [], attachmentPaths: [], updatedAt: new Date().toISOString() };
       const summaries = [newSummary, ...this.data.summaries];
       this.setData({
         summaryContent: '',
@@ -211,7 +220,7 @@ Page({
     }
     const token = require('../../utils/auth').getToken();
     wx.setStorageSync('liveToken', token);
-    const liveUrl = `${getBaseUrl()}/live/${liveId}`;
+    const liveUrl = `${getBaseUrl()}/live/${liveId}?token=${encodeURIComponent(token)}`;
     wx.navigateTo({ url: `/pages/live-webview/index?src=${encodeURIComponent(liveUrl)}` });
   },
 
@@ -271,14 +280,14 @@ Page({
 
   async refreshTasks() {
     try {
-      const res = await request({ url: '/api/student/bootstrap' });
+      const app = getApp();
+      const res = await app.fetchBootstrap(true);
       const tasks = res.todaysTasks || [];
       tasks.forEach(t => {
         if (t.subtasks) t.subtasksCompleted = t.subtasks.filter(st => st.completed).length;
       });
       const tasksCompleted = tasks.filter(t => t.completedAt).length;
       this.setData({ tasks, tasksCompleted });
-      const app = getApp();
       app.updateBootstrapCache({ todaysTasks: tasks });
     } catch (_) {
       wx.showToast({ title: '刷新失败，请下拉重试', icon: 'none' });

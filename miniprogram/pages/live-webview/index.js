@@ -12,7 +12,7 @@ Page({
       return;
     }
     const token = wx.getStorageSync('liveToken') || '';
-    if (src && token) {
+    if (src && token && !src.includes('token=')) {
       const separator = src.includes('?') ? '&' : '?';
       src += `${separator}token=${encodeURIComponent(token)}`;
     }
