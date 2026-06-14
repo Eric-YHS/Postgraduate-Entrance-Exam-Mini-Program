@@ -20,15 +20,14 @@
 │   ├── services/
 │   │   ├── scheduler.js          # 定时任务（每日任务推送、逾期提醒）
 │   │   ├── spacedRepetition.js   # SM-2 间隔重复算法（艾宾浩斯记忆曲线）
-│   │   ├── taskService.js        # 任务调度核心逻辑
-│   │   └── wxPush.js             # 微信小程序消息推送
+│   │   └── taskService.js        # 任务调度核心逻辑
 │   └── utils/
 │       └── sanitize.js           # 输入过滤 & XSS 防护
 ├── public/
 │   ├── admin.html / admin.js     # 管理员后台
 │   ├── teacher.html / teacher.js # 教师工作台
 │   ├── student.html / student.js # 学生学习台
-│   ├── login.js                  # 登录页
+│   ├── index.html                # 登录页
 │   ├── register.html / register.js # 教师注册
 │   ├── forum.html / forum.js     # 论坛社区
 │   ├── topic-detail.html / js    # 帖子详情（楼中楼回复）
@@ -290,7 +289,9 @@ AI_MODEL=gpt-3.5-turbo
 |------|------|------|
 | GET | `/api/forum/topics` | 帖子列表（支持搜索/排序/标签筛选） |
 | POST | `/api/forum/topics` | 发布帖子 |
+| GET | `/api/forum/topics/favorites` | 我的收藏列表 |
 | GET | `/api/forum/topics/:id` | 帖子详情 |
+| DELETE | `/api/forum/topics/:id` | 删除帖子 |
 | POST | `/api/forum/topics/:id/replies` | 回复帖子（支持楼中楼） |
 | POST | `/api/forum/topics/:id/like` | 点赞/取消 |
 | POST | `/api/forum/topics/:id/favorite` | 收藏/取消 |
@@ -300,6 +301,7 @@ AI_MODEL=gpt-3.5-turbo
 | GET | `/api/forum/trending` | 热门话题 |
 | GET | `/api/forum/hashtags` | 热门标签 |
 | POST | `/api/reports` | 举报内容 |
+| POST | `/api/reports/:id/review` | 审核举报 |
 
 ### 题库 & 练习
 | 方法 | 路径 | 说明 |
@@ -307,13 +309,20 @@ AI_MODEL=gpt-3.5-turbo
 | GET | `/api/questions` | 题目列表（支持模式/科目/题型筛选） |
 | POST | `/api/questions` | 创建题目 |
 | POST | `/api/questions/import` | 批量导入 |
+| GET | `/api/questions/textbooks` | 参考书列表 |
+| POST | `/api/questions/textbooks` | 创建参考书 |
+| DELETE | `/api/questions/textbooks/:name` | 删除参考书 |
+| GET | `/api/questions/favorites` | 收藏题目列表 |
+| GET | `/api/questions/meta` | 题目元数据（科目/题型/标签） |
 | POST | `/api/questions/:id/answer` | 提交答案 |
 | POST | `/api/questions/:id/favorite` | 收藏题目 |
 | GET/POST/DELETE | `/api/questions/:id/notes` | 题目笔记 |
 | POST | `/api/questions/auto-paper` | 随机组卷 |
 | GET | `/api/questions/daily` | 每日推荐 |
+| GET | `/api/practice/sessions` | 练习会话列表 |
 | GET | `/api/practice/wrong` | 错题本 |
 | GET | `/api/practice/wrong-review` | 错题智能复习 |
+| POST | `/api/practice/wrong-review/:id/done` | 标记错题复习完成 |
 | GET | `/api/practice/stats/detailed` | 详细做题统计 |
 | GET | `/api/practice/stats/weekly` | 周报 |
 | GET | `/api/practice/stats/monthly` | 月报 |
@@ -333,6 +342,7 @@ AI_MODEL=gpt-3.5-turbo
 |------|------|------|
 | GET | `/api/flashcards` | 闪卡列表（支持科目筛选） |
 | POST | `/api/flashcards` | 创建闪卡 |
+| POST | `/api/flashcards/import` | 批量导入 |
 | GET | `/api/flashcards/due` | 今日待复习 |
 | POST | `/api/flashcards/:id/review` | 提交复习评分 |
 | GET/POST | `/api/flashcards/goal` | 每日目标 |
@@ -345,12 +355,15 @@ AI_MODEL=gpt-3.5-turbo
 | GET | `/api/products/recommended` | 推荐商品 |
 | GET | `/api/cart` | 购物车 |
 | POST | `/api/cart` | 加入购物车 |
+| DELETE | `/api/cart/:id` | 删除购物车项 |
 | POST | `/api/cart/checkout` | 结算下单 |
 | POST | `/api/orders` | 直接下单 |
+| POST | `/api/orders/:id/status` | 更新订单状态（教师） |
 | POST | `/api/orders/:id/confirm` | 确认收货 |
 | POST | `/api/orders/:id/download` | 虚拟商品下载 |
 | GET/POST | `/api/products/:id/reviews` | 商品评价 |
 | GET/POST/DELETE | `/api/addresses` | 地址管理 |
+| GET | `/api/group-buys` | 拼团列表 |
 | POST | `/api/group-buys` | 发起拼团 |
 | POST | `/api/group-buys/:id/join` | 参与拼团 |
 
@@ -359,6 +372,8 @@ AI_MODEL=gpt-3.5-turbo
 |------|------|------|
 | POST | `/api/users/:id/follow` | 关注/取关 |
 | GET | `/api/users/:id/follow-status` | 关注状态 |
+| GET | `/api/users/:id/followers` | 粉丝列表 |
+| GET | `/api/users/:id/following` | 关注列表 |
 | GET | `/api/study/streak` | 学习连续天数 |
 
 ### 学习数据 & 成就
@@ -371,12 +386,22 @@ AI_MODEL=gpt-3.5-turbo
 | GET | `/api/habits` | 习惯列表 |
 | POST | `/api/habits` | 创建习惯 |
 | POST | `/api/habits/:id/check` | 打卡 |
+| DELETE | `/api/habits/:id` | 删除习惯 |
 
 ### AI 智能功能
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | POST | `/api/ai/tutor` | AI 答疑 |
 | POST | `/api/ai/essay-grade` | AI 作文批改 |
+| POST | `/api/ai/generate-questions` | AI 生成题目 |
+| POST | `/api/ai/summary` | AI 学习摘要 |
+
+### 搜索与通知
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/search/hot` | 热门搜索 |
+| GET | `/api/notifications` | 通知列表 |
+| POST | `/api/notifications/read` | 标记已读 |
 | POST | `/api/ai/study-plan` | AI 学习计划 |
 | POST | `/api/ai/generate-questions` | AI 生成题目 |
 | POST | `/api/ai/summary` | AI 智能摘要 |
