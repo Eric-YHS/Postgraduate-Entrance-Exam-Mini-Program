@@ -2,7 +2,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerTeacherRoutes(app, shared) {
-  const { db, requireTeacher, serializeTask, serializeSummary, getTasksForStudentOnDate, getStudents, getTeacherCoreBootstrapData, getTeacherModuleData, safeJsonParse, sendNotificationToStudent, parseWeekdaysInput, resolveStudentIds, createTaskRecord, serializeLiveSession } = shared;
+  const { db, requireTeacher, serializeTask, serializeSummary, getTasksForStudentOnDate, getAllTasks, getStudents, getTeacherCoreBootstrapData, getTeacherModuleData, safeJsonParse, sendNotificationToStudent, parseWeekdaysInput, resolveStudentIds, createTaskRecord, serializeLiveSession } = shared;
 
   const MAX_TITLE_LENGTH = 200;
 
@@ -26,31 +26,63 @@ module.exports = function registerTeacherRoutes(app, shared) {
       students = students.filter((s) => !s.className || s.className === teacherClassName);
     }
 
+    // B-27: 使用批量查询替代 N+1 查询
+    const studentIds = students.map((s) => s.id);
+    if (!studentIds.length) {
+      response.json({ students: [], today });
+      return;
+    }
+
+    const placeholders = studentIds.map(() => '?').join(',');
+
+    // 批量获取今日任务（获取全部任务后按日期和学生过滤）
+    const day = dayjs(today).day();
+    const allTasks = getAllTasks(db).filter((task) => task.weekdays.includes(day));
+    const tasksByStudent = {};
+    allTasks.forEach((task) => {
+      const taskStudentIds = task.studentIds || [];
+      taskStudentIds.forEach((sid) => {
+        if (!tasksByStudent[sid]) tasksByStudent[sid] = [];
+        tasksByStudent[sid].push(task);
+      });
+    });
+
+    // 批量获取任务完成情况
+    const completions = db.prepare(
+      `SELECT task_id, student_id, completed_at FROM task_completions WHERE task_date = ? AND student_id IN (${placeholders})`
+    ).all(today, ...studentIds);
+    const completionMap = {};
+    completions.forEach((c) => {
+      const key = `${c.task_id}_${c.student_id}`;
+      if (c.completed_at) completionMap[key] = true;
+    });
+
+    // 批量获取最新总结日期
+    const latestSummaries = db.prepare(
+      `SELECT student_id, MAX(created_at) AS created_at FROM summaries WHERE student_id IN (${placeholders}) GROUP BY student_id`
+    ).all(...studentIds);
+    const summaryMap = {};
+    latestSummaries.forEach((s) => { summaryMap[s.student_id] = s.created_at; });
+
+    // 批量获取练习统计
+    const practiceStats = db.prepare(
+      `SELECT student_id, COUNT(*) AS total, SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct FROM practice_records WHERE student_id IN (${placeholders}) GROUP BY student_id`
+    ).all(...studentIds);
+    const practiceMap = {};
+    practiceStats.forEach((p) => { practiceMap[p.student_id] = p; });
+
     const overview = students.map((student) => {
-      const todaysTasks = getTasksForStudentOnDate(db, student.id, today);
-
-      const completedCount = todaysTasks.filter((task) => {
-        const completion = db.prepare(
-          'SELECT completed_at FROM task_completions WHERE task_id = ? AND student_id = ? AND task_date = ?'
-        ).get(task.id, student.id, today);
-        return completion && completion.completed_at;
-      }).length;
-
-      const latestSummary = db.prepare(
-        'SELECT created_at FROM summaries WHERE student_id = ? ORDER BY updated_at DESC LIMIT 1'
-      ).get(student.id);
-
-      const practiceStats = db.prepare(
-        'SELECT COUNT(*) AS total, SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) AS correct FROM practice_records WHERE student_id = ?'
-      ).get(student.id);
+      const todaysTasks = tasksByStudent[student.id] || [];
+      const completedCount = todaysTasks.filter((task) => completionMap[`${task.id}_${student.id}`]).length;
+      const stats = practiceMap[student.id] || { total: 0, correct: 0 };
 
       return {
         ...student,
         todaysTaskCount: todaysTasks.length,
         todaysCompletedCount: completedCount,
-        lastSummaryDate: latestSummary ? latestSummary.created_at : null,
-        practiceTotal: practiceStats.total || 0,
-        practiceAccuracy: practiceStats.total > 0 ? Math.round(((practiceStats.correct || 0) / practiceStats.total) * 100) : 0
+        lastSummaryDate: summaryMap[student.id] || null,
+        practiceTotal: stats.total || 0,
+        practiceAccuracy: stats.total > 0 ? Math.round(((stats.correct || 0) / stats.total) * 100) : 0
       };
     });
 
@@ -58,9 +90,11 @@ module.exports = function registerTeacherRoutes(app, shared) {
   });
 
   app.get('/api/teacher/students/:id/overview', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     // BUG-052: 教师只能查看同班级的学生详情
     const teacherClassName = request.currentUser.class_name || '';
-    const student = db.prepare('SELECT * FROM users WHERE id = ? AND role = \'student\'').get(request.params.id);
+    const student = db.prepare('SELECT * FROM users WHERE id = ? AND role = \'student\'').get(id);
     if (!student) {
       response.status(404).json({ error: '学生不存在。' });
       return;
@@ -109,8 +143,10 @@ module.exports = function registerTeacherRoutes(app, shared) {
 
   // 教师提醒指定学生未完成任务
   app.post('/api/teacher/students/:id/remind', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const teacherClassName = request.currentUser.class_name || '';
-    const student = db.prepare('SELECT * FROM users WHERE id = ? AND role = \'student\'').get(request.params.id);
+    const student = db.prepare('SELECT * FROM users WHERE id = ? AND role = \'student\'').get(id);
     if (!student) {
       response.status(404).json({ error: '学生不存在。' });
       return;
@@ -139,14 +175,14 @@ module.exports = function registerTeacherRoutes(app, shared) {
     const notificationTitle = `老师提醒：今日未完成任务 (${today})`;
     const notificationBody = taskList;
 
-    db.prepare(
+    const notifInfo = db.prepare(
       'INSERT INTO notifications (student_id, type, title, body, task_date, created_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(student.id, '任务提醒', notificationTitle, notificationBody, today, now);
 
     sendNotificationToStudent(student.id, {
       type: 'notification',
       payload: {
-        id: db.prepare('SELECT last_insert_rowid() AS id').get().id,
+        id: notifInfo.lastInsertRowid,
         studentId: student.id,
         type: '任务提醒',
         title: notificationTitle,
@@ -202,30 +238,30 @@ module.exports = function registerTeacherRoutes(app, shared) {
       return;
     }
 
-    // BUG-076: 创建任务返回新 ID
-    const taskId = createTaskRecord({
-      title: sanitizeText(title),
-      description: sanitizeText(description),
-      subject: sanitizeText(subject || '考研规划'),
-      startTime: String(startTime).trim(),
-      endTime: String(endTime).trim(),
-      weekdays: normalizedWeekdays,
-      studentIds: normalizedStudentIds,
-      teacherId: request.currentUser.id,
-      priority: Number(request.body.priority) || 2,
-      reminderStart: String(request.body.reminderStart || '').trim(),
-      reminderEnd: String(request.body.reminderEnd || '').trim()
-    });
-
-    // 创建子任务
+    // BUG-076: 创建任务返回新 ID，并与子任务插入合并为同一事务
     const subtasks = Array.isArray(request.body.subtasks) ? request.body.subtasks.filter((s) => s && String(s).trim()) : [];
-    if (subtasks.length) {
-      const insertSubtask = db.prepare('INSERT INTO subtasks (task_id, title, sort_order) VALUES (?, ?, ?)');
-      const insertMany = db.transaction((items) => {
-        items.forEach((s, i) => insertSubtask.run(taskId, sanitizeText(String(s).trim()), i));
+    const taskId = db.transaction(() => {
+      const id = createTaskRecord({
+        title: sanitizeText(title),
+        description: sanitizeText(description),
+        subject: sanitizeText(subject || '考研规划'),
+        startTime: String(startTime).trim(),
+        endTime: String(endTime).trim(),
+        weekdays: normalizedWeekdays,
+        studentIds: normalizedStudentIds,
+        teacherId: request.currentUser.id,
+        priority: Number(request.body.priority) || 2,
+        reminderStart: String(request.body.reminderStart || '').trim(),
+        reminderEnd: String(request.body.reminderEnd || '').trim()
       });
-      insertMany(subtasks);
-    }
+
+      if (subtasks.length) {
+        const insertSubtask = db.prepare('INSERT INTO subtasks (task_id, title, sort_order) VALUES (?, ?, ?)');
+        subtasks.forEach((s, i) => insertSubtask.run(id, sanitizeText(String(s).trim()), i));
+      }
+
+      return id;
+    })();
 
     response.json({ ok: true, id: taskId });
   });
@@ -255,7 +291,8 @@ module.exports = function registerTeacherRoutes(app, shared) {
       }
       const allStudentIds = allStudents.map((s) => s.id);
 
-      rows.forEach((row) => {
+      const importTasks = db.transaction(() => {
+        rows.forEach((row) => {
         const stage = shared.getFieldValue(row, ['阶段']);
         const rawTask = shared.getFieldValue(row, ['当日任务']);
         const listenLink = shared.getFieldValue(row, ['听课链接']);
@@ -287,7 +324,7 @@ module.exports = function registerTeacherRoutes(app, shared) {
           return;
         }
 
-        createTaskRecord({
+        const taskId = createTaskRecord({
           title: title.substring(0, MAX_TITLE_LENGTH),
           description,
           subject,
@@ -309,6 +346,8 @@ module.exports = function registerTeacherRoutes(app, shared) {
 
         imported += 1;
       });
+      });
+      importTasks();
 
       const fs = require('fs');
       fs.unlink(request.file.path, () => {});
@@ -318,7 +357,9 @@ module.exports = function registerTeacherRoutes(app, shared) {
 
   // 查看某个任务下学生的提醒时间设置
   app.get('/api/tasks/:id/student-reminders', requireTeacher, (request, response) => {
-    const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(request.params.id);
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(id);
     if (!task) {
       response.status(404).json({ error: '任务不存在。' });
       return;
@@ -327,12 +368,14 @@ module.exports = function registerTeacherRoutes(app, shared) {
       `SELECT sr.student_id, sr.reminder_time, sr.created_at, u.display_name
        FROM student_reminders sr JOIN users u ON u.id = sr.student_id
        WHERE sr.task_id = ? ORDER BY u.display_name`
-    ).all(request.params.id);
+    ).all(id);
     response.json({ reminders });
   });
 
   // 教师评语 — 对学生总结写评语
   app.post('/api/summaries/:id/comment', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const { comment } = request.body;
     if (!comment || typeof comment !== 'string' || !comment.trim()) {
       response.status(400).json({ error: '评语内容不能为空。' });
@@ -347,7 +390,7 @@ module.exports = function registerTeacherRoutes(app, shared) {
       `SELECT summaries.*, users.class_name AS student_class
        FROM summaries LEFT JOIN users ON users.id = summaries.student_id
        WHERE summaries.id = ?`
-    ).get(request.params.id);
+    ).get(id);
 
     if (!summary) {
       response.status(404).json({ error: '总结不存在。' });
@@ -364,18 +407,20 @@ module.exports = function registerTeacherRoutes(app, shared) {
     const sanitizedComment = sanitizeText(comment.trim());
 
     db.prepare('UPDATE summaries SET teacher_comment = ?, commented_at = ? WHERE id = ?')
-      .run(sanitizedComment, now, request.params.id);
+      .run(sanitizedComment, now, id);
 
     response.json({ ok: true, teacherComment: sanitizedComment, commentedAt: now });
   });
 
   // 教师评语 — 删除评语
   app.delete('/api/summaries/:id/comment', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const summary = db.prepare(
       `SELECT summaries.*, users.class_name AS student_class
        FROM summaries LEFT JOIN users ON users.id = summaries.student_id
        WHERE summaries.id = ?`
-    ).get(request.params.id);
+    ).get(id);
 
     if (!summary) {
       response.status(404).json({ error: '总结不存在。' });
@@ -389,7 +434,7 @@ module.exports = function registerTeacherRoutes(app, shared) {
     }
 
     db.prepare('UPDATE summaries SET teacher_comment = NULL, commented_at = NULL WHERE id = ?')
-      .run(request.params.id);
+      .run(id);
 
     response.json({ ok: true });
   });

@@ -105,7 +105,13 @@ function initializeDefaultDispatchTime() {
 
 async function refreshTeacherData() {
   try {
-    teacherState.data = await fetchJSON('/api/teacher/bootstrap');
+    const newData = await fetchJSON('/api/teacher/bootstrap');
+    // W-13: 替换数据时保留 _loadedModules 引用
+    const savedModules = teacherState.data?._loadedModules;
+    teacherState.data = newData;
+    if (savedModules) {
+      teacherState.data._loadedModules = savedModules;
+    }
     renderTeacherStats();
     renderTeacherTodayAlerts();
     renderWeekdayCheckboxes();
@@ -400,9 +406,8 @@ function renderTasks() {
             detailHtml += extra.tasks.map((t) => `<div style="font-size:13px;color:#475569;padding:2px 0;">• ${escapeHtml(t)}</div>`).join('');
           }
           if (extra.link) {
-            // 从长文本中提取 URL
-            const urlMatch = extra.link.match(/https?:\/\/[^\s<>"']+/);
-            const url = urlMatch ? urlMatch[0] : '';
+            // 从长文本中提取 URL，并校验协议白名单
+            const url = sanitizeUrl(extra.link);
             const shortLabel = extra.link.length > 60 ? extra.link.substring(0, 60) + '…' : extra.link;
             if (url) {
               detailHtml += `<div style="margin-top:6px;font-size:13px;">🔗 <a href="${escapeHtml(url)}" target="_blank" style="color:#2563eb;text-decoration:none;">打开听课链接</a><div style="font-size:11px;color:#94a3b8;margin-top:2px;word-break:break-all;">${escapeHtml(shortLabel)}</div></div>`;
@@ -1308,7 +1313,7 @@ function bindPasswordForm() {
     event.preventDefault();
     const formData = new FormData(form);
     try {
-      await fetchJSON('/api/change-password', {
+      await fetchJSON('/api/auth/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

@@ -38,7 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   const nowInit = new Date();
   document.getElementById('summary-date').value = `${nowInit.getFullYear()}-${String(nowInit.getMonth() + 1).padStart(2, '0')}-${String(nowInit.getDate()).padStart(2, '0')}`;
-  activateTabs('.nav-link', '.panel', async (target) => {
+  const activateTab = activateTabs('.nav-link', '.panel', async (target) => {
     // 延迟加载：非核心面板首次激活时按需请求数据
     if (!studentState.data) return;
     const moduleMap = {
@@ -71,15 +71,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
     if (renderMap[target]) renderMap[target]();
+  }, (target) => {
+    // W-11: Tab 切换时清理视频进度保存定时器
+    if (target !== 'student-courses' && studentState._saveInterval) {
+      clearInterval(studentState._saveInterval);
+      studentState._saveInterval = null;
+    }
   });
-  // 用户菜单中的"设置"按钮
+  // 用户菜单中的"设置"按钮 — 通过 activateTab 系统激活，确保回调正确执行
   const settingsBtn = document.querySelector('.nav-user-dropdown [data-target="student-settings"]');
   if (settingsBtn) {
     settingsBtn.addEventListener('click', () => {
-      document.querySelectorAll('.nav-link').forEach((b) => b.classList.remove('active'));
-      document.querySelectorAll('.panel').forEach((s) => s.classList.add('hidden'));
-      const panel = document.getElementById('student-settings');
-      if (panel) panel.classList.remove('hidden');
+      activateTab('student-settings');
       const userDrop = document.querySelector('.nav-user-dropdown');
       if (userDrop) userDrop.classList.remove('show');
     });
@@ -153,7 +156,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function refreshStudentData() {
   try {
-    studentState.data = await fetchJSON('/api/student/bootstrap');
+    const newData = await fetchJSON('/api/student/bootstrap');
+    // W-13: 替换数据时保留 _loadedModules 引用
+    const savedModules = studentState.data?._loadedModules;
+    studentState.data = newData;
+    if (savedModules) {
+      studentState.data._loadedModules = savedModules;
+    }
     renderStudentStats();
     renderNextAction();
     renderUnreadSummary();
@@ -354,8 +363,7 @@ function renderTasks() {
     let detailHtml = '';
     if (extra) {
       if (extra.link) {
-        var urlMatch = extra.link.match(/https?:\/\/[^\s<>"']+/);
-        var url = urlMatch ? urlMatch[0] : '';
+        const url = sanitizeUrl(extra.link);
         if (url) {
           detailHtml += '<div style="font-size:12px;margin-top:2px;">🔗 <a href="' + escapeHtml(url) + '" target="_blank" style="color:#2563eb;text-decoration:none;">打开听课链接</a></div>';
         } else {
@@ -459,6 +467,8 @@ function bindStudentForms() {
       studentState.questionFilter.tagId = document.getElementById('qf-tag').value;
       studentState.questionFilter.textbook = document.getElementById('qf-textbook')?.value || '';
       studentState.questionFilter.page = 1;
+      // W-10: 切换科��/模式时清空 answerResults，避免内存泄漏
+      studentState.answerResults = {};
       loadFilteredQuestions();
     });
   });
@@ -505,6 +515,8 @@ function bindStudentForms() {
           subject: form.closest('.question-card')?.querySelector('.badge-brand')?.textContent || '',
           timeSpentMs: timeSpentMs
         };
+        // W-09: 答题完成后清理 timer 条目，避免内存泄漏
+        delete studentState.questionTimers[qId];
         createToast(result.result.isCorrect ? '回答正确。' : `回答错误，正确答案 ${result.result.correctAnswer}。`, result.result.isCorrect ? 'success' : 'error');
         loadFilteredQuestions();
       } catch (error) {
@@ -793,8 +805,8 @@ function tickFocusTimer() {
     document.getElementById('focus-overlay').classList.add('hidden');
     createToast('专注时间结束，休息一下吧！', 'success');
 
-    // 计算专注时长（分钟）
-    const focusMinutes = Math.round((ft.totalSeconds - ft.remainingSeconds) / 60);
+    // 计算专注时长（分钟）— 使用 startTime 避免依赖递减后的 remainingSeconds
+    const focusMinutes = ft.startTime ? Math.round((Date.now() - ft.startTime) / 60000) : Math.round((ft.totalSeconds - ft.remainingSeconds) / 60);
 
     // 尝试解锁专注成就
     fetchJSON('/api/achievements/unlock', {
@@ -899,12 +911,13 @@ function connectStudentSocket() {
   }
   studentState.reconnectAttempts = (studentState.reconnectAttempts || 0) + 1;
   if (studentState.reconnectAttempts > 10) {
-    setTimeout(() => { studentState.reconnectAttempts = 0; }, 30000);
+    // 指数退避上限后重置计数器，下次再试
+    setTimeout(() => { studentState.reconnectAttempts = 0; connectStudentSocket(); }, 60000);
     return;
   }
   const protocol = location.protocol === 'https:' ? 'wss' : 'ws';
   const token = studentState.token || localStorage.getItem('auth_token') || '';
-  const socket = new WebSocket(`${protocol}://${location.host}?token=${encodeURIComponent(token)}`);
+  const socket = new WebSocket(`${protocol}://${location.host}`);
   if (studentState.socket) {
     studentState.socket.close();
   }
@@ -912,6 +925,7 @@ function connectStudentSocket() {
 
   socket.addEventListener('open', () => {
     studentState.reconnectAttempts = 0;
+    socket.send(JSON.stringify({ type: 'auth', token }));
   });
 
   socket.addEventListener('message', async (event) => {
@@ -932,7 +946,9 @@ function connectStudentSocket() {
   });
 
   socket.addEventListener('close', () => {
-    studentState.reconnectTimer = setTimeout(connectStudentSocket, 3000);
+    // 指数退避重连：1s, 2s, 4s, 8s, 16s, ... 最大 60s
+    const delay = Math.min(1000 * Math.pow(2, studentState.reconnectAttempts || 0), 60000);
+    studentState.reconnectTimer = setTimeout(connectStudentSocket, delay);
   });
 }
 

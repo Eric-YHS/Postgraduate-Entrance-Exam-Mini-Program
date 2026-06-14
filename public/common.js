@@ -58,6 +58,19 @@ function escapeHtml(value) {
     .replaceAll("'", '&#39;');
 }
 
+function sanitizeUrl(value) {
+  if (!value) return '';
+  const match = String(value).match(/https?:\/\/[^\s<>"']+/);
+  if (!match) return '';
+  try {
+    const url = new URL(match[0]);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return '';
+    return match[0];
+  } catch (_) {
+    return '';
+  }
+}
+
 function formatDateTime(value) {
   if (!value) {
     return '';
@@ -170,6 +183,7 @@ async function ensureAuth(requiredRole) {
   const authToken = queryToken || savedToken;
 
   let data;
+  try {
   if (authToken) {
     data = await fetchJSON('/api/auth/me', {
       headers: { Authorization: `Bearer ${authToken}` }
@@ -205,6 +219,11 @@ async function ensureAuth(requiredRole) {
   }
 
   return data;
+  } catch (e) {
+    localStorage.removeItem('auth_token');
+    location.href = '/';
+    return null;
+  }
 }
 
 async function logout() {
@@ -214,7 +233,7 @@ async function logout() {
   location.href = '/';
 }
 
-function activateTabs(buttonSelector, sectionSelector, onActivate) {
+function activateTabs(buttonSelector, sectionSelector, onActivate, onSwitch) {
   const buttons = Array.from(document.querySelectorAll(buttonSelector));
   const sections = Array.from(document.querySelectorAll(sectionSelector));
 
@@ -250,6 +269,11 @@ function activateTabs(buttonSelector, sectionSelector, onActivate) {
 
     // 切换面板
     sections.forEach((section) => section.classList.toggle('hidden', section.id !== target));
+
+    // 每次切换都触发 onSwitch 回调（用于清理定时器等）
+    if (typeof onSwitch === 'function') {
+      onSwitch(target);
+    }
 
     // 首次激活时触发懒加载回调
     if (!activatedPanels.has(target)) {
@@ -305,6 +329,9 @@ function activateTabs(buttonSelector, sectionSelector, onActivate) {
       }
     });
   }
+
+  // 返回 activate 函数供外部使用（如设置按钮）
+  return activate;
 }
 
 function buildEmptyState(title, description, options = {}) {

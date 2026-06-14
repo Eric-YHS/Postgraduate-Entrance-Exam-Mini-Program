@@ -58,12 +58,6 @@ function initializeDatabase() {
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
-    CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time);
-    CREATE INDEX IF NOT EXISTS idx_practice_records_student ON practice_records(student_id);
-    CREATE INDEX IF NOT EXISTS idx_task_completions_student ON task_completions(student_id);
-    CREATE INDEX IF NOT EXISTS idx_notifications_student ON notifications(student_id);
-    CREATE INDEX IF NOT EXISTS idx_forum_replies_topic ON forum_replies(topic_id);
-
     CREATE TABLE IF NOT EXISTS summaries (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id INTEGER NOT NULL,
@@ -355,6 +349,12 @@ function initializeDatabase() {
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
       FOREIGN KEY (student_id) REFERENCES users(id)
     );
+
+    CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time);
+    CREATE INDEX IF NOT EXISTS idx_practice_records_student ON practice_records(student_id);
+    CREATE INDEX IF NOT EXISTS idx_task_completions_student ON task_completions(student_id);
+    CREATE INDEX IF NOT EXISTS idx_notifications_student ON notifications(student_id);
+    CREATE INDEX IF NOT EXISTS idx_forum_replies_topic ON forum_replies(topic_id);
   `);
 
   // 教师评语字段
@@ -365,8 +365,10 @@ function initializeDatabase() {
 }
 
 function seedUsers() {
-  // BUG-001: 不再检查 count > 0，改为按用户名 INSERT OR IGNORE
-  // 避免 migrate() 先创建 admin 后导致 seedUsers 跳过所有种子用户
+  // B-08: 种子用户已存在则跳过整个函数，避免每次启动都执行 bcrypt 哈希
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('admin');
+  if (existing) return;
+
   const now = dayjs().toISOString();
   const insertUser = db.prepare(`
     INSERT OR IGNORE INTO users (username, password, role, display_name, class_name, must_change_password, created_at)
@@ -583,6 +585,18 @@ function migrate() {
     db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
   }
 
+  // 直播间级别禁言表
+  db.exec(`CREATE TABLE IF NOT EXISTS live_mutes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    live_session_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    muted_until TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (live_session_id) REFERENCES live_sessions(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    UNIQUE(live_session_id, user_id)
+  )`);
+
   // 禁言时间戳字段
   if (!columns.some(c => c.name === 'muted_until')) {
     db.exec('ALTER TABLE users ADD COLUMN muted_until TEXT DEFAULT NULL');
@@ -789,6 +803,9 @@ function migrate() {
   // 为任务开始时间添加索引，优化定时提醒查询
   db.exec('CREATE INDEX IF NOT EXISTS idx_tasks_start_time ON tasks(start_time)');
 
+  // B-34: products 表缺少索引
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_created_by ON products(created_by)');
+
   // 确保 admin 账号存在
   const adminExists = db.prepare("SELECT id FROM users WHERE role = 'admin'").get();
   if (!adminExists) {
@@ -991,6 +1008,8 @@ function migrate() {
   if (!productCols.some((c) => c.name === 'category')) {
     db.exec('ALTER TABLE products ADD COLUMN category TEXT DEFAULT ""');
   }
+  // 分类字段添加后再建索引
+  db.exec('CREATE INDEX IF NOT EXISTS idx_products_category ON products(category)');
 
   // 课程笔记表
   db.exec(`
@@ -1124,6 +1143,8 @@ function migrate() {
   if (!topicCols2.some((c) => c.name === 'is_featured')) {
     db.exec('ALTER TABLE forum_topics ADD COLUMN is_featured INTEGER DEFAULT 0');
   }
+  // 置顶字段添加后再建复合索引
+  db.exec('CREATE INDEX IF NOT EXISTS idx_forum_topics_pinned_created ON forum_topics(is_pinned DESC, created_at DESC)');
 
   // 论坛热门话题表
   db.exec(`
