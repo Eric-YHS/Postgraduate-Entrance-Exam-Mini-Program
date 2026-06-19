@@ -13,7 +13,9 @@
 
 const { db } = require('../db');
 const { isReady, pullChatData, decryptChatMessage, getStatus, updateSeq, incrementErrors, resetErrors, setRunning } = require('./wecomArchive');
-const { processBatch, cleanOldMessages, loadBotUserIds } = require('./archiveDispatcher');
+const { processBatch, loadBotUserIds } = require('./archiveDispatcher');
+const { checkAndExtractAll } = require('./memoryExtractor');
+const { checkAndUpdateAll } = require('./memberProfiles');
 const config = require('../config');
 
 // ── 状态 ─────────────────────────────────────────────────────────────────
@@ -22,13 +24,13 @@ let running = false;
 let consecutiveFailures = 0;
 let paused = false;
 let pauseUntil = 0;
-let cleanupTimer = null;
+let maintenanceTimer = null;
 
 const MAX_CONSECUTIVE_FAILURES = 10;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [5, 15, 45]; // 秒，指数退避
 const PAUSE_DURATION = 5 * 60 * 1000; // 5 分钟
-const CLEANUP_INTERVAL = 60 * 60 * 1000; // 每小时清理一次过期记录
+const MAINTENANCE_INTERVAL = 60 * 60 * 1000; // 每小时记忆维护（提取记忆卡 + 更新画像）
 
 // ── 数据库 seq 读写 ─────────────────────────────────────────────────────
 
@@ -202,11 +204,18 @@ function start(intervalSeconds) {
     tick().catch((err) => console.error('[archive-poller] 定时轮询失败:', err.message));
   }, intervalMs);
 
-  // 定时清理过期消息记录
-  if (!cleanupTimer) {
-    cleanupTimer = setInterval(() => {
-      try { cleanOldMessages(); } catch (_) { /* 清理不应影响主流程 */ }
-    }, CLEANUP_INTERVAL);
+  // 定时记忆维护（提取记忆卡 + 更新成员画像）
+  if (!maintenanceTimer) {
+    maintenanceTimer = setInterval(async () => {
+      try {
+        console.log('[archive-poller] 开始记忆维护...');
+        await checkAndExtractAll();
+        await checkAndUpdateAll();
+        console.log('[archive-poller] 记忆维护完成');
+      } catch (err) {
+        console.error('[archive-poller] 记忆维护失败:', err.message);
+      }
+    }, MAINTENANCE_INTERVAL);
   }
 }
 
@@ -219,9 +228,9 @@ function stop() {
     pollTimer = null;
     console.log('[archive-poller] 已停止轮询');
   }
-  if (cleanupTimer) {
-    clearInterval(cleanupTimer);
-    cleanupTimer = null;
+  if (maintenanceTimer) {
+    clearInterval(maintenanceTimer);
+    maintenanceTimer = null;
   }
 }
 

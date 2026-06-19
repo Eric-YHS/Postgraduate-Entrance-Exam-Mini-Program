@@ -2147,6 +2147,62 @@ function migrate() {
   if (syncCount === 0) {
     db.prepare('INSERT INTO wecom_archive_sync (seq, updated_at) VALUES (0, ?)').run(new Date().toISOString());
   }
+
+  // ===== Phase 6 迁移：群聊记忆系统（三层记忆）=====
+
+  // 6a. 扩展 wecom_archive_messages 字段（永久保留，不再清理）
+  const wamCols = db.prepare('PRAGMA table_info(wecom_archive_messages)').all();
+  if (!wamCols.some((c) => c.name === 'msgtime_ms')) {
+    try { db.exec('ALTER TABLE wecom_archive_messages ADD COLUMN msgtime_ms INTEGER DEFAULT 0'); } catch (_) {}
+  }
+  if (!wamCols.some((c) => c.name === 'sender_name')) {
+    try { db.exec("ALTER TABLE wecom_archive_messages ADD COLUMN sender_name TEXT DEFAULT ''"); } catch (_) {}
+  }
+  if (!wamCols.some((c) => c.name === 'reply_to_msgid')) {
+    try { db.exec("ALTER TABLE wecom_archive_messages ADD COLUMN reply_to_msgid TEXT DEFAULT ''"); } catch (_) {}
+  }
+
+  // 6b. 记忆卡片表（LTM — 语义记忆）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_cards (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      roomid TEXT NOT NULL,
+      card_type TEXT NOT NULL CHECK (card_type IN ('fact', 'question', 'topic', 'summary')),
+      content TEXT NOT NULL,
+      keywords TEXT DEFAULT '',
+      embedding TEXT DEFAULT '',
+      source_msgids TEXT DEFAULT '[]',
+      hit_count INTEGER DEFAULT 0,
+      last_hit_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_memory_cards_roomid ON memory_cards(roomid);
+    CREATE INDEX IF NOT EXISTS idx_memory_cards_type ON memory_cards(roomid, card_type);
+  `);
+
+  // 6c. 成员画像表（Profile — 个性化）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS member_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      wecom_userid TEXT NOT NULL UNIQUE,
+      display_name TEXT DEFAULT '',
+      profile_json TEXT DEFAULT '{}',
+      source_msgids TEXT DEFAULT '[]',
+      last_extracted_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_member_profiles_userid ON member_profiles(wecom_userid);
+  `);
+
+  // 6d. 记忆提取进度表（跟踪每个群提取到哪条消息）
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS memory_extraction_progress (
+      roomid TEXT PRIMARY KEY,
+      last_extracted_msgid TEXT DEFAULT '',
+      last_extracted_at TEXT DEFAULT NULL
+    );
+  `);
 }
 
 function initialize() {

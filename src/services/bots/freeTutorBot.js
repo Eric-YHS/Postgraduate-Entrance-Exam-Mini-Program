@@ -228,13 +228,19 @@ function searchKnowledgeChunks(baseId, message, topK = 3) {
 
 /**
  * 构建基于知识库检索结果的系统提示词
+ * @param {Array} chunks - 知识库检索结果
+ * @param {string} [groupContext=''] - 群聊上下文（STM + LTM + Profile）
  */
-function buildRagSystemPrompt(chunks) {
+function buildRagSystemPrompt(chunks, groupContext = '') {
   const context = chunks
     .map((c, i) => `[参考${i + 1}] ${c.content.trim()}`)
     .join('\n\n');
 
-  return `你是一位正在和学生微信聊天的考研学长/学姐。你本人就是考研过来人，对考研政策、备考方法非常熟悉。你在聊天中看到了以下参考资料，请用这些资料来回答学生的问题。
+  const groupContextBlock = groupContext
+    ? `${groupContext}\n\n---\n\n`
+    : '';
+
+  return `${groupContextBlock}你是一位正在和学生微信聊天的考研学长/学姐。你本人就是考研过来人，对考研政策、备考方法非常熟悉。你在聊天中看到了以下参考资料，请用这些资料来回答学生的问题。
 
 参考资料：
 ${context}
@@ -251,9 +257,14 @@ ${context}
 
 /**
  * 构建通用答疑系统提示词（无知识库命中时）
+ * @param {string} [groupContext=''] - 群聊上下文（STM + LTM + Profile）
  */
-function buildGeneralSystemPrompt() {
-  return `你是一位正在和学生微信聊天的考研学长/学姐。你本人就是考研过来人，对考研政策、考试科目、院校信息、报名流程这些都非常了解。
+function buildGeneralSystemPrompt(groupContext = '') {
+  const groupContextBlock = groupContext
+    ? `${groupContext}\n\n---\n\n`
+    : '';
+
+  return `${groupContextBlock}你是一位正在和学生微信聊天的考研学长/学姐。你本人就是考研过来人，对考研政策、考试科目、院校信息、报名流程这些都非常了解。
 
 聊天风格要求：
 1. 像朋友一样自然回复，用"你"称呼对方，语气温暖亲切、轻松自然；
@@ -331,6 +342,7 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
 
   const trimmedMessage = message.trim();
   const baseId = userConfig.freeTutorBaseId || config.freeTutorBaseId || DEFAULT_BASE_ID;
+  const groupContext = userConfig.groupContext || '';
 
   let reply = '';
   let handoff = false;
@@ -400,7 +412,7 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
   try {
     if (ragChunks && ragChunks.length > 0) {
       // 命中知识库，用 RAG 方式回答
-      const systemPrompt = buildRagSystemPrompt(ragChunks);
+      const systemPrompt = buildRagSystemPrompt(ragChunks, groupContext);
       reply = await quickAsk(trimmedMessage, systemPrompt, { maxTokens: 800, temperature: 0.5 });
     } else {
       // 未命中知识库，用通用提示词
@@ -411,7 +423,7 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
         return { reply, handoff, action: 'out_of_scope' };
       }
 
-      const systemPrompt = buildGeneralSystemPrompt();
+      const systemPrompt = buildGeneralSystemPrompt(groupContext);
       reply = await quickAsk(trimmedMessage, systemPrompt, { maxTokens: 800, temperature: 0.5 });
     }
   } catch (err) {

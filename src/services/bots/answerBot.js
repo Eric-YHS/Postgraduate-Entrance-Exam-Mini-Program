@@ -189,7 +189,7 @@ function buildUserContent(question, attachmentText, attachmentNotes) {
  * @param {number} baseId - 知识库 ID（如未提供，使用默认知识库）
  * @returns {Promise<{hit:boolean, answer:string, sources:Array<Object>}>}
  */
-async function layer1KnowledgeBase(question, baseId = null) {
+async function layer1KnowledgeBase(question, baseId = null, systemPromptOverride = null) {
   const targetBaseId = baseId || 1;
 
   try {
@@ -256,7 +256,7 @@ ${contextText}
 3. 如果不同资料说法有出入，选最靠谱的说法；
 4. 结尾不要列"参考来源"、"来源：XX文档"这类——你是人，不是搜索引擎。`;
 
-    const answer = await quickAsk(prompt, SYSTEM_PROMPT_ANSWER, { maxTokens: 2000, temperature: 0.3 });
+    const answer = await quickAsk(prompt, systemPromptOverride || SYSTEM_PROMPT_ANSWER, { maxTokens: 2000, temperature: 0.3 });
 
     return {
       hit: true,
@@ -278,9 +278,9 @@ ${contextText}
  * @param {Array<{role:string, content:string}>} historyMessages
  * @returns {Promise<string>}
  */
-async function layer2AIGenerate(question, historyMessages = []) {
+async function layer2AIGenerate(question, historyMessages = [], systemPromptOverride = null) {
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT_ANSWER }
+    { role: 'system', content: systemPromptOverride || SYSTEM_PROMPT_ANSWER }
   ];
 
   // 添加上下文历史（限制条数）
@@ -389,7 +389,7 @@ async function searchWeb(query) {
  * @param {string} source
  * @returns {Promise<{isPolicy:boolean, answer:string, sources:Array}>}
  */
-async function layer3WebSearch(question, userId, source = 'wecom') {
+async function layer3WebSearch(question, userId, source = 'wecom', systemPromptOverride = null) {
   if (!isPolicyQuestion(question)) {
     return { isPolicy: false, answer: '', sources: [] };
   }
@@ -416,7 +416,7 @@ ${context}
 3. 如果查到的信息不够全，就老实说"目前看到的情况是XX，更准确的还得看官网"；
 4. 结尾不要列来源链接——你是人，不是网页摘要工具。`;
 
-      const answer = await quickAsk(prompt, SYSTEM_PROMPT_ANSWER, { maxTokens: 2000, temperature: 0.3 });
+      const answer = await quickAsk(prompt, systemPromptOverride || SYSTEM_PROMPT_ANSWER, { maxTokens: 2000, temperature: 0.3 });
 
       return {
         isPolicy: true,
@@ -548,6 +548,16 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
   const historyMessages = context.historyMessages || [];
   const baseId = context.baseId || null;
 
+  // 5b. 构建群聊上下文（群聊场景下由 archiveDispatcher 传入）
+  const groupContextParts = [];
+  if (context.groupContext) groupContextParts.push(context.groupContext);
+  if (context.relatedMemories) groupContextParts.push(context.relatedMemories);
+  if (context.senderProfile) groupContextParts.push(context.senderProfile);
+  const groupContextText = groupContextParts.length > 0
+    ? groupContextParts.join('\n\n') + '\n\n---\n\n'
+    : '';
+  const effectiveSystemPrompt = groupContextText + SYSTEM_PROMPT_ANSWER;
+
   let finalAnswer = '';
   let usedLayer = '';
   let sources = [];
@@ -555,7 +565,7 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
 
   // ========== 第一层：知识库检索 ==========
   console.log('[answerBot] 尝试第一层：知识库检索...');
-  const kbResult = await layer1KnowledgeBase(userContent, baseId);
+  const kbResult = await layer1KnowledgeBase(userContent, baseId, effectiveSystemPrompt);
 
   if (kbResult.hit) {
     finalAnswer = kbResult.answer;
@@ -567,7 +577,7 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
     console.log('[answerBot] 第一层未命中，进入第二层：AI 生成...');
 
     try {
-      finalAnswer = await layer2AIGenerate(userContent, historyMessages);
+      finalAnswer = await layer2AIGenerate(userContent, historyMessages, effectiveSystemPrompt);
       usedLayer = 'ai';
     } catch (err) {
       console.error('[answerBot] AI 生成失败:', err.message);
@@ -578,7 +588,7 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
     // ========== 第三层：政策/分数线 → 联网搜索 ==========
     if (usedLayer !== 'error' && isPolicyQuestion(message)) {
       console.log('[answerBot] 问题涉及最新政策/分数线，进入第三层：联网搜索...');
-      const policyResult = await layer3WebSearch(message, userId, source);
+      const policyResult = await layer3WebSearch(message, userId, source, effectiveSystemPrompt);
       if (policyResult.isPolicy && policyResult.answer) {
         // 将 AI 回答与政策搜索结论结合
         finalAnswer = finalAnswer + '\n\n---\n' + policyResult.answer;
@@ -628,8 +638,8 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
  * wecom.js 以单个对象参数调用：handleQuestion({ userId, question, source, groupId, attachments })
  * 内部转换为 handleMessage 的多参数形式
  */
-async function handleQuestion({ userId, question, source = 'wecom', groupId = null, attachments = [] }) {
-  const result = await handleMessage(userId, question, attachments, source, { groupId });
+async function handleQuestion({ userId, question, source = 'wecom', groupId = null, attachments = [], context = {} }) {
+  const result = await handleMessage(userId, question, attachments, source, { groupId, ...context });
   return {
     success: result.success !== false,
     answer: result.answer,

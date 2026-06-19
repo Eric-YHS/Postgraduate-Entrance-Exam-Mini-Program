@@ -14,6 +14,7 @@ const { pullChatData, decryptChatMessage } = require('./wecomArchive');
 const { sendAppChatMessage } = require('./wecom');
 const { handleMessage: handleFreeTutor } = require('./bots/freeTutorBot');
 const { handleQuestion: handleAnswer } = require('./bots/answerBot');
+const { buildGroupContext } = require('./contextBuilder');
 const config = require('../config');
 
 // ── 回复策略常量 ─────────────────────────────────────────────────────────
@@ -168,14 +169,32 @@ function evaluateReply(text) {
  * @param {string} userId  - 发送者企微 userId
  * @param {string} message - 消息文本
  * @param {string} roomid  - 群聊 ID
+ * @param {object} options - { msgtime_ms }
  * @returns {Promise<string|null>} 回复文本，null 表示不回复
  */
-async function routeToBot(userId, message, roomid) {
+async function routeToBot(userId, message, roomid, options = {}) {
   try {
     // 查找用户（判断付费/免费状态）
     const user = db.prepare(
       'SELECT id, role FROM users WHERE wecom_userid = ?'
     ).get(userId);
+
+    // 构建群聊上下文（STM + LTM + Profile）
+    let groupContext = null;
+    try {
+      const ctx = await buildGroupContext({
+        roomid,
+        currentMsg: message,
+        currentUserId: userId,
+        currentMsgtime: options.msgtime_ms || Date.now(),
+      });
+      groupContext = ctx;
+      if (ctx.fullContext) {
+        console.log(`[archive-dispatcher] 上下文构建完成, token 估算: ~${Math.ceil(ctx.fullContext.length / 1.5)}`);
+      }
+    } catch (err) {
+      console.error('[archive-dispatcher] 上下文构建失败（降级继续）:', err.message);
+    }
 
     let reply = null;
 
@@ -185,7 +204,12 @@ async function routeToBot(userId, message, roomid) {
         userId: String(user.id),
         question: message,
         source: 'wecom_archive',
-        context: { roomid }
+        context: {
+          roomid,
+          groupContext: groupContext?.fullContext || '',
+          relatedMemories: groupContext?.memoryCardsText || '',
+          senderProfile: groupContext?.profileText || '',
+        }
       });
       reply = result?.answer || result?.reply || (typeof result === 'string' ? result : null);
     } else {
@@ -194,7 +218,12 @@ async function routeToBot(userId, message, roomid) {
         userId,
         message,
         source: 'wecom_archive',
-        groupId: roomid
+        groupId: roomid,
+        config: {
+          groupContext: groupContext?.fullContext || '',
+          relatedMemories: groupContext?.memoryCardsText || '',
+          senderProfile: groupContext?.profileText || '',
+        }
       });
       reply = result?.reply || (typeof result === 'string' ? result : null);
     }
@@ -224,13 +253,16 @@ function isDuplicate(msgid) {
  * 记录消息处理结果
  * @param {object} params
  */
-function recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action }) {
+function recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action, msgtimeMs, senderName }) {
   try {
     db.prepare(`
       INSERT OR IGNORE INTO wecom_archive_messages
-        (msgid, seq, from_user, roomid, msgtype, content, action, processed_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(msgid, seq, fromUser, roomid, msgtype, content, action, new Date().toISOString());
+        (msgid, seq, from_user, roomid, msgtype, content, action, msgtime_ms, sender_name, processed_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      msgid, seq, fromUser, roomid, msgtype, content, action,
+      msgtimeMs || 0, senderName || '', new Date().toISOString()
+    );
   } catch (err) {
     // UNIQUE 冲突是正常的（并发去重）
     if (err.code !== 'SQLITE_CONSTRAINT') {
@@ -257,18 +289,20 @@ async function processBatch(decryptedMessages) {
       processed++;
 
       // 消息基础信息提取（兼容不同消息结构）
-      const msgid = msg.msgid || '';
-      const seq = msg.seq || 0;
+      const msgid = msg.msgid || msg._msgid || '';
+      const seq = msg.seq || msg._seq || 0;
       const fromUser = msg.from || '';
       const roomid = msg.roomid || '';
       const msgtype = msg.msgtype || 'text';
       const content = msg.text?.content || msg.content || '';
+      const msgtimeMs = msg.msgtime || 0;
+      const senderName = msg.from || '';
 
       if (!msgid) continue;
 
       // 过滤
       if (shouldSkip(msg)) {
-        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'ignored' });
+        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'ignored', msgtimeMs, senderName });
         continue;
       }
 
@@ -281,7 +315,7 @@ async function processBatch(decryptedMessages) {
       const evaluation = evaluateReply(text);
 
       if (!evaluation.shouldReply) {
-        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'ignored' });
+        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'ignored', msgtimeMs, senderName });
         continue;
       }
 
@@ -290,8 +324,8 @@ async function processBatch(decryptedMessages) {
         `score=${evaluation.score} reason=${evaluation.reason} text="${text.slice(0, 50)}"`
       );
 
-      // 路由到 bot 获取回复
-      const replyText = await routeToBot(fromUser, text, roomid);
+      // 路由到 bot 获取回复（传入 msgtime_ms 用于上下文构建）
+      const replyText = await routeToBot(fromUser, text, roomid, { msgtime_ms: msgtimeMs });
 
       if (replyText) {
         // 发送群聊回复
@@ -300,11 +334,11 @@ async function processBatch(decryptedMessages) {
           msgtype: 'text',
           text: { content: replyText }
         });
-        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'group_reply' });
+        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'group_reply', msgtimeMs, senderName });
         replied++;
         console.log(`[archive-dispatcher] 群聊回复成功: room=${roomid}`);
       } else {
-        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'ignored' });
+        recordMessage({ msgid, seq, fromUser, roomid, msgtype, content, action: 'ignored', msgtimeMs, senderName });
       }
     } catch (err) {
       errors++;
@@ -312,10 +346,12 @@ async function processBatch(decryptedMessages) {
       // 仍然记录防止重复处理
       try {
         recordMessage({
-          msgid: msg.msgid || '', seq: msg.seq || 0,
+          msgid: msg.msgid || msg._msgid || '', seq: msg.seq || msg._seq || 0,
           fromUser: msg.from || '', roomid: msg.roomid || '',
           msgtype: msg.msgtype || '', content: msg.text?.content || '',
-          action: 'ignored'
+          action: 'ignored',
+          msgtimeMs: msg.msgtime || 0,
+          senderName: msg.from || ''
         });
       } catch (_) { /* 尽最大努力记录 */ }
     }
@@ -324,31 +360,12 @@ async function processBatch(decryptedMessages) {
   return { processed, replied, errors };
 }
 
-// ── 清理 ─────────────────────────────────────────────────────────────────
-
-/**
- * 清理 7 天前的去重记录（消息在企微端也最多保留 5 天）
- */
-function cleanOldMessages() {
-  try {
-    const cutoff = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const result = db.prepare(
-      'DELETE FROM wecom_archive_messages WHERE processed_at < ?'
-    ).run(cutoff);
-    if (result.changes > 0) {
-      console.log(`[archive-dispatcher] 清理过期消息记录: ${result.changes} 条`);
-    }
-  } catch (err) {
-    console.error('[archive-dispatcher] cleanOldMessages 失败:', err.message);
-  }
-}
-
 module.exports = {
   processBatch,
   evaluateReply,
   shouldSkip,
   isDuplicate,
   recordMessage,
-  cleanOldMessages,
   loadBotUserIds,
+  routeToBot,
 };
