@@ -58,8 +58,17 @@ module.exports = function registerWecomRoutes(app, shared) {
   app.post('/api/wecom/callback', async (request, response) => {
     try {
       const { msg_signature, timestamp, nonce } = request.query;
-      // express.raw() 返回 Buffer，需要转为字符串
-      const xml = Buffer.isBuffer(request.body) ? request.body.toString('utf-8') : request.body;
+      // express.raw() 返回 Buffer，需要转为字符串；兜底处理非 Buffer 情况
+      const rawBody = request.body;
+      let xml = '';
+      if (Buffer.isBuffer(rawBody)) {
+        xml = rawBody.toString('utf-8');
+      } else if (typeof rawBody === 'string') {
+        xml = rawBody;
+      } else {
+        console.warn('[wecom] 回调请求体不是 Buffer 或字符串，实际类型:', typeof rawBody, 'headers:', JSON.stringify(request.headers));
+        return response.status(400).send('invalid body');
+      }
 
       console.log('[wecom] 收到回调消息:', { msg_signature, timestamp, nonce, bodyLength: xml.length });
 

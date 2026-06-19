@@ -84,7 +84,8 @@ function sanitizeControlChars(req, res, next) {
 }
 
 // 企业微信回调需要原始 XML 请求体，必须在 express.json() 之前解析
-app.use('/api/wecom/callback', express.raw({ type: ['application/xml', 'text/xml'], limit: '10mb' }));
+// 用 type 函数接受所有 Content-Type，避免企业微信发送非标准类型时 body 被后续中间件解析为对象
+app.use('/api/wecom/callback', express.raw({ type: () => true, limit: '10mb' }));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb', charset: 'utf-8' }));
