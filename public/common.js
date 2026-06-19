@@ -198,10 +198,13 @@ async function ensureAuth(requiredRole) {
     return null;
   }
 
-  if (requiredRole && data.user.role !== requiredRole) {
-    const roleRoutes = { admin: '/admin', teacher: '/teacher', student: '/student' };
-    location.href = roleRoutes[data.user.role] || '/';
-    return null;
+  if (requiredRole) {
+    const required = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
+    if (!required.includes(data.user.role)) {
+      const roleRoutes = { admin: '/admin', teacher: '/teacher', customer_service: '/admin', student: '/student' };
+      location.href = roleRoutes[data.user.role] || '/';
+      return null;
+    }
   }
 
   // 持久化 token，确保后续请求能自动携带

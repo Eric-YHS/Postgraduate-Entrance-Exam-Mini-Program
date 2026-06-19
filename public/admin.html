@@ -5,64 +5,281 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>管理后台｜研途总控台</title>
     <link rel="stylesheet" href="/styles.css" />
+    <style>
+      .admin-shell {
+        display: grid;
+        grid-template-columns: 240px 1fr;
+        gap: 24px;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 24px;
+        min-height: calc(100vh - 48px);
+      }
+      .admin-nav {
+        position: sticky;
+        top: 24px;
+        height: fit-content;
+      }
+      .admin-nav .brand-block {
+        margin-bottom: 16px;
+      }
+      .admin-menu {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+      }
+      .admin-menu li {
+        margin-bottom: 4px;
+      }
+      .admin-menu button {
+        width: 100%;
+        text-align: left;
+        padding: 10px 14px;
+        border-radius: 12px;
+        border: none;
+        background: transparent;
+        color: var(--text);
+        font-size: 14px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        transition: background 0.15s;
+      }
+      .admin-menu button:hover {
+        background: var(--surface);
+      }
+      .admin-menu button.active {
+        background: var(--brand);
+        color: white;
+      }
+      .admin-menu .menu-icon {
+        width: 20px;
+        text-align: center;
+      }
+      .admin-main {
+        min-width: 0;
+      }
+      .admin-section {
+        display: none;
+      }
+      .admin-section.active {
+        display: block;
+      }
+      .admin-section h2 {
+        margin-top: 0;
+      }
+      .sub-nav {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 16px;
+        flex-wrap: wrap;
+      }
+      .sub-nav button {
+        padding: 6px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: var(--surface);
+        cursor: pointer;
+      }
+      .sub-nav button.active {
+        background: var(--brand);
+        color: white;
+        border-color: var(--brand);
+      }
+      .placeholder-panel {
+        padding: 48px 24px;
+        text-align: center;
+        color: var(--muted);
+      }
+      .placeholder-panel .placeholder-mark {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: var(--surface);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        margin: 0 auto 16px;
+      }
+      @media (max-width: 900px) {
+        .admin-shell {
+          grid-template-columns: 1fr;
+        }
+        .admin-nav {
+          position: static;
+        }
+      }
+    </style>
   </head>
   <body>
     <div class="page-shell">
-      <div class="dashboard-grid">
-        <aside class="side-rail">
+      <div class="admin-shell">
+        <aside class="side-rail admin-nav">
           <section class="brand-block">
             <div class="brand-mark">研</div>
             <h2>管理后台</h2>
-            <p class="muted">管理教师注册审核、用户账号和系统状态。</p>
+            <p class="muted" id="admin-role-hint">超级管理员控制台</p>
             <div class="inline-actions">
               <button class="button" id="logout-button" type="button">退出登录</button>
               <a class="ghost-button" href="/" style="text-decoration: none;">返回首页</a>
             </div>
           </section>
-          <section class="brand-block">
-            <h3>系统统计</h3>
-            <div id="admin-sidebar-stats" class="stat-grid" style="grid-template-columns: 1fr 1fr;"></div>
-          </section>
+          <nav>
+            <ul class="admin-menu" id="admin-menu">
+              <!-- 由 admin.js 按角色渲染 -->
+            </ul>
+          </nav>
         </aside>
 
-        <main>
-          <section class="hero">
-            <span class="hero-badge">超级管理员</span>
-            <h1>管理教师注册、用户账号与系统运行状态。</h1>
+        <main class="admin-main">
+          <section class="hero" id="admin-hero">
+            <span class="hero-badge" id="admin-role-badge">超级管理员</span>
+            <h1 id="admin-hero-title">数据看板</h1>
           </section>
 
-          <div class="tab-row">
-            <button class="tab-button active" data-target="admin-applications" type="button">注册审核</button>
-            <button class="tab-button" data-target="admin-users" type="button">用户管理</button>
-            <button class="tab-button" data-target="admin-stats" type="button">系统统计</button>
-          </div>
-
-          <!-- 注册审核 -->
-          <section class="panel" id="admin-applications">
-            <h2>教师注册审核</h2>
-            <p class="muted">审核教师注册申请，批准后自动创建教师账号。</p>
-            <div id="applications-list"></div>
+          <!-- 1. 数据看板 -->
+          <section class="admin-section" id="section-dashboard">
+            <h2>运营数据看板</h2>
+            <div id="dashboard-grid" class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));"></div>
+            <div style="margin-top: 24px;">
+              <div class="sub-nav" id="dashboard-trend-tabs">
+                <button class="active" data-trend="7">最近 7 天</button>
+                <button data-trend="30">最近 30 天</button>
+              </div>
+              <div id="dashboard-trends"></div>
+            </div>
           </section>
 
-          <!-- 用户管理 -->
-          <section class="panel" id="admin-users">
-            <h2>用户管理</h2>
-            <p class="muted">查看和管理所有教师与学生账号。</p>
+          <!-- 2. 内容管理 -->
+          <section class="admin-section" id="section-content">
+            <h2>内容管理</h2>
+            <div class="sub-nav" id="content-tabs">
+              <button class="active" data-content-type="courses">课程</button>
+              <button data-content-type="folder_items">网盘文件</button>
+              <button data-content-type="live_sessions">直播</button>
+              <button data-content-type="products">商品资料</button>
+            </div>
+            <div id="content-list"></div>
+          </section>
+
+          <!-- 3. 学员管理 -->
+          <section class="admin-section" id="section-students">
+            <h2>学员管理</h2>
             <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
-              <input id="user-search" class="input" placeholder="搜索用户名或姓名" style="flex: 1; min-width: 200px;" />
-              <select id="user-role-filter" class="input" style="width: auto;">
-                <option value="">全部角色</option>
-                <option value="teacher">教师</option>
-                <option value="student">学生</option>
+              <input id="student-search" class="input" placeholder="搜索用户名或姓名" style="flex: 1; min-width: 200px;" />
+              <select id="student-tier-filter" class="input" style="width: auto;">
+                <option value="">全部权益</option>
+                <option value="free">免费</option>
+                <option value="trial">体验</option>
+                <option value="paid">付费</option>
               </select>
             </div>
-            <div id="users-list"></div>
+            <div id="students-list"></div>
           </section>
 
-          <!-- 系统统计 -->
-          <section class="panel" id="admin-stats">
-            <h2>系统统计</h2>
-            <div id="stats-grid" class="stat-grid" style="grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));"></div>
+          <!-- 4. 题库管理 -->
+          <section class="admin-section" id="section-questions">
+            <h2>题库管理</h2>
+            <div id="questions-list"></div>
+          </section>
+
+          <!-- 5. 知识库 / 语料库 -->
+          <section class="admin-section" id="section-knowledge">
+            <h2>知识库 / 语料库</h2>
+            <div class="placeholder-panel">
+              <div class="placeholder-mark">🧠</div>
+              <p>由 C 线接入</p>
+              <p class="muted">AI 知识库、RAG 语料、自动审核语料等。</p>
+            </div>
+          </section>
+
+          <!-- 6. 消息模板管理 -->
+          <section class="admin-section" id="section-messages">
+            <h2>消息模板管理</h2>
+            <div class="placeholder-panel">
+              <div class="placeholder-mark">✉️</div>
+              <p>由 C 线接入</p>
+              <p class="muted">微信订阅消息模板、督学机器人推送模板。</p>
+            </div>
+          </section>
+
+          <!-- 7. 论坛管理 -->
+          <section class="admin-section" id="section-forum">
+            <h2>论坛管理</h2>
+            <div class="sub-nav" id="forum-tabs">
+              <button class="active" data-forum-tab="topics">帖子</button>
+              <button data-forum-tab="replies">回复</button>
+              <button data-forum-tab="reports">举报</button>
+            </div>
+            <div id="forum-list"></div>
+          </section>
+
+          <!-- 8. 机器人管理 -->
+          <section class="admin-section" id="section-robots">
+            <h2>机器人管理</h2>
+            <div class="placeholder-panel">
+              <div class="placeholder-mark">🤖</div>
+              <p>由 C 线接入</p>
+              <p class="muted">五大机器人、企业微信机器人、督学机器人配置。</p>
+            </div>
+          </section>
+
+          <!-- 9. 创业板块 -->
+          <section class="admin-section" id="section-entrepreneurship">
+            <h2>创业板块</h2>
+            <div class="placeholder-panel">
+              <div class="placeholder-mark">🚀</div>
+              <p>由 C 线接入</p>
+              <p class="muted">创业宣传、裂变统计、合伙人管理。</p>
+            </div>
+          </section>
+
+          <!-- 10. 系统设置 -->
+          <section class="admin-section" id="section-settings">
+            <h2>系统设置</h2>
+            <div class="sub-nav" id="settings-tabs">
+              <button class="active" data-settings-tab="settings-general">基本配置</button>
+              <button data-settings-tab="settings-users">用户管理</button>
+              <button data-settings-tab="settings-applications">注册审核</button>
+            </div>
+
+            <div id="settings-general" class="settings-tab-panel">
+              <div class="paper-card" style="padding: 20px;">
+                <h3>站点配置</h3>
+                <div id="settings-form" style="display: grid; gap: 16px; max-width: 600px;">
+                  <!-- 由 admin.js 渲染 -->
+                </div>
+                <div style="margin-top: 16px;">
+                  <button class="button" id="save-settings-button">保存设置</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="settings-users" class="settings-tab-panel" style="display: none;">
+              <div class="paper-card" style="padding: 20px;">
+                <h3>用户管理</h3>
+                <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+                  <input id="user-search" class="input" placeholder="搜索用户名或姓名" style="flex: 1; min-width: 200px;" />
+                  <select id="user-role-filter" class="input" style="width: auto;">
+                    <option value="">全部角色</option>
+                    <option value="admin">管理员</option>
+                    <option value="teacher">教师</option>
+                    <option value="customer_service">客服</option>
+                    <option value="student">学生</option>
+                  </select>
+                </div>
+                <div id="users-list"></div>
+              </div>
+            </div>
+
+            <div id="settings-applications" class="settings-tab-panel" style="display: none;">
+              <div class="paper-card" style="padding: 20px;">
+                <h3>教师注册审核</h3>
+                <div id="applications-list"></div>
+              </div>
+            </div>
           </section>
         </main>
       </div>

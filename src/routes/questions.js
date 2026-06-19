@@ -3,7 +3,16 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerQuestionRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, requireAdmin, safeJsonParse, toPublicPath, questionUpload, taskImportUpload, serializeQuestionForTeacher, serializeQuestionForStudent, updateStudyStreak, checkAndUnlockAchievements, readWorkbookRows, getFieldValue, stripHtml } = shared;
+  const { db, requireAuth, requireStudent, requireTeacher, requireAdmin, safeJsonParse, toPublicPath, questionUpload, taskImportUpload, serializeQuestionForTeacher, serializeQuestionForStudent, updateStudyStreak, checkAndUnlockAchievements, readWorkbookRows, getFieldValue, stripHtml, canAccessContent } = shared;
+
+  function questionIsAccessible(userId, question) {
+    if (!question.is_paid_only) return true;
+    return canAccessContent(userId, {
+      visibility: question.subject_scope ? 'subject_paid' : 'all_paid',
+      subjectScope: question.subject_scope,
+      subject: question.subject
+    });
+  }
 
   // 题目批量导入
   app.post('/api/questions/import', requireTeacher, (request, response) => {
@@ -93,11 +102,13 @@ module.exports = function registerQuestionRoutes(app, shared) {
         return;
       }
 
+      const isPaidOnly = request.body.isPaidOnly === true || request.body.isPaidOnly === '1' || request.body.isPaidOnly === 1 ? 1 : 0;
+
       const questionResult = db.prepare(
         `
           INSERT INTO questions (
-            title, subject, question_type, textbook, stem, options, correct_answer, analysis_text, analysis_video_path, analysis_video_url, created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            title, subject, question_type, textbook, stem, options, correct_answer, analysis_text, analysis_video_path, analysis_video_url, is_paid_only, subject_scope, created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         title,
@@ -110,6 +121,8 @@ module.exports = function registerQuestionRoutes(app, shared) {
         sanitizeText(request.body.analysisText),
         request.file ? toPublicPath(request.file.path) : '',
         String(request.body.analysisVideoUrl || '').trim(),
+        isPaidOnly,
+        sanitizeText(request.body.subjectScope || ''),
         request.currentUser.id,
         dayjs().toISOString()
       );
@@ -289,7 +302,9 @@ module.exports = function registerQuestionRoutes(app, shared) {
       return row;
     });
 
-    response.json({ questions: results, totalCount: countResult.total, page: Number(page) || 1, limit: maxLimit });
+    const filteredResults = studentId ? results.filter((q) => questionIsAccessible(studentId, q)) : results;
+
+    response.json({ questions: filteredResults, totalCount: countResult.total, page: Number(page) || 1, limit: maxLimit });
   });
 
   // 题目收藏切换
@@ -336,7 +351,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
       const serialized = serializeQuestionForStudent(r, latestRecord);
       serialized.favorited = true;
       return serialized;
-    });
+    }).filter((q) => questionIsAccessible(request.currentUser.id, q));
     response.json({ questions });
   });
 
@@ -363,7 +378,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
         ...serializeQuestionForStudent(row, null),
         selectedAnswer: row.selected_answer,
         answeredAt: row.answered_at
-      }))
+      })).filter((q) => questionIsAccessible(request.currentUser.id, q))
     });
   });
 
@@ -442,6 +457,11 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
     if (!question) {
       response.status(404).json({ error: '题目不存在。' });
+      return;
+    }
+
+    if (question.is_paid_only && !questionIsAccessible(request.currentUser.id, question)) {
+      response.status(403).json({ error: '当前权益不足，无法作答该题目。' });
       return;
     }
 
@@ -812,7 +832,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
       const fav = db.prepare('SELECT id FROM question_favorites WHERE question_id = ? AND student_id = ?').get(q.id, studentId);
       row.favorited = !!fav;
       return row;
-    });
+    }).filter((q) => questionIsAccessible(studentId, q));
 
     response.json({ questions: results });
   });
