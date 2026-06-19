@@ -8,7 +8,7 @@ const studentState = {
   socket: null,
   answerResults: {},
   token: null,
-  cloudState: { currentParentId: null, path: [], folders: [], items: [] },
+  cloudState: { currentParentId: null, path: [], folders: [], items: [], categories: [], categoryFilter: 'all', majorSubFilter: '' },
   flashcardState: { dueCards: [], currentIndex: 0, isFlipped: false, stats: { total: 0, again: 0, hard: 0, good: 0, easy: 0 } },
   questionFilter: { subject: '', questionType: '', tagId: '', textbook: '', displayMode: '', isRealExam: '', sourceYear: '', difficulty: '', page: 1, mode: 'sequential' },
   questionTimers: {},

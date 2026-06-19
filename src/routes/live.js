@@ -2,7 +2,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerLiveRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, broadcastToLive, safeJsonParse, liveRooms, canAccessContent } = shared;
+  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, broadcastToLive, safeJsonParse, liveRooms, canAccessContent, toPublicPath, uploadRootDir, cloudUpload } = shared;
 
   app.post('/api/live-sessions', requireTeacher, (request, response) => {
     const title = sanitizeText(request.body.title);
@@ -95,6 +95,55 @@ module.exports = function registerLiveRoutes(app, shared) {
     // 清理 WebSocket 房间内存
     liveRooms.delete(id);
     response.json({ ok: true });
+  });
+
+  // A-10: 直播录制文件上传并自动生成回放记录
+  app.post('/api/live-sessions/:id/recording', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const session = db.prepare('SELECT * FROM live_sessions WHERE id = ?').get(id);
+    if (!session) return response.status(404).json({ error: '直播间不存在。' });
+    if (session.created_by !== request.currentUser.id) return response.status(403).json({ error: '无权操作。' });
+
+    cloudUpload(request, response, (error) => {
+      if (error) return response.status(400).json({ error: '上传失败。' });
+      const filePath = request.file ? toPublicPath(request.file.path) : '';
+      if (!filePath) return response.status(400).json({ error: '未收到录制文件。' });
+
+      const now = dayjs().toISOString();
+      db.prepare('UPDATE live_sessions SET recording_path = ? WHERE id = ?').run(filePath, id);
+
+      // 确保存在“直播回放”文件夹
+      let folder = db.prepare("SELECT * FROM folders WHERE name = '直播回放' AND parent_id IS NULL").get();
+      if (!folder) {
+        const folderResult = db.prepare('INSERT INTO folders (name, parent_id, created_by, created_at) VALUES (?, ?, ?, ?)').run('直播回放', null, request.currentUser.id, now);
+        folder = { id: folderResult.lastInsertRowid };
+      }
+
+      // 生成回放文件项
+      db.prepare(
+        `INSERT INTO folder_items (folder_id, chapter_id, item_type, title, description, subject, visibility, subject_scope, file_path, file_url, file_size, sort_order, is_free_preview, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      ).run(
+        folder.id,
+        null,
+        'video',
+        session.title + ' 回放',
+        session.description || '',
+        session.subject || '',
+        session.visibility || 'free',
+        '',
+        filePath,
+        '',
+        request.file ? request.file.size : 0,
+        0,
+        0,
+        request.currentUser.id,
+        now
+      );
+
+      response.json({ ok: true, recordingPath: filePath });
+    });
   });
 
   app.get('/api/live-sessions/:id', requireAuth, (request, response) => {

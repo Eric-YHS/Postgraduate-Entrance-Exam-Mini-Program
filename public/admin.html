@@ -160,6 +160,32 @@
               <button data-content-type="folder_items">网盘文件</button>
               <button data-content-type="live_sessions">直播</button>
               <button data-content-type="products">商品资料</button>
+              <button data-content-type="categories">课程分类</button>
+            </div>
+            <div id="category-form" class="hidden" style="margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:12px;border:1px solid var(--border);">
+              <h3 style="margin-bottom:10px;font-size:14px;">新增/编辑分类</h3>
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;">
+                <div>
+                  <label style="font-size:12px;color:var(--subtle);">名称</label>
+                  <input class="input" id="category-name" placeholder="分类名称" style="padding:6px 10px;font-size:13px;" />
+                </div>
+                <div>
+                  <label style="font-size:12px;color:var(--subtle);">类型</label>
+                  <select class="input" id="category-type" style="padding:6px 10px;font-size:13px;">
+                    <option value="public">公共课</option>
+                    <option value="major">专业课</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size:12px;color:var(--subtle);">排序</label>
+                  <input class="input" id="category-sort" type="number" value="0" style="padding:6px 10px;font-size:13px;width:80px;" />
+                </div>
+                <div>
+                  <button class="button" id="save-category-btn" type="button" style="font-size:12px;padding:6px 14px;">保存</button>
+                  <button class="ghost-button" id="cancel-category-btn" type="button" style="font-size:12px;padding:6px 14px;">取消</button>
+                </div>
+              </div>
+              <input type="hidden" id="category-id" />
             </div>
             <div id="content-list"></div>
           </section>

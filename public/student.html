@@ -89,6 +89,12 @@
 
           <section class="panel hidden" id="student-courses">
             <h2>录播网盘</h2>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;" id="course-category-tabs">
+              <button class="tab-button active" data-course-category="all" type="button">全部</button>
+              <button class="tab-button" data-course-category="public" type="button">公共课</button>
+              <button class="tab-button" data-course-category="major" type="button">专业课</button>
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;" id="course-major-subtabs" class="hidden"></div>
             <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
               <select id="course-subject-filter" class="select" style="padding:6px 12px;font-size:13px;border-radius:10px;">
                 <option value="">全部科目</option>

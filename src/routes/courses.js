@@ -98,6 +98,7 @@ module.exports = function registerCourseRoutes(app, shared) {
       id: row.id,
       folderId: row.folder_id,
       chapterId: row.chapter_id || null,
+      chapterTitle: row.chapter_title || '',
       itemType: row.item_type,
       title: row.title,
       description: row.description,
@@ -129,7 +130,13 @@ module.exports = function registerCourseRoutes(app, shared) {
     }
 
     const folders = db.prepare('SELECT * FROM folders WHERE parent_id IS ? ORDER BY name').all(parentId);
-    const rows = db.prepare('SELECT * FROM folder_items WHERE folder_id IS ? ORDER BY sort_order, created_at DESC').all(parentId);
+    const rows = db.prepare(`
+      SELECT fi.*, cc.title AS chapter_title
+      FROM folder_items fi
+      LEFT JOIN course_chapters cc ON cc.id = fi.chapter_id
+      WHERE fi.folder_id IS ?
+      ORDER BY fi.sort_order, fi.created_at DESC
+    `).all(parentId);
     const items = rows.map((row) => {
       if (studentId) {
         const canAccess = (row.is_free_preview || 0) || canAccessContent(studentId, { visibility: row.visibility, subjectScope: row.subject_scope, subject: row.subject });

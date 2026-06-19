@@ -476,6 +476,7 @@ function initOperationsListeners() {
     adminState.contentType = btn.dataset.contentType;
     document.querySelectorAll('#content-tabs button').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
+    document.getElementById('category-form').classList.toggle('hidden', adminState.contentType !== 'categories');
     loadContent();
   });
 
@@ -524,16 +525,73 @@ function initOperationsListeners() {
 
   document.getElementById('content-list').addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-content-delete]');
-    if (!btn) return;
-    const [type, id, title] = [btn.dataset.contentDelete, btn.dataset.contentId, btn.dataset.contentTitle];
-    if (!await confirmDialog({ title: '删除内容', message: `确定删除「${title}」吗？`, confirmText: '删除', danger: true })) return;
+    if (btn) {
+      const [type, id, title] = [btn.dataset.contentDelete, btn.dataset.contentId, btn.dataset.contentTitle];
+      if (!await confirmDialog({ title: '删除内容', message: `确定删除「${title}」吗？`, confirmText: '删除', danger: true })) return;
+      try {
+        await fetchJSON(`/api/admin/content/${type}/${id}`, { method: 'DELETE' });
+        createToast('已删除', 'success');
+        loadContent();
+      } catch (error) {
+        createToast(error.message, 'error');
+      }
+      return;
+    }
+
+    const editBtn = e.target.closest('[data-category-edit]');
+    if (editBtn) {
+      document.getElementById('category-id').value = editBtn.dataset.categoryEdit;
+      document.getElementById('category-name').value = editBtn.dataset.categoryName;
+      document.getElementById('category-type').value = editBtn.dataset.categoryType;
+      document.getElementById('category-sort').value = editBtn.dataset.categorySort;
+      document.getElementById('category-form').classList.remove('hidden');
+      return;
+    }
+
+    const delCatBtn = e.target.closest('[data-category-delete]');
+    if (delCatBtn) {
+      if (!await confirmDialog({ title: '删除分类', message: `确定删除分类「${delCatBtn.dataset.categoryName}」吗？`, confirmText: '删除', danger: true })) return;
+      try {
+        await fetchJSON(`/api/admin/course-categories/${delCatBtn.dataset.categoryDelete}`, { method: 'DELETE' });
+        createToast('已删除', 'success');
+        loadContent();
+      } catch (error) {
+        createToast(error.message, 'error');
+      }
+      return;
+    }
+
+    if (e.target.closest('#add-category-btn')) {
+      document.getElementById('category-id').value = '';
+      document.getElementById('category-name').value = '';
+      document.getElementById('category-type').value = 'public';
+      document.getElementById('category-sort').value = '0';
+      document.getElementById('category-form').classList.remove('hidden');
+    }
+  });
+
+  document.getElementById('save-category-btn').addEventListener('click', async () => {
+    const id = document.getElementById('category-id').value;
+    const name = document.getElementById('category-name').value.trim();
+    const type = document.getElementById('category-type').value;
+    const sortOrder = Number(document.getElementById('category-sort').value) || 0;
+    if (!name) { createToast('请输入分类名称。', 'error'); return; }
     try {
-      await fetchJSON(`/api/admin/content/${type}/${id}`, { method: 'DELETE' });
-      createToast('已删除', 'success');
+      if (id) {
+        await fetchJSON(`/api/admin/course-categories/${id}`, { method: 'PUT', body: JSON.stringify({ name, type, sortOrder }) });
+      } else {
+        await fetchJSON('/api/admin/course-categories', { method: 'POST', body: JSON.stringify({ name, type, sortOrder }) });
+      }
+      createToast('已保存', 'success');
+      document.getElementById('category-form').classList.add('hidden');
       loadContent();
     } catch (error) {
       createToast(error.message, 'error');
     }
+  });
+
+  document.getElementById('cancel-category-btn').addEventListener('click', () => {
+    document.getElementById('category-form').classList.add('hidden');
   });
 
   // 题库操作
@@ -661,6 +719,12 @@ function renderStudents() {
 
 async function loadContent() {
   try {
+    if (adminState.contentType === 'categories') {
+      const data = await fetchJSON('/api/course-categories');
+      adminState.contentData = { categories: data.categories || [] };
+      renderContent();
+      return;
+    }
     const data = await fetchJSON(`/api/admin/content?type=${adminState.contentType}`);
     adminState.contentData = data;
     renderContent();
@@ -672,6 +736,12 @@ async function loadContent() {
 function renderContent() {
   const container = document.getElementById('content-list');
   const type = adminState.contentType;
+
+  if (type === 'categories') {
+    renderCategories(container);
+    return;
+  }
+
   const items = adminState.contentData[type === 'courses' ? 'courses' : type === 'folder_items' ? 'folderItems' : type === 'live_sessions' ? 'liveSessions' : 'products'] || [];
 
   if (!items.length) {
@@ -704,6 +774,34 @@ function renderContent() {
         </td>
         <td style="padding: 8px;">
           <button class="ghost-button" style="font-size: 12px; color: var(--danger);" data-content-delete="${type}" data-content-id="${item.id}" data-content-title="${escapeHtml(item.title)}">删除</button>
+        </td>
+      </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+function renderCategories(container) {
+  const items = adminState.contentData.categories || [];
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无分类，点击上方“新增/编辑分类”添加。</p>';
+    return;
+  }
+  let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;"><span class="muted" style="font-size:13px;">管理公共课/专业课分类</span><button class="button" id="add-category-btn" type="button" style="font-size:12px;padding:6px 14px;">新增分类</button></div>';
+  html += '<table style="width: 100%; border-collapse: collapse;">';
+  html += '<thead><tr style="border-bottom: 2px solid var(--border);">';
+  ['名称', '类型', '排序', '操作'].forEach((th) => html += `<th style="text-align: left; padding: 8px;">${escapeHtml(th)}</th>`);
+  html += '</tr></thead><tbody>';
+  items.forEach((item) => {
+    const typeLabel = item.type === 'public' ? '公共课' : '专业课';
+    html += `
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">${escapeHtml(item.name)}</td>
+        <td style="padding: 8px;"><span class="badge" style="background:${item.type === 'public' ? 'var(--brand)' : '#8b5cf6'};color:white;">${escapeHtml(typeLabel)}</span></td>
+        <td style="padding: 8px;">${item.sortOrder}</td>
+        <td style="padding: 8px;">
+          <button class="ghost-button" style="font-size: 12px;" data-category-edit="${item.id}" data-category-name="${escapeHtml(item.name)}" data-category-type="${item.type}" data-category-sort="${item.sortOrder}">编辑</button>
+          <button class="ghost-button" style="font-size: 12px; color: var(--danger); margin-left: 8px;" data-category-delete="${item.id}" data-category-name="${escapeHtml(item.name)}">删除</button>
         </td>
       </tr>`;
   });

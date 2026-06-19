@@ -1,7 +1,55 @@
 // student-courses.js — Course/cloud rendering, live sessions, video player, course notes
 
 function renderCourses() {
+  loadCourseCategories();
   loadStudentCloud(null);
+}
+
+async function loadCourseCategories() {
+  try {
+    const result = await fetchJSON('/api/course-categories');
+    studentState.cloudState.categories = result.categories || [];
+    renderCategoryTabs();
+  } catch (_) {}
+}
+
+function renderCategoryTabs() {
+  const tabs = document.getElementById('course-category-tabs');
+  if (!tabs) return;
+  const current = studentState.cloudState.categoryFilter || 'all';
+  tabs.querySelectorAll('[data-course-category]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.courseCategory === current);
+  });
+
+  const majorSub = document.getElementById('course-major-subtabs');
+  const majorCategories = studentState.cloudState.categories.filter((c) => c.type === 'major');
+  if (current === 'major' && majorCategories.length) {
+    majorSub.classList.remove('hidden');
+    const subCurrent = studentState.cloudState.majorSubFilter || '';
+    majorSub.innerHTML = `
+      <button class="tab-button ${!subCurrent ? 'active' : ''}" data-major-sub="" type="button">全部方向</button>
+      ${majorCategories.map((c) => `
+        <button class="tab-button ${String(c.id) === subCurrent ? 'active' : ''}" data-major-sub="${c.id}" type="button">${escapeHtml(c.name)}</button>
+      `).join('')}
+    `;
+  } else {
+    majorSub.classList.add('hidden');
+    majorSub.innerHTML = '';
+  }
+}
+
+function itemMatchesCategoryFilter(item) {
+  const filter = studentState.cloudState.categoryFilter || 'all';
+  if (filter === 'all') return true;
+  const cats = studentState.cloudState.categories || [];
+  const subjectCats = cats.filter((c) => c.name === item.subject || (c.parentId && cats.find((p) => p.id === c.parentId && p.name === item.subject)));
+  const itemTypes = subjectCats.length ? subjectCats.map((c) => c.type) : [];
+  if (filter === 'public') return itemTypes.includes('public') || (!item.subject && !studentState.cloudState.majorSubFilter);
+  if (filter === 'major') {
+    if (!studentState.cloudState.majorSubFilter) return itemTypes.includes('major') || !item.subject;
+    return subjectCats.some((c) => c.type === 'major' && String(c.id) === studentState.cloudState.majorSubFilter);
+  }
+  return true;
 }
 
 async function loadStudentCloud(parentId, subject) {
@@ -38,22 +86,33 @@ function renderStudentCloud() {
     `).join('')
     : '';
 
+  // 按章节分组并渲染文件项
   const ig = document.getElementById('student-cloud-items-grid');
-  ig.innerHTML = cs.items.length
-    ? cs.items.map((item) => {
-      const icon = item.itemType === 'video' ? '&#127909;' : item.itemType === 'audio' ? '&#127925;' : '&#128196;';
-      const src = item.filePath || item.fileUrl;
-      return `
-        <div class="paper-card cloud-item">
-          <div class="cloud-item-icon">${icon}</div>
-          <strong>${escapeHtml(item.title)}</strong>
-          ${item.subject ? `<span class="badge badge-brand">${escapeHtml(item.subject)}</span>` : ''}
-          ${item.itemType === 'video' && src ? `<button class="ghost-button" data-action="play-video" data-item-id="${item.id}" data-src="${escapeHtml(src)}" data-title="${escapeHtml(item.title)}" type="button" style="font-size:12px;padding:4px 10px;">播放</button>` : ''}
-          ${src && item.itemType !== 'video' ? `<a class="ghost-button" href="${escapeHtml(src)}" target="_blank" style="font-size:12px;padding:4px 10px;">查看</a>` : ''}
-        </div>
-      `;
-    }).join('')
-    : (!cs.folders.length ? '<p class="muted">当前文件夹为空。</p>' : '');
+  const visibleItems = (cs.items || []).filter(itemMatchesCategoryFilter);
+
+  if (!visibleItems.length) {
+    ig.innerHTML = (!cs.folders.length ? '<p class="muted">当前文件夹为空。</p>' : '');
+  } else {
+    const groups = {};
+    const ungrouped = [];
+    visibleItems.forEach((item) => {
+      if (item.chapterId && item.chapterTitle) {
+        if (!groups[item.chapterId]) groups[item.chapterId] = { title: item.chapterTitle, items: [] };
+        groups[item.chapterId].items.push(item);
+      } else {
+        ungrouped.push(item);
+      }
+    });
+
+    let html = '';
+    Object.values(groups).forEach((group) => {
+      html += `<div style="margin-top:16px;"><h3 style="font-size:15px;color:var(--brand);margin-bottom:8px;">${escapeHtml(group.title)}</h3><div class="cloud-grid">${renderCloudItemCards(group.items)}</div></div>`;
+    });
+    if (ungrouped.length) {
+      html += `<div class="cloud-grid" style="margin-top:14px;">${renderCloudItemCards(ungrouped)}</div>`;
+    }
+    ig.innerHTML = html;
+  }
 
   // 视频播放区域
   let playerRoot = document.getElementById('video-player-area');
@@ -65,6 +124,37 @@ function renderStudentCloud() {
     igEl.parentNode.insertBefore(playerRoot, igEl.nextSibling);
   }
   playerRoot.innerHTML = '';
+}
+
+function renderCloudItemCards(items) {
+  return items.map((item) => {
+    const icon = item.itemType === 'video' ? '&#127909;' : item.itemType === 'audio' ? '&#127925;' : '&#128196;';
+    const src = item.filePath || item.fileUrl;
+    const isLocked = item.locked;
+    const isFreePreview = item.isFreePreview;
+    const badges = [];
+    if (isLocked) badges.push('<span class="badge" style="background:#fee2e2;color:#991b1b;">锁定</span>');
+    else if (isFreePreview) badges.push('<span class="badge" style="background:#dcfce7;color:#166534;">试看</span>');
+    if (item.subject) badges.push(`<span class="badge badge-brand">${escapeHtml(item.subject)}</span>`);
+
+    let actionHtml = '';
+    if (isLocked) {
+      actionHtml = `<button class="ghost-button" data-action="locked-content" data-item-id="${item.id}" type="button" style="font-size:12px;padding:4px 10px;">锁定</button>`;
+    } else if (item.itemType === 'video' && src) {
+      actionHtml = `<button class="ghost-button" data-action="play-video" data-item-id="${item.id}" data-src="${escapeHtml(src)}" data-title="${escapeHtml(item.title)}" type="button" style="font-size:12px;padding:4px 10px;">播放</button>`;
+    } else if (src) {
+      actionHtml = `<a class="ghost-button" href="${escapeHtml(src)}" target="_blank" style="font-size:12px;padding:4px 10px;">查看</a>`;
+    }
+
+    return `
+      <div class="paper-card cloud-item">
+        <div class="cloud-item-icon">${icon}</div>
+        <strong>${escapeHtml(item.title)}</strong>
+        ${badges.join('')}
+        ${actionHtml}
+      </div>
+    `;
+  }).join('');
 }
 
 function renderLiveSessions() {
@@ -112,169 +202,176 @@ function bindStudentCloud() {
     }
   });
 
-  // 视频播放事件委托
+  // 视频播放 / 锁定提示事件委托
   document.getElementById('student-cloud-items-grid').addEventListener('click', async (event) => {
     const playBtn = event.target.closest('[data-action="play-video"]');
-    if (!playBtn) return;
-    const itemId = playBtn.dataset.itemId;
-    const src = playBtn.dataset.src;
-    const title = playBtn.dataset.title;
+    if (playBtn) {
+      const itemId = playBtn.dataset.itemId;
+      const src = playBtn.dataset.src;
+      const title = playBtn.dataset.title;
 
-    // 加载播放进度
-    let savedPosition = 0;
-    try {
-      const progress = await fetchJSON('/api/courses/' + itemId + '/progress');
-      savedPosition = progress.positionSeconds || 0;
-    } catch (_) {}
-
-    const playerRoot = document.getElementById('video-player-area');
-    playerRoot.innerHTML = `
-      <div class="paper-card" style="padding:16px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
-          <h3 style="margin:0;">${escapeHtml(title)}</h3>
-          <button class="ghost-button" id="close-player-btn" type="button" style="font-size:12px;padding:4px 10px;">关闭播放器</button>
-        </div>
-        <video id="course-video" controls style="width:100%;border-radius:12px;background:#000;" src="${escapeHtml(src)}"></video>
-        ${savedPosition > 0 ? `<p class="muted" style="margin-top:8px;font-size:12px;">上次观看到 ${Math.round(savedPosition)}秒，已自动续播。</p>` : ''}
-        <div style="display:flex;gap:8px;margin-top:14px;">
-          <button class="tab-button active" data-vtab="notes" type="button">笔记</button>
-          <button class="tab-button" data-vtab="review" type="button">评价</button>
-        </div>
-        <div id="video-notes-section" style="margin-top:10px;">
-          <div style="display:flex;gap:8px;">
-            <input class="input" id="note-input" placeholder="写下笔记（可选：记录当前时间点）" style="flex:1;padding:8px 12px;font-size:13px;" />
-            <button class="button" id="save-note-btn" type="button" style="font-size:12px;padding:8px 16px;">保存</button>
-          </div>
-          <div id="notes-list" style="margin-top:10px;"></div>
-        </div>
-        <div id="video-review-section" class="hidden" style="margin-top:10px;">
-          <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
-            <label style="font-size:13px;">评分：</label>
-            <select id="review-rating" class="input" style="padding:6px 10px;font-size:13px;width:80px;">
-              <option value="5">5星</option><option value="4">4星</option><option value="3">3星</option><option value="2">2星</option><option value="1">1星</option>
-            </select>
-            <button class="button" id="submit-review-btn" type="button" style="font-size:12px;padding:6px 14px;">提交评价</button>
-          </div>
-          <textarea class="textarea" id="review-content" placeholder="写下你的评价..." style="min-height:60px;"></textarea>
-          <div id="review-list" style="margin-top:12px;"></div>
-        </div>
-      </div>
-    `;
-
-    const video = document.getElementById('course-video');
-    if (savedPosition > 0) {
-      video.currentTime = savedPosition;
-    }
-
-    // 定期保存进度（每15秒）
-    if (studentState._saveInterval) clearInterval(studentState._saveInterval);
-    studentState._saveInterval = setInterval(async () => {
-      if (video.paused || video.ended) return;
+      // 加载播放进度
+      let savedPosition = 0;
       try {
-        await fetchJSON('/api/courses/' + itemId + '/progress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            positionSeconds: video.currentTime,
-            durationSeconds: video.duration || 0
-          })
-        });
+        const progress = await fetchJSON('/api/courses/' + itemId + '/progress');
+        savedPosition = progress.positionSeconds || 0;
       } catch (_) {}
-    }, 15000);
 
-    // 暂停时也保存
-    video.addEventListener('pause', async () => {
-      try {
-        await fetchJSON('/api/courses/' + itemId + '/progress', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            positionSeconds: video.currentTime,
-            durationSeconds: video.duration || 0
-          })
-        });
-      } catch (_) {}
-    });
+      const playerRoot = document.getElementById('video-player-area');
+      playerRoot.innerHTML = `
+        <div class="paper-card" style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">${escapeHtml(title)}</h3>
+            <button class="ghost-button" id="close-player-btn" type="button" style="font-size:12px;padding:4px 10px;">关闭播放器</button>
+          </div>
+          <video id="course-video" controls style="width:100%;border-radius:12px;background:#000;" src="${escapeHtml(src)}"></video>
+          ${savedPosition > 0 ? `<p class="muted" style="margin-top:8px;font-size:12px;">上次观看到 ${Math.round(savedPosition)}秒，已自动续播。</p>` : ''}
+          <div style="display:flex;gap:8px;margin-top:14px;">
+            <button class="tab-button active" data-vtab="notes" type="button">笔记</button>
+            <button class="tab-button" data-vtab="review" type="button">评价</button>
+          </div>
+          <div id="video-notes-section" style="margin-top:10px;">
+            <div style="display:flex;gap:8px;">
+              <input class="input" id="note-input" placeholder="写下笔记（可选：记录当前时间点）" style="flex:1;padding:8px 12px;font-size:13px;" />
+              <button class="button" id="save-note-btn" type="button" style="font-size:12px;padding:8px 16px;">保存</button>
+            </div>
+            <div id="notes-list" style="margin-top:10px;"></div>
+          </div>
+          <div id="video-review-section" class="hidden" style="margin-top:10px;">
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+              <label style="font-size:13px;">评分：</label>
+              <select id="review-rating" class="input" style="padding:6px 10px;font-size:13px;width:80px;">
+                <option value="5">5星</option><option value="4">4星</option><option value="3">3星</option><option value="2">2星</option><option value="1">1星</option>
+              </select>
+              <button class="button" id="submit-review-btn" type="button" style="font-size:12px;padding:6px 14px;">提交评价</button>
+            </div>
+            <textarea class="textarea" id="review-content" placeholder="写下你的评价..." style="min-height:60px;"></textarea>
+            <div id="review-list" style="margin-top:12px;"></div>
+          </div>
+        </div>
+      `;
 
-    // 视频 Tab 切换
-    playerRoot.querySelectorAll('[data-vtab]').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        playerRoot.querySelectorAll('[data-vtab]').forEach((t) => t.classList.remove('active'));
-        tab.classList.add('active');
-        document.getElementById('video-notes-section').classList.toggle('hidden', tab.dataset.vtab !== 'notes');
-        document.getElementById('video-review-section').classList.toggle('hidden', tab.dataset.vtab !== 'review');
+      const video = document.getElementById('course-video');
+      if (savedPosition > 0) {
+        video.currentTime = savedPosition;
+      }
+
+      // 定期保存进度（每15秒）
+      if (studentState._saveInterval) clearInterval(studentState._saveInterval);
+      studentState._saveInterval = setInterval(async () => {
+        if (video.paused || video.ended) return;
+        try {
+          await fetchJSON('/api/courses/' + itemId + '/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              positionSeconds: video.currentTime,
+              durationSeconds: video.duration || 0
+            })
+          });
+        } catch (_) {}
+      }, 15000);
+
+      // 暂停时也保存
+      video.addEventListener('pause', async () => {
+        try {
+          await fetchJSON('/api/courses/' + itemId + '/progress', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              positionSeconds: video.currentTime,
+              durationSeconds: video.duration || 0
+            })
+          });
+        } catch (_) {}
       });
-    });
 
-    // 加载笔记
-    const loadNotes = async () => {
-      const notes = await loadCourseNotes(itemId);
-      const notesList = document.getElementById('notes-list');
-      notesList.innerHTML = notes.length ? notes.map((n) => `
-        <div class="reply-item" style="padding:8px 0;">
-          <div>
-            <span class="badge" style="font-size:10px;">${Math.round(n.timestamp_seconds)}秒</span>
-            <span style="font-size:13px;margin-left:6px;">${escapeHtml(n.content)}</span>
-          </div>
-        </div>
-      `).join('') : '<p class="muted" style="font-size:12px;">暂无笔记。</p>';
-    };
-    loadNotes();
+      // 视频 Tab 切换
+      playerRoot.querySelectorAll('[data-vtab]').forEach((tab) => {
+        tab.addEventListener('click', () => {
+          playerRoot.querySelectorAll('[data-vtab]').forEach((t) => t.classList.remove('active'));
+          tab.classList.add('active');
+          document.getElementById('video-notes-section').classList.toggle('hidden', tab.dataset.vtab !== 'notes');
+          document.getElementById('video-review-section').classList.toggle('hidden', tab.dataset.vtab !== 'review');
+        });
+      });
 
-    document.getElementById('save-note-btn').addEventListener('click', async () => {
-      const content = document.getElementById('note-input').value.trim();
-      if (!content) { createToast('请输入笔记内容。', 'error'); return; }
-      const ts = video.currentTime || 0;
-      await saveCourseNote(itemId, content, ts);
-      document.getElementById('note-input').value = '';
-      loadNotes();
-    });
-
-    // 加载评价
-    const loadReviews = async () => {
-      try {
-        const result = await fetchJSON('/api/courses/' + itemId + '/reviews');
-        const reviewsList = document.getElementById('review-list');
-        if (result.myReview) {
-          document.getElementById('review-rating').value = result.myReview.rating;
-          document.getElementById('review-content').value = result.myReview.content || '';
-        }
-        reviewsList.innerHTML = result.reviews.length ? result.reviews.map((r) => `
+      // 加载笔记
+      const loadNotes = async () => {
+        const notes = await loadCourseNotes(itemId);
+        const notesList = document.getElementById('notes-list');
+        notesList.innerHTML = notes.length ? notes.map((n) => `
           <div class="reply-item" style="padding:8px 0;">
             <div>
-              <strong style="font-size:13px;">${escapeHtml(r.studentName || '同学')}</strong>
-              <span class="badge" style="font-size:10px;margin-left:6px;">${'&#9733;'.repeat(r.rating)}</span>
-              <p style="font-size:13px;margin-top:4px;">${escapeHtml(r.content || '未写评价')}</p>
+              <span class="badge" style="font-size:10px;">${Math.round(n.timestamp_seconds)}秒</span>
+              <span style="font-size:13px;margin-left:6px;">${escapeHtml(n.content)}</span>
             </div>
           </div>
-        `).join('') : '<p class="muted" style="font-size:12px;">暂无评价。</p>';
-      } catch (_) {}
-    };
-    loadReviews();
+        `).join('') : '<p class="muted" style="font-size:12px;">暂无笔记。</p>';
+      };
+      loadNotes();
 
-    document.getElementById('submit-review-btn').addEventListener('click', async () => {
-      const rating = Number(document.getElementById('review-rating').value);
-      const content = document.getElementById('review-content').value.trim();
-      try {
-        await fetchJSON('/api/courses/' + itemId + '/reviews', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rating, content })
-        });
-        createToast('评价已提交。', 'success');
-        loadReviews();
-      } catch (error) {
-        createToast(error.message, 'error');
-      }
-    });
+      document.getElementById('save-note-btn').addEventListener('click', async () => {
+        const content = document.getElementById('note-input').value.trim();
+        if (!content) { createToast('请输入笔记内容。', 'error'); return; }
+        const ts = video.currentTime || 0;
+        await saveCourseNote(itemId, content, ts);
+        document.getElementById('note-input').value = '';
+        loadNotes();
+      });
 
-    document.getElementById('close-player-btn').addEventListener('click', () => {
-      clearInterval(studentState._saveInterval);
-      studentState._saveInterval = null;
-      playerRoot.innerHTML = '';
-    });
+      // 加载评价
+      const loadReviews = async () => {
+        try {
+          const result = await fetchJSON('/api/courses/' + itemId + '/reviews');
+          const reviewsList = document.getElementById('review-list');
+          if (result.myReview) {
+            document.getElementById('review-rating').value = result.myReview.rating;
+            document.getElementById('review-content').value = result.myReview.content || '';
+          }
+          reviewsList.innerHTML = result.reviews.length ? result.reviews.map((r) => `
+            <div class="reply-item" style="padding:8px 0;">
+              <div>
+                <strong style="font-size:13px;">${escapeHtml(r.studentName || '同学')}</strong>
+                <span class="badge" style="font-size:10px;margin-left:6px;">${'&#9733;'.repeat(r.rating)}</span>
+                <p style="font-size:13px;margin-top:4px;">${escapeHtml(r.content || '未写评价')}</p>
+              </div>
+            </div>
+          `).join('') : '<p class="muted" style="font-size:12px;">暂无评价。</p>';
+        } catch (_) {}
+      };
+      loadReviews();
 
-    video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('submit-review-btn').addEventListener('click', async () => {
+        const rating = Number(document.getElementById('review-rating').value);
+        const content = document.getElementById('review-content').value.trim();
+        try {
+          await fetchJSON('/api/courses/' + itemId + '/reviews', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ rating, content })
+          });
+          createToast('评价已提交。', 'success');
+          loadReviews();
+        } catch (error) {
+          createToast(error.message, 'error');
+        }
+      });
+
+      document.getElementById('close-player-btn').addEventListener('click', () => {
+        clearInterval(studentState._saveInterval);
+        studentState._saveInterval = null;
+        playerRoot.innerHTML = '';
+      });
+
+      video.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const lockedBtn = event.target.closest('[data-action="locked-content"]');
+    if (lockedBtn) {
+      createToast('该内容需升级权益后解锁，请联系老师或前往商城购买课程。', 'error');
+    }
   });
 }
 
@@ -307,6 +404,23 @@ function bindCourseTabs() {
   if (!panel) return;
 
   panel.addEventListener('click', (event) => {
+    const catBtn = event.target.closest('[data-course-category]');
+    if (catBtn) {
+      studentState.cloudState.categoryFilter = catBtn.dataset.courseCategory;
+      studentState.cloudState.majorSubFilter = '';
+      renderCategoryTabs();
+      renderStudentCloud();
+      return;
+    }
+
+    const majorBtn = event.target.closest('[data-major-sub]');
+    if (majorBtn) {
+      studentState.cloudState.majorSubFilter = majorBtn.dataset.majorSub;
+      renderCategoryTabs();
+      renderStudentCloud();
+      return;
+    }
+
     const tabBtn = event.target.closest('[data-course-tab]');
     if (!tabBtn) return;
     const tab = tabBtn.dataset.courseTab;

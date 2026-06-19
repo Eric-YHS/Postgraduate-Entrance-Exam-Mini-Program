@@ -360,6 +360,7 @@ function serializeLiveSession(row) {
     subject: row.subject,
     visibility: row.visibility || 'free',
     status: row.status,
+    recordingPath: row.recording_path || '',
     teacherName: row.teacher_name,
     viewerCount: viewers,
     createdAt: row.created_at,
