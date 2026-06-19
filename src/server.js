@@ -1605,6 +1605,20 @@ require('./routes/wecom')(app, shared);
 require('./routes/promoter')(app, shared);
 require('./routes/misc')(app, shared);
 
+// ── 企业微信会话归档轮询器（群聊监听） ──
+
+let archivePoller = null;
+if (config.wecomArchiveEnabled) {
+  const { initArchivePoller } = require('./services/archivePoller');
+  archivePoller = initArchivePoller(config.wecomArchivePollInterval);
+  if (archivePoller) {
+    console.log('[server] 会话存档轮询器已初始化');
+  }
+}
+
+// 将 poller 句柄挂到 shared，方便路由管理接口调用
+shared.archivePoller = archivePoller;
+
 // ── 启动服务器 ──
 
 server.on('error', (error) => {
@@ -1626,6 +1640,22 @@ if (require.main === module) {
     console.log(`Study planner running at http://localhost:${config.port}`);
   });
 }
+
+// 进程退出时优雅停止归档轮询器
+process.on('SIGINT', () => {
+  if (archivePoller) {
+    archivePoller.stop();
+    console.log('[server] 会话存档轮询器已停止');
+  }
+  process.exit(0);
+});
+process.on('SIGTERM', () => {
+  if (archivePoller) {
+    archivePoller.stop();
+    console.log('[server] 会话存档轮询器已停止');
+  }
+  process.exit(0);
+});
 
 module.exports = { app, server, db, wss };
 

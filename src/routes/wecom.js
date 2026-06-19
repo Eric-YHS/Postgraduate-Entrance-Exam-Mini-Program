@@ -123,6 +123,18 @@ module.exports = function registerWecomRoutes(app, shared) {
           if (!question) return;
           console.log(`[wecom] 群聊消息 | chatId: ${chatId} | 发送者: ${senderId} | 问题: ${question}`);
 
+          // 去重：如果 archive 系统已处理过，不再重复回复
+          const msgIdXml = extractXmlField(parsed.message, 'MsgId');
+          if (msgIdXml) {
+            try {
+              const dupCheck = db.prepare('SELECT id FROM wecom_archive_messages WHERE msgid = ?').get(msgIdXml);
+              if (dupCheck) {
+                console.log(`[wecom] 消息 ${msgIdXml} 已被归档系统处理，跳过`);
+                return;
+              }
+            } catch (_) { /* 表可能还不存在，忽略 */ }
+          }
+
           // 群聊统一走免费答疑机器人（避免权限判断复杂化，后续可按发送者身份区分）
           try {
             const result = await handleFreeTutorMessage({ userId: senderId, message: question, source, groupId: chatId });
@@ -140,6 +152,17 @@ module.exports = function registerWecomRoutes(app, shared) {
                 text: { content: replyText }
               });
               console.log(`[wecom] 回复群聊 ${chatId} 结果:`, sendResult);
+
+              // 记录处理结果（防止 archive 系统重复处理）
+              if (msgIdXml) {
+                try {
+                  db.prepare(`
+                    INSERT OR IGNORE INTO wecom_archive_messages
+                      (msgid, seq, from_user, roomid, msgtype, content, action, processed_at)
+                    VALUES (?, 0, ?, ?, 'text', ?, 'callback_reply', ?)
+                  `).run(msgIdXml, senderId, chatId, question, new Date().toISOString());
+                } catch (_) { /* 忽略去重写入失败 */ }
+              }
             } catch (sendErr) {
               console.error('[wecom] 回复群聊消息失败:', sendErr.message);
             }
@@ -397,6 +420,60 @@ module.exports = function registerWecomRoutes(app, shared) {
     } catch (error) {
       console.error('处理企业微信消息失败:', error.message);
       response.status(500).json({ error: '处理消息失败，请稍后重试。' });
+    }
+  });
+
+  // ── 会话存档管理接口 ──
+
+  // 获取归档同步状态
+  app.get('/api/wecom/archive/status', requireAdmin, (request, response) => {
+    try {
+      const { getStatus } = require('../services/archivePoller');
+      const status = getStatus();
+      response.json({ success: true, data: status });
+    } catch (error) {
+      response.status(500).json({ error: error.message });
+    }
+  });
+
+  // 手动触发一次同步
+  app.post('/api/wecom/archive/sync', requireAdmin, async (request, response) => {
+    try {
+      const { syncNow } = require('../services/archivePoller');
+      const result = await syncNow();
+      response.json({ success: result.ok, data: result });
+    } catch (error) {
+      response.status(500).json({ error: error.message });
+    }
+  });
+
+  // 更新归档配置（热更新，仅在内存中生效，重启后恢复 .env 值）
+  app.post('/api/wecom/archive/config', requireAdmin, (request, response) => {
+    try {
+      const { enabled, pollInterval } = request.body;
+      const config = require('../config');
+
+      if (enabled !== undefined) {
+        config.wecomArchiveEnabled = !!enabled;
+      }
+      if (pollInterval !== undefined) {
+        const interval = Number(pollInterval);
+        if (interval >= 5 && interval <= 300) {
+          config.wecomArchivePollInterval = interval;
+        } else {
+          return response.status(400).json({ error: 'pollInterval 必须在 5-300 秒之间' });
+        }
+      }
+
+      response.json({
+        success: true,
+        data: {
+          enabled: config.wecomArchiveEnabled,
+          pollInterval: config.wecomArchivePollInterval,
+        }
+      });
+    } catch (error) {
+      response.status(500).json({ error: error.message });
     }
   });
 };

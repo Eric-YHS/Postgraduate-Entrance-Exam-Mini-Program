@@ -59,6 +59,17 @@ const wecomWebhookKey = process.env.WECOM_WEBHOOK_KEY || '';
 const wecomToken = process.env.WECOM_TOKEN || '';
 const wecomEncodingAesKey = process.env.WECOM_ENCODING_AES_KEY || '';
 
+// 企业微信-会话内容存档（群聊监听）
+const wecomArchiveSecret = process.env.WECOM_ARCHIVE_SECRET || '';
+// 私钥 PEM 在 .env 中编码为 base64 单行，这里还原换行
+const wecomArchivePrivateKey = (() => {
+  const raw = process.env.WECOM_ARCHIVE_PRIVATE_KEY || '';
+  if (!raw) return '';
+  try { return Buffer.from(raw, 'base64').toString('utf-8'); } catch { return raw; }
+})();
+const wecomArchivePollInterval = Number(process.env.WECOM_ARCHIVE_POLL_INTERVAL) || 15;
+const wecomArchiveEnabled = process.env.WECOM_ARCHIVE_ENABLED === 'true';
+
 // AI 大模型 API 配置
 const aiApiKey = process.env.AI_API_KEY || '';
 const aiApiUrl = process.env.AI_API_URL || '';
@@ -121,5 +132,9 @@ module.exports = {
   wecomSecret,
   wecomWebhookKey,
   wecomToken,
-  wecomEncodingAesKey
+  wecomEncodingAesKey,
+  wecomArchiveSecret,
+  wecomArchivePrivateKey,
+  wecomArchivePollInterval,
+  wecomArchiveEnabled
 };

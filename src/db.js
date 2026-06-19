@@ -556,6 +556,28 @@ function initializeDatabase() {
       UNIQUE(group_id, user_id)
     );
 
+    -- 企业微信会话存档同步状态（单行表，跟踪拉取进度）
+    CREATE TABLE IF NOT EXISTS wecom_archive_sync (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      seq INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 企业微信会话存档消息记录（去重 + 审计）
+    CREATE TABLE IF NOT EXISTS wecom_archive_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      msgid TEXT NOT NULL UNIQUE,
+      seq INTEGER NOT NULL,
+      from_user TEXT DEFAULT '',
+      roomid TEXT DEFAULT '',
+      msgtype TEXT DEFAULT 'text',
+      content TEXT DEFAULT '',
+      action TEXT DEFAULT 'ignored' CHECK (action IN ('group_reply', 'ignored', 'handoff', 'callback_reply')),
+      processed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_roomid ON wecom_archive_messages(roomid);
+    CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_processed ON wecom_archive_messages(processed_at);
+
     -- 推广员申请表（与 promoter.js 路由一致）
     CREATE TABLE IF NOT EXISTS promoter_applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2098,6 +2120,33 @@ function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_course_review_likes_review ON course_review_likes(review_id);
   `);
+
+  // ===== Phase 5 迁移：会话内容存档（群聊监听）=====
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS wecom_archive_sync (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      seq INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS wecom_archive_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      msgid TEXT NOT NULL UNIQUE,
+      seq INTEGER NOT NULL,
+      from_user TEXT DEFAULT '',
+      roomid TEXT DEFAULT '',
+      msgtype TEXT DEFAULT 'text',
+      content TEXT DEFAULT '',
+      action TEXT DEFAULT 'ignored' CHECK (action IN ('group_reply', 'ignored', 'handoff', 'callback_reply')),
+      processed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_roomid ON wecom_archive_messages(roomid);
+    CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_processed ON wecom_archive_messages(processed_at);
+  `);
+  // 初始化同步记录（如果表为空）
+  const syncCount = db.prepare('SELECT COUNT(*) AS cnt FROM wecom_archive_sync').get().cnt;
+  if (syncCount === 0) {
+    db.prepare('INSERT INTO wecom_archive_sync (seq, updated_at) VALUES (0, ?)').run(new Date().toISOString());
+  }
 }
 
 function initialize() {

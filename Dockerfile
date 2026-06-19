@@ -2,6 +2,9 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+# 编译原生模块所需依赖（ms-qywx-chat 等需要 native addon）
+RUN apk add --no-cache build-base python3
+
 COPY package*.json ./
 RUN npm ci --omit=dev
 
