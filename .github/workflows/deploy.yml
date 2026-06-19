@@ -37,7 +37,7 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
-          fingerprint: SHA256:iLvZqf2B9Vxrw6vFqpVFKTTND8svG+4K/xTCIGjfEkE
+          fingerprint: SHA256:Y4BXMaLlA99psI96++6xZmwFH3Q6T2I6LrDILnWeZkk
           script: |
             set -e
             APP_DIR=/home/ubuntu/study-planner

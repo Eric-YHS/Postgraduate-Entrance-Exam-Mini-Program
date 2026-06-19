@@ -38,6 +38,9 @@ module.exports = function registerWecomRoutes(app, shared) {
       const { msg_signature, timestamp, nonce } = request.query;
       // express.raw() 返回 Buffer，需要转为字符串
       const xml = Buffer.isBuffer(request.body) ? request.body.toString('utf-8') : request.body;
+
+      console.log('[wecom] 收到回调消息:', { msg_signature, timestamp, nonce, bodyLength: xml.length });
+
       if (!config.wecomToken || !config.wecomEncodingAesKey) {
         console.warn('[wecom] WECOM_TOKEN 或 WECOM_ENCODING_AES_KEY 未配置');
         return response.status(500).send('not configured');
@@ -52,16 +55,25 @@ module.exports = function registerWecomRoutes(app, shared) {
         config.wecomEncodingAesKey
       );
       if (!parsed) {
+        console.warn('[wecom] 回调消息解密/签名校验失败');
         return response.status(403).send('verify fail');
       }
 
-      // 解析内部 XML 消息
-      const msgMatch = parsed.message.match(/<MsgType><!\[CDATA\[(.*?)\]\]><\/MsgType>/);
-      const fromMatch = parsed.message.match(/<FromUserName><!\[CDATA\[(.*?)\]\]><\/FromUserName>/);
-      const contentMatch = parsed.message.match(/<Content><!\[CDATA\[(.*?)\]\]><\/Content>/);
-      const msgType = msgMatch ? msgMatch[1] : '';
-      const userId = fromMatch ? fromMatch[1] : '';
-      const message = contentMatch ? contentMatch[1] : '';
+      // 解析内部 XML 消息（兼容 CDATA 和普通文本）
+      function extractXmlField(xmlText, tagName) {
+        const cdataRegex = new RegExp(`<${tagName}><!\\[CDATA\\[(.*?)\\]\\]></${tagName}>`);
+        const plainRegex = new RegExp(`<${tagName}>(.*?)</${tagName}>`);
+        const cdataMatch = xmlText.match(cdataRegex);
+        if (cdataMatch) return cdataMatch[1];
+        const plainMatch = xmlText.match(plainRegex);
+        return plainMatch ? plainMatch[1] : '';
+      }
+
+      const msgType = extractXmlField(parsed.message, 'MsgType');
+      const userId = extractXmlField(parsed.message, 'FromUserName');
+      const message = extractXmlField(parsed.message, 'Content');
+
+      console.log(`[wecom] 解析消息 | 类型: ${msgType} | 用户: ${userId} | 内容: ${message.slice(0, 100)}`);
 
       // 先返回 success，避免企业微信重试；回复消息异步发送
       response.send('success');
@@ -81,8 +93,12 @@ module.exports = function registerWecomRoutes(app, shared) {
           }
           replyText = '已为你转接人工客服，老师会尽快回复你，请稍候。';
         } else {
-          const userRow = db.prepare('SELECT role, id FROM users WHERE id = ?').get(userId);
+          // 通过企业微信用户 ID 查找对应学员
+          const userRow = db.prepare('SELECT role, id FROM users WHERE wecom_userid = ?').get(userId)
+            || db.prepare('SELECT role, id FROM users WHERE id = ?').get(userId);
           const isPaid = userRow && userRow.role === 'student';
+          console.log(`[wecom] 用户 ${userId} 身份: ${userRow ? userRow.role : '未绑定'}, 是否付费: ${isPaid}`);
+
           if (isPaid) {
             const result = await handleQuestion({ userId, question: message, source, groupId: null, attachments: [] });
             replyText = result && result.answer ? result.answer : '抱歉，我暂时无法回答这个问题。';
@@ -94,11 +110,12 @@ module.exports = function registerWecomRoutes(app, shared) {
 
         if (replyText) {
           try {
-            await wecom.sendAppMessage({
+            const sendResult = await wecom.sendAppMessage({
               touser: userId,
               msgtype: 'text',
               text: { content: replyText }
             });
+            console.log(`[wecom] 回复用户 ${userId} 结果:`, sendResult);
           } catch (sendErr) {
             console.error('[wecom] 回复用户消息失败:', sendErr.message);
           }
