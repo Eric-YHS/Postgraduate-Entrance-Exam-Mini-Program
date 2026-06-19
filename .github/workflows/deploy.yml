@@ -44,83 +44,92 @@ jobs:
           SERVER_USER: ${{ secrets.SERVER_USER }}
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
 
-      - name: Setup SSH key
+      - name: Setup SSH config
         run: |
           mkdir -p ~/.ssh
-          (umask 077 && echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key)
-          # Add server host key to known_hosts to avoid interactive prompt
-          (umask 077 && echo "159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ" > ~/.ssh/known_hosts)
+          (umask 077 && printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key)
+          (umask 077 && cat > ~/.ssh/config <<'EOF'
+          Host deploy-server
+              HostName ${{ secrets.SERVER_HOST }}
+              User ${{ secrets.SERVER_USER }}
+              IdentityFile ~/.ssh/deploy_key
+              IdentitiesOnly yes
+              StrictHostKeyChecking yes
+              UserKnownHostsFile ~/.ssh/known_hosts
+              BatchMode yes
+          EOF
+          )
+          (umask 077 && printf '159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ\n' > ~/.ssh/known_hosts)
+          chmod 700 ~/.ssh
         env:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
 
       - name: Test SSH connection
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "echo 'SSH connection OK'"
+        run: ssh deploy-server "echo 'SSH connection OK'"
 
       - name: Deploy via SSH
-        run: |
-          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
-            set -e
-            APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
-            BACKUP_DIR=$APP_DIR/backups
-            cd $APP_DIR
+        run: ssh deploy-server <<'REMOTESCRIPT'
+          set -e
+          APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
+          BACKUP_DIR=$APP_DIR/backups
+          cd $APP_DIR
 
-            # 备份环境变量
-            cp .env .env.backup
+          # 备份环境变量
+          cp .env .env.backup
 
-            # 部署前备份 SQLite 数据库
-            mkdir -p $BACKUP_DIR
-            TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-            cp data/data.sqlite $BACKUP_DIR/data-$TIMESTAMP.sqlite || true
-            cp data/data.sqlite-shm $BACKUP_DIR/data-$TIMESTAMP.sqlite-shm || true
-            cp data/data.sqlite-wal $BACKUP_DIR/data-$TIMESTAMP.sqlite-wal || true
-            # 保留最近 7 天备份
-            find $BACKUP_DIR -name 'data-*.sqlite*' -mtime +7 -delete || true
+          # 部署前备份 SQLite 数据库
+          mkdir -p $BACKUP_DIR
+          TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+          cp data/data.sqlite $BACKUP_DIR/data-$TIMESTAMP.sqlite || true
+          cp data/data.sqlite-shm $BACKUP_DIR/data-$TIMESTAMP.sqlite-shm || true
+          cp data/data.sqlite-wal $BACKUP_DIR/data-$TIMESTAMP.sqlite-wal || true
+          # 保留最近 7 天备份
+          find $BACKUP_DIR -name 'data-*.sqlite*' -mtime +7 -delete || true
 
-            # 拉取最新代码
-            git fetch origin main
-            git checkout -f origin/main
+          # 拉取最新代码
+          git fetch origin main
+          git checkout -f origin/main
 
-            # 恢复环境变量
-            cp .env.backup .env
+          # 恢复环境变量
+          cp .env.backup .env
 
-            # 确保新增环境变量存在（默认值）
-            if ! grep -q "^HF_MIRROR=" .env; then
-              echo "HF_MIRROR=https://hf-mirror.com/" >> .env
+          # 确保新增环境变量存在（默认值）
+          if ! grep -q "^HF_MIRROR=" .env; then
+            echo "HF_MIRROR=https://hf-mirror.com/" >> .env
+          fi
+          if ! grep -q "^TRANSFORMERS_CACHE=" .env; then
+            echo "TRANSFORMERS_CACHE=/home/ubuntu/kaoyan-xiaochengxu/.cache" >> .env
+          fi
+
+          # 确保模型缓存目录存在
+          TRANSFORMERS_CACHE=$(grep "^TRANSFORMERS_CACHE=" .env | cut -d'=' -f2-)
+          if [ -n "$TRANSFORMERS_CACHE" ]; then
+            mkdir -p "$TRANSFORMERS_CACHE"
+          fi
+
+          # 安装依赖
+          npm ci --omit=dev
+
+          # 清理并重新启动应用（避免旧配置残留导致 reload 异常）
+          pm2 delete study-planner || true
+          pm2 start ecosystem.config.cjs --env production
+
+          # 健康检查：等待应用启动
+          echo "Waiting for application to start..."
+          for i in {1..12}; do
+            if curl -fsS http://localhost:3000/healthz > /dev/null 2>&1; then
+              echo "Health check passed"
+              break
             fi
-            if ! grep -q "^TRANSFORMERS_CACHE=" .env; then
-              echo "TRANSFORMERS_CACHE=/home/ubuntu/kaoyan-xiaochengxu/.cache" >> .env
+            if [ $i -eq 12 ]; then
+              echo "Health check failed after 60 seconds"
+              pm2 status
+              pm2 logs study-planner --lines 100 --nostream
+              exit 1
             fi
+            sleep 5
+          done
 
-            # 确保模型缓存目录存在
-            TRANSFORMERS_CACHE=$(grep "^TRANSFORMERS_CACHE=" .env | cut -d'=' -f2-)
-            if [ -n "$TRANSFORMERS_CACHE" ]; then
-              mkdir -p "$TRANSFORMERS_CACHE"
-            fi
-
-            # 安装依赖
-            npm ci --omit=dev
-
-            # 清理并重新启动应用（避免旧配置残留导致 reload 异常）
-            pm2 delete study-planner || true
-            pm2 start ecosystem.config.cjs --env production
-
-            # 健康检查：等待应用启动
-            echo "Waiting for application to start..."
-            for i in {1..12}; do
-              if curl -fsS http://localhost:3000/healthz > /dev/null 2>&1; then
-                echo "Health check passed"
-                break
-              fi
-              if [ $i -eq 12 ]; then
-                echo "Health check failed after 60 seconds"
-                pm2 status
-                pm2 logs study-planner --lines 100 --nostream
-                exit 1
-              fi
-              sleep 5
-            done
-
-            pm2 save
-            echo "Deploy completed at $(date)"
-          EOF
+          pm2 save
+          echo "Deploy completed at $(date)"
+        REMOTESCRIPT
