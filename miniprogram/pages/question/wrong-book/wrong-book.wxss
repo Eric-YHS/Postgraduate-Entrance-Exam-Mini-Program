@@ -1,0 +1,140 @@
+.wrong-book-page {
+  min-height: 100vh;
+  padding: 24rpx;
+  background-color: var(--bg-primary);
+}
+
+.tab-bar {
+  display: flex;
+  background: #fff;
+  border-radius: 16rpx;
+  margin-bottom: 24rpx;
+  overflow: hidden;
+  box-shadow: var(--shadow);
+}
+
+.tab-item {
+  flex: 1;
+  text-align: center;
+  padding: 24rpx 0;
+  font-size: 30rpx;
+  color: var(--text-secondary);
+  position: relative;
+}
+
+.tab-item--active {
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.tab-item--active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60rpx;
+  height: 4rpx;
+  background: var(--primary);
+  border-radius: 2rpx;
+}
+
+.question-list {
+  padding: 0;
+  overflow: hidden;
+}
+
+.question-item {
+  display: flex;
+  align-items: center;
+  padding: 24rpx;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.question-item:last-child {
+  border-bottom: none;
+}
+
+.question-item:active {
+  background: #f8f9fa;
+}
+
+.question-main {
+  flex: 1;
+  min-width: 0;
+  margin-right: 16rpx;
+}
+
+.question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12rpx;
+}
+
+.question-subject {
+  display: inline-block;
+  padding: 4rpx 12rpx;
+  background: rgba(29, 78, 137, 0.1);
+  color: var(--primary);
+  font-size: 22rpx;
+  border-radius: 8rpx;
+}
+
+.question-wrong-count {
+  font-size: 24rpx;
+  color: var(--danger);
+}
+
+.question-stem {
+  margin-bottom: 12rpx;
+}
+
+.stem-word {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-right: 16rpx;
+}
+
+.stem-phonetic {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+  font-family: 'Times New Roman', serif;
+}
+
+.stem-text {
+  font-size: 30rpx;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.question-meta {
+  display: flex;
+  align-items: center;
+}
+
+.meta-time {
+  font-size: 24rpx;
+  color: var(--text-tertiary);
+}
+
+.master-btn {
+  flex-shrink: 0;
+  padding: 12rpx 24rpx;
+  background: var(--success);
+  color: #fff;
+  font-size: 26rpx;
+  border-radius: 28rpx;
+}
+
+.master-btn:active {
+  opacity: 0.9;
+}
+
+.load-more {
+  text-align: center;
+  padding: 24rpx 0;
+  font-size: 24rpx;
+  color: var(--text-tertiary);
+}

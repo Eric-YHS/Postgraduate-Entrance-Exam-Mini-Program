@@ -1,0 +1,67 @@
+<view class="container post-container">
+  <view class="post-form">
+    <textarea
+      class="post-content"
+      placeholder="分享你的考研经验、资料或疑问..."
+      maxlength="1000"
+      value="{{ content }}"
+      bindinput="onContentInput"
+    />
+    <view class="content-count">{{ content.length || 0 }}/1000</view>
+
+    <!-- 媒体上传 -->
+    <view class="form-section card">
+      <view class="section-title">图片 / 视频 / 附件</view>
+      <media-uploader
+        images="{{ images }}"
+        video="{{ video }}"
+        attachments="{{ attachments }}"
+        bind:change="onMediaChange"
+      />
+    </view>
+
+    <!-- 话题标签 -->
+    <view class="form-section card">
+      <view class="section-title">话题标签（最多 5 个）</view>
+      <view class="hashtag-input-row">
+        <input
+          class="hashtag-input"
+          placeholder="输入标签后回车"
+          value="{{ hashtagInput }}"
+          bindinput="onHashtagInput"
+          bindconfirm="onHashtagConfirm"
+          confirm-type="done"
+        />
+        <view class="hashtag-add" bindtap="onHashtagConfirm">添加</view>
+      </view>
+
+      <view class="hashtag-list" wx:if="{{ hashtags.length > 0 }}">
+        <view
+          class="hashtag-chip"
+          wx:for="{{ hashtags }}"
+          wx:key="*this"
+        >
+          #{{ item }}
+          <text
+            class="hashtag-remove"
+            bindtap="onRemoveHashtag"
+            data-index="{{ index }}"
+          >
+            ×
+          </text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <view class="post-footer">
+    <button
+      class="submit-btn {{ content ? 'submit-btn--active' : '' }}"
+      bindtap="onSubmit"
+      disabled="{{ submitting || !content }}"
+    >
+      发布
+    </button>
+    <ky-safe-area position="bottom" />
+  </view>
+</view>

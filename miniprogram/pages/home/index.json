@@ -1,7 +1,0 @@
-{
-  "navigationBarTitleText": "今日规划",
-  "enablePullDownRefresh": true,
-  "usingComponents": {
-    "empty-state": "/components/empty-state/empty-state"
-  }
-}

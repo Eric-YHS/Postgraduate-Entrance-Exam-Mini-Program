@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "ky-user-level-tag": "/components/ky-user-level-tag/ky-user-level-tag",
+    "ky-safe-area": "/components/ky-safe-area/ky-safe-area"
+  },
+  "navigationBarTitleText": "我的"
+}

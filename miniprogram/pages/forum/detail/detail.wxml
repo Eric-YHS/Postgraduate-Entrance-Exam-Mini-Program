@@ -1,0 +1,113 @@
+<view class="container detail-container">
+  <ky-loading wx:if="{{ loading }}" />
+  <ky-error wx:elif="{{ error }}" bind:retry="onRetry" />
+
+  <block wx:elif="{{ topic }}">
+    <scroll-view scroll-y class="detail-scroll" enhanced scroll-with-animation
+      >
+      <view class="topic-detail card">
+        <view class="topic-header">
+          <image class="topic-avatar" src="{{ topic.author.avatarUrl }}" mode="aspectFill" />
+          <view class="topic-meta">
+            <text class="topic-author">{{ topic.author.nickname }}</text>
+            <text class="topic-time">{{ formatTime(topic.createdAt) }}</text>
+          </view>
+        </view>
+
+        <view class="topic-content">{{ topic.content }}</view>
+
+        <view class="topic-tags" wx:if="{{ topic.hashtags.length > 0 }}">
+          <text
+            wx:for="{{ topic.hashtags }}"
+            wx:key="*this"
+            wx:for-item="tag"
+            class="topic-tag"
+          >
+            #{{ tag }}
+          </text>
+        </view>
+
+        <view class="topic-gallery" wx:if="{{ topic.attachments.length > 0 }}">
+          <image
+            wx:for="{{ topic.attachments }}"
+            wx:key="id"
+            wx:for-item="att"
+            wx:if="{{ att.type === 'image' }}"
+            class="topic-image"
+            src="{{ att.url }}"
+            mode="aspectFill"
+            bindtap="onPreviewImage"
+            data-index="{{ index }}"
+          />
+          <video
+            wx:if="{{ getVideoAttachment(topic.attachments) }}"
+            class="topic-video"
+            src="{{ getVideoAttachment(topic.attachments).url }}"
+            controls
+            object-fit="cover"
+          />
+        </view>
+
+        <view class="topic-attachments" wx:if="{{ getFileAttachments(topic.attachments).length > 0 }}">
+          <view
+            wx:for="{{ getFileAttachments(topic.attachments) }}"
+            wx:key="id"
+            class="file-item"
+          >
+            📎 {{ item.name }}
+          </view>
+        </view>
+
+        <view class="topic-actions">
+          <view class="action-item" bindtap="onFavoriteTap">
+            <text class="{{ topic.favoritedByMe ? 'active' : '' }}">
+              {{ topic.favoritedByMe ? '★ 已收藏' : '☆ 收藏' }}
+            </text>
+          </view>
+          <view class="action-item"><text>浏览 {{ topic.viewCount }}</text></view>
+          <view class="action-item"><text>回复 {{ topic.replyCount }}</text></view>
+          <view class="action-item"><text>赞 {{ topic.likeCount }}</text></view>
+        </view>
+      </view>
+
+      <view class="reply-section card">
+        <view class="section-title">全部回复（{{ topic.replyCount }}）</view>
+        <forum-reply-tree
+          wx:if="{{ topic.replies.length > 0 }}"
+          replies="{{ topic.replies }}"
+          topic-id="{{ topic.id }}"
+          bind:reply="onReplyToReply"
+        />
+        <view wx:else class="reply-empty">暂无回复，快来抢沙发吧</view>
+      </view>
+
+      <ky-safe-area position="bottom" />
+    </scroll-view>
+
+    <!-- 底部回复栏 -->
+    <view class="reply-bar">
+      <view wx:if="{{ replyTarget }}" class="reply-target" bindtap="onCancelTarget">
+        回复 {{ replyTarget.authorName }}
+        <text class="cancel-target">×</text>
+      </view>
+      <view class="reply-input-row">
+        <input
+          class="reply-input"
+          placeholder="{{ replyTarget ? '回复TA...' : '写评论...' }}"
+          value="{{ replyContent }}"
+          bindinput="onReplyInput"
+          confirm-type="send"
+          bindconfirm="onSubmitReply"
+        />
+        <button
+          class="reply-submit {{ replyContent ? 'reply-submit--active' : '' }}"
+          bindtap="onSubmitReply"
+          disabled="{{ submitting || !replyContent }}"
+        >
+          发送
+        </button>
+      </view>
+      <ky-safe-area position="bottom" />
+    </view>
+  </block>
+</view>

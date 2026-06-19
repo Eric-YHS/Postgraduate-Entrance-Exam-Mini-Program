@@ -1,0 +1,56 @@
+<view class="container">
+  <!-- 用户信息卡片 -->
+  <view class="user-card">
+    <view class="user-info">
+      <image class="user-avatar" src="{{ user.avatarUrl }}" mode="aspectFill" />
+      <view class="user-meta">
+        <view class="user-name">{{ user.nickname || '同学' }}</view>
+        <view class="user-target" wx:if="{{ user.targetSchool }}">
+          目标：{{ user.targetSchool }} · {{ user.targetMajor }}
+        </view>
+        <view class="user-level" bindtap="onLevelTap">
+          <ky-user-level-tag level="{{ user.level }}" show-icon="{{ true }}" />
+          <text class="trial-countdown" wx:if="{{ user.level === 'trial' && trialDays > 0 }}">
+            剩余 {{ trialDays }} 天
+          </text>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 数据统计 -->
+  <view class="stats-card card">
+    <view class="stats-item">
+      <view class="stats-value">0</view>
+      <view class="stats-label">已学课程</view>
+    </view>
+    <view class="stats-item">
+      <view class="stats-value">0</view>
+      <view class="stats-label">已刷题目</view>
+    </view>
+    <view class="stats-item">
+      <view class="stats-value">0</view>
+      <view class="stats-label">学习天数</view>
+    </view>
+  </view>
+
+  <!-- 菜单列表 -->
+  <view wx:for="{{ menuGroups }}" wx:key="title" class="menu-group card">
+    <view class="menu-title">{{ item.title }}</view>
+    <view
+      wx:for="{{ item.items }}"
+      wx:key="name"
+      wx:for-item="menu"
+      wx:for-index="menuIndex"
+      class="menu-item {{ menuIndex === item.items.length - 1 ? '' : 'menu-item--border' }}"
+      bindtap="onMenuTap"
+      data-name="{{ menu.name }}"
+    >
+      <view class="menu-icon">{{ menu.icon }}</view>
+      <view class="menu-name">{{ menu.name }}</view>
+      <view class="menu-arrow">></view>
+    </view>
+  </view>
+
+  <ky-safe-area position="bottom" />
+</view>

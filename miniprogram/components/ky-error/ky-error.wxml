@@ -1,0 +1,6 @@
+<view class="ky-error">
+  <view class="ky-error__icon">⚠️</view>
+  <view class="ky-error__title">{{ title }}</view>
+  <view class="ky-error__message">{{ message }}</view>
+  <view class="ky-error__retry" bindtap="onRetry">{{ retryText }}</view>
+</view>

@@ -1,0 +1,17 @@
+<view class="formula-renderer {{ customClass }}" catchtap="onPreview">
+  <image
+    wx:if="{{ src && !loadError }}"
+    class="formula-image"
+    src="{{ src }}"
+    mode="{{ mode }}"
+    lazy-load
+    bindload="onLoad"
+    binderror="onError"
+  />
+  <view wx:elif="{{ loadError && alt }}" class="formula-fallback">
+    <text class="formula-fallback__text">{{ alt }}</text>
+  </view>
+  <view wx:else class="formula-placeholder">
+    <text class="formula-placeholder__text">公式加载中...</text>
+  </view>
+</view>

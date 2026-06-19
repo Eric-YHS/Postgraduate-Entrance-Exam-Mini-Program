@@ -1,0 +1,8 @@
+{
+  "usingComponents": {
+    "ky-user-level-tag": "/components/ky-user-level-tag/ky-user-level-tag",
+    "ky-loading": "/components/ky-loading/ky-loading",
+    "ky-empty": "/components/ky-empty/ky-empty"
+  },
+  "navigationBarTitleText": "考研督学"
+}

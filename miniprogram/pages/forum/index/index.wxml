@@ -1,0 +1,96 @@
+<view class="container forum-container">
+  <!-- 话题标签 -->
+  <view class="hashtag-bar card">
+    <scroll-view scroll-x class="hashtag-scroll" enable-flex enhanced
+      >
+      <view class="hashtag-list">
+        <view
+          class="hashtag-item {{ activeHashtag === '' ? 'hashtag-item--active' : '' }}"
+          bindtap="onHashtagTap"
+          data-name=""
+        >
+          全部
+        </view>
+        <view
+          wx:for="{{ hashtags }}"
+          wx:key="id"
+          class="hashtag-item {{ activeHashtag === item.name ? 'hashtag-item--active' : '' }}"
+          bindtap="onHashtagTap"
+          data-name="{{ item.name }}"
+        >
+          #{{ item.name }}
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 列表状态 -->
+  <ky-loading wx:if="{{ loading && topics.length === 0 }}" />
+  <ky-error wx:elif="{{ error }}" bind:retry="onRetry" />
+
+  <!-- 帖子列表 -->
+  <view wx:elif="{{ topics.length > 0 }}" class="topic-list">
+    <view
+      class="topic-card card"
+      wx:for="{{ topics }}"
+      wx:key="id"
+      bindtap="onTopicTap"
+      data-id="{{ item.id }}"
+    >
+      <view class="topic-header">
+        <image class="topic-avatar" src="{{ item.author.avatarUrl }}" mode="aspectFill" />
+        <view class="topic-meta">
+          <text class="topic-author">{{ item.author.nickname }}</text>
+          <text class="topic-time">{{ formatTime(item.createdAt) }}</text>
+        </view>
+        <view
+          class="topic-favorite {{ item.favoritedByMe ? 'topic-favorite--active' : '' }}"
+          catchtap="onFavoriteTap"
+          data-id="{{ item.id }}"
+        >
+          {{ item.favoritedByMe ? '★' : '☆' }}
+        </view>
+      </view>
+
+      <view class="topic-content">{{ item.content }}</view>
+
+      <view class="topic-tags" wx:if="{{ item.hashtags.length > 0 }}">
+        <text
+          wx:for="{{ item.hashtags }}"
+          wx:key="*this"
+          wx:for-item="tag"
+          class="topic-tag"
+        >
+          #{{ tag }}
+        </text>
+      </view>
+
+      <view class="topic-gallery" wx:if="{{ item.attachments.length > 0 }}">
+        <image
+          wx:for="{{ item.attachments }}"
+          wx:key="id"
+          wx:for-item="att"
+          wx:if="{{ att.type === 'image' }}"
+          class="topic-image"
+          src="{{ att.url }}"
+          mode="aspectFill"
+        />
+      </view>
+
+      <view class="topic-stats">
+        <text class="topic-stat">浏览 {{ item.viewCount }}</text>
+        <text class="topic-stat">回复 {{ item.replyCount }}</text>
+        <text class="topic-stat">赞 {{ item.likeCount }}</text>
+      </view>
+    </view>
+
+    <view wx:if="{{ !hasMore }}" class="load-end">没有更多了</view>
+  </view>
+
+  <ky-empty wx:else description="暂无帖子，来发第一条吧" />
+
+  <!-- 发帖按钮 -->
+  <view class="post-float-btn" bindtap="onPostTap">+</view>
+
+  <ky-safe-area position="bottom" />
+</view>

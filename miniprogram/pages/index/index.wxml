@@ -1,0 +1,77 @@
+<view class="container">
+  <!-- 顶部欢迎区 -->
+  <view class="welcome-card card">
+    <view class="welcome-header">
+      <view class="welcome-info">
+        <view class="welcome-title">
+          你好，{{ user.nickname || '同学' }}
+        </view>
+        <view class="welcome-subtitle" wx:if="{{ user.level === 'trial' }}">
+          体验剩余 {{ trialDays }} 天，抓紧学习吧
+        </view>
+        <view class="welcome-subtitle" wx:elif="{{ user.level === 'paid' }}">
+          欢迎回到考研督学系统
+        </view>
+        <view class="welcome-subtitle" wx:else>
+          新人注册可享 7 天免费体验
+        </view>
+      </view>
+      <image class="welcome-avatar" src="{{ user.avatarUrl }}" mode="aspectFill" />
+    </view>
+    <view class="welcome-level">
+      <ky-user-level-tag level="{{ user.level }}" />
+    </view>
+  </view>
+
+  <!-- 功能入口 -->
+  <view class="feature-card card">
+    <view class="section-title">快速入口</view>
+    <view class="feature-grid">
+      <view class="feature-item" bindtap="onMoreCourses">
+        <view class="feature-icon feature-icon--course">📚</view>
+        <view class="feature-name">全部课程</view>
+      </view>
+      <view class="feature-item" bindtap="onQuestionTap">
+        <view class="feature-icon feature-icon--question">📝</view>
+        <view class="feature-name">题库</view>
+      </view>
+      <view class="feature-item" bindtap="onWrongBookTap">
+        <view class="feature-icon feature-icon--wrong">📕</view>
+        <view class="feature-name">错题本</view>
+      </view>
+      <view class="feature-item" bindtap="onForumTap">
+        <view class="feature-icon feature-icon--forum">💬</view>
+        <view class="feature-name">论坛</view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 推荐课程 -->
+  <view class="recommend-card card">
+    <view class="section-title">推荐课程</view>
+
+    <ky-loading wx:if="{{ loading }}" />
+
+    <view wx:elif="{{ courses.length > 0 }}" class="course-list">
+      <view class="course-item" wx:for="{{ courses }}" wx:key="id" bindtap="onCourseTap" data-id="{{ item.id }}">
+        <image class="course-cover" src="{{ item.coverUrl }}" mode="aspectFill" />
+        <view class="course-info">
+          <view class="course-title">{{ item.title }}</view>
+          <view class="course-meta">
+            <text class="course-teacher">{{ item.teacherName }}</text>
+            <text class="course-subject">{{ getSubjectName(item.subject) }}</text>
+          </view>
+          <view class="course-price-row">
+            <text class="course-price" wx:if="{{ item.isFree }}">免费</text>
+            <block wx:else>
+              <text class="course-price">¥{{ formatPrice(item.price) }}</text>
+              <text class="course-original-price">¥{{ formatPrice(item.originalPrice) }}</text>
+            </block>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <ky-empty wx:else description="暂无推荐课程" />
+  </view>
+</view>

@@ -1,0 +1,88 @@
+<view class="video-page">
+  <!-- 视频播放器 -->
+  <view class="video-player-section">
+    <video
+      id="courseVideo"
+      class="video-player"
+      src="{{ videoUrl }}"
+      poster="{{ poster }}"
+      title="{{ currentVideo.title }}"
+      autoplay="{{ false }}"
+      controls
+      enable-play-gesture
+      enable-progress-gesture
+      show-center-play-btn
+      show-mute-btn
+      play-btn-position="center"
+      object-fit="contain"
+      bindplay="onPlay"
+      bindpause="onPause"
+      bindended="onEnded"
+      bindtimeupdate="onTimeUpdate"
+      binderror="onError"
+      bindwaiting="onWaiting"
+      bindfullscreenchange="onFullScreenChange"
+    />
+  </view>
+
+  <!-- 视频信息 -->
+  <view class="video-info card" wx:if="{{ currentVideo }}">
+    <view class="video-title">{{ currentVideo.title }}</view>
+    <view class="video-meta">
+      <text class="video-chapter" wx:if="{{ currentChapter }}">{{ currentChapter.title }}</text>
+      <text class="video-duration">{{ formatDuration(currentTime) }} / {{ formatDuration(currentVideo.duration) }}</text>
+    </view>
+    <view wx:if="{{ isTrialMode && trialLimit > 0 }}" class="trial-hint">
+      试看时长 {{ formatTrialTag(currentVideo, course) }}，购买后解锁完整内容
+    </view>
+  </view>
+
+  <!-- 课程目录按钮 -->
+  <view class="playlist-toggle card" bindtap="onTogglePlaylist" wx:if="{{ course }}">
+    <view class="toggle-left">
+      <text class="toggle-title">课程目录</text>
+      <text class="toggle-sub">{{ course.chapters.length }} 章 · 共 {{ totalVideos }} 节</text>
+    </view>
+    <view class="toggle-arrow {{ showPlaylist ? 'toggle-arrow--up' : '' }}">></view>
+  </view>
+
+  <!-- 章节列表 -->
+  <view class="playlist card {{ showPlaylist ? 'playlist--expanded' : '' }}" wx:if="{{ course }}">
+    <scroll-view scroll-y class="playlist-scroll">
+      <view class="playlist-chapter" wx:for="{{ course.chapters }}" wx:key="id" wx:for-item="chapter">
+        <view class="playlist-chapter-title">{{ chapter.title }}</view>
+        <view
+          wx:for="{{ chapter.videos }}"
+          wx:key="id"
+          wx:for-item="video"
+          class="playlist-video {{ video.id === currentVideo.id ? 'playlist-video--active' : '' }} {{ !isVideoUnlocked(video, course) ? 'playlist-video--locked' : '' }}"
+          bindtap="onSwitchVideo"
+          data-video-id="{{ video.id }}"
+          data-chapter-id="{{ chapter.id }}"
+        >
+          <view class="playlist-video__icon">
+            <text wx:if="{{ !isVideoUnlocked(video, course) }}">🔒</text>
+            <text wx:elif="{{ video.id === currentVideo.id }}">▶</text>
+            <text wx:else>▷</text>
+          </view>
+          <view class="playlist-video__info">
+            <view class="playlist-video__title">{{ video.title }}</view>
+            <view class="playlist-video__meta">
+              <text class="playlist-video__duration">{{ formatDuration(video.duration) }}</text>
+              <view class="playlist-video__tag playlist-video__tag--trial" wx:if="{{ video.isTrial }}">
+                {{ formatTrialTag(video, course) }}
+              </view>
+              <view class="playlist-video__tag playlist-video__tag--locked" wx:elif="{{ !isVideoUnlocked(video, course) }}">锁定</view>
+            </view>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+
+  <!-- 加载中 -->
+  <ky-loading wx:if="{{ loading && !videoUrl }}" />
+
+  <!-- 错误 -->
+  <ky-error wx:elif="{{ error }}" bind:retry="onRetry" />
+</view>

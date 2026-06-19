@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "ky-loading": "/components/ky-loading/ky-loading",
+    "ky-error": "/components/ky-error/ky-error"
+  },
+  "navigationBarTitleText": "视频播放"
+}

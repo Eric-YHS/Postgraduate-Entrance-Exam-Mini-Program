@@ -1,0 +1,35 @@
+<view class="reply-list">
+  <view class="reply-item" wx:for="{{ replies }}" wx:key="id" wx:for-item="reply">
+    <image class="reply-avatar" src="{{ reply.author.avatarUrl }}" mode="aspectFill" />
+    <view class="reply-main">
+      <view class="reply-header">
+        <text class="reply-name">{{ reply.author.nickname }}</text>
+        <text wx:if="{{ reply.replyToAuthorName }}" class="reply-to">
+          回复 {{ reply.replyToAuthorName }}
+        </text>
+      </view>
+
+      <view class="reply-content">{{ reply.content }}</view>
+
+      <view class="reply-footer">
+        <text class="reply-time">{{ formatTime(reply.createdAt) }}</text>
+        <text
+          class="reply-action"
+          bindtap="onReplyTap"
+          data-id="{{ reply.id }}"
+          data-name="{{ reply.author.nickname }}"
+        >
+          回复
+        </text>
+      </view>
+
+      <view wx:if="{{ reply.children && reply.children.length > 0 }}" class="reply-children">
+        <forum-reply-tree
+          replies="{{ reply.children }}"
+          topic-id="{{ topicId }}"
+          bind:reply="onReplyTap"
+        />
+      </view>
+    </view>
+  </view>
+</view>

@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "ky-safe-area": "/components/ky-safe-area/ky-safe-area",
+    "media-uploader": "/components/media-uploader/media-uploader"
+  },
+  "navigationBarTitleText": "发布帖子"
+}

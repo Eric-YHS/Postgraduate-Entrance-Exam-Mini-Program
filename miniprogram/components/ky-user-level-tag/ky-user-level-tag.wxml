@@ -1,0 +1,4 @@
+<view class="ky-level-tag" style="color: {{ color }}; background: {{ bg }};">
+  <text wx:if="{{ showIcon }}">● </text>
+  {{ label }}
+</view>

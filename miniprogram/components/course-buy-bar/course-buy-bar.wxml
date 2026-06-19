@@ -1,0 +1,18 @@
+<view class="buy-bar">
+  <view class="buy-bar__content">
+    <view class="buy-bar__price-section" wx:if="{{ showPrice }}">
+      <text class="buy-bar__price">¥{{ formatPrice(course.price) }}</text>
+      <text class="buy-bar__sub-text" wx:if="{{ subText }}">{{ subText }}</text>
+    </view>
+
+    <view class="buy-bar__info" wx:else>
+      <text class="buy-bar__main-text">{{ buttonText }}</text>
+      <text class="buy-bar__sub-text" wx:if="{{ subText }}">{{ subText }}</text>
+    </view>
+
+    <view class="buy-bar__button" bindtap="onButtonTap">
+      {{ buttonText }}
+    </view>
+  </view>
+  <ky-safe-area position="bottom" />
+</view>

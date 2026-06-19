@@ -1,0 +1,149 @@
+<view class="practice-page">
+  <!-- 顶部进度栏 -->
+  <view class="progress-bar">
+    <view class="progress-header">
+      <text class="progress-title">{{ title }}</text>
+      <view class="progress-actions">
+        <text class="progress-count">{{ currentIndex + 1 }} / {{ total }}</text>
+        <text class="filter-btn" bindtap="onFilterTap">筛选</text>
+      </view>
+    </view>
+    <view class="progress-track">
+      <view class="progress-fill" style="width: {{ progress }}%;"></view>
+    </view>
+  </view>
+
+  <!-- 加载/错误 -->
+  <ky-loading wx:if="{{ loading }}" />
+  <ky-error wx:elif="{{ error }}" bind:retry="onRetry" />
+
+  <!-- 空状态 -->
+  <ky-empty
+    wx:elif="{{ !currentQuestion && !loading }}"
+    description="暂无题目"
+    button-text="返回"
+    bind:buttontap="onBack"
+  />
+
+  <!-- 题目内容 -->
+  <view wx:elif="{{ currentQuestion }}" class="question-card card">
+    <!-- 题干区 -->
+    <view class="question-stem">
+      <!-- 真题元数据标签 -->
+      <view class="question-meta-tags" wx:if="{{ currentQuestion.isRealExam || currentQuestion.sourceYear || currentQuestion.difficulty }}">
+        <text wx:if="{{ currentQuestion.isRealExam }}" class="meta-tag meta-tag--real">真题</text>
+        <text wx:if="{{ currentQuestion.sourceYear }}" class="meta-tag">{{ currentQuestion.sourceYear }}年</text>
+        <text wx:if="{{ currentQuestion.sourcePaper }}" class="meta-tag">{{ currentQuestion.sourcePaper }}</text>
+        <text wx:if="{{ currentQuestion.difficulty }}" class="meta-tag meta-tag--difficulty">难度 {{ getDifficultyText(currentQuestion.difficulty) }}</text>
+      </view>
+      <!-- 英语单词模式 -->
+      <block wx:if="{{ currentQuestion.displayMode === 'word' }}">
+        <view class="word-main">{{ currentQuestion.stem }}</view>
+        <view wx:if="{{ currentQuestion.phonetic }}" class="word-phonetic">{{ currentQuestion.phonetic }}</view>
+      </block>
+
+      <!-- 数学公式模式 -->
+      <block wx:elif="{{ currentQuestion.displayMode === 'formula' }}">
+        <view class="formula-stem">{{ currentQuestion.stem }}</view>
+        <formula-renderer
+          wx:if="{{ currentQuestion.formulaImagePath }}"
+          src="{{ currentQuestion.formulaImagePath }}"
+          alt="{{ currentQuestion.stem }}"
+        />
+      </block>
+
+      <!-- 默认单选模式 -->
+      <block wx:else>
+        <text class="stem-text">{{ currentQuestion.stem }}</text>
+        <image
+          wx:if="{{ currentQuestion.stemImageUrl }}"
+          class="stem-image"
+          src="{{ currentQuestion.stemImageUrl }}"
+          mode="aspectFit"
+        />
+      </block>
+    </view>
+
+    <!-- 选项区 -->
+    <view class="options-list">
+      <view
+        wx:for="{{ currentQuestion.options }}"
+        wx:key="label"
+        class="option-item {{ isCorrectOption(item) ? 'option-item--correct' : '' }} {{ isWrongOption(item) ? 'option-item--wrong' : '' }} {{ selectedOption === item.label && !hasAnswered ? 'option-item--selected' : '' }} {{ hasAnswered ? 'option-item--disabled' : '' }}"
+        bindtap="onOptionTap"
+        data-label="{{ item.label }}"
+      >
+        <view class="option-label">{{ item.label }}</view>
+        <view class="option-content">
+          <text class="option-text">{{ item.text }}</text>
+          <formula-renderer
+            wx:if="{{ item.imageUrl }}"
+            src="{{ item.imageUrl }}"
+            alt="{{ item.text }}"
+            customClass="option-formula"
+          />
+        </view>
+
+        <view wx:if="{{ hasAnswered }}" class="option-status">
+          <text wx:if="{{ isCorrectOption(item) }}" class="status-correct">✓</text>
+          <text wx:elif="{{ isWrongOption(item) }}" class="status-wrong">✗</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 解析区 -->
+    <view wx:if="{{ hasAnswered }}" class="explanation-section">
+      <view class="explanation-title {{ isCorrect ? 'explanation-title--correct' : 'explanation-title--wrong' }}">
+        {{ isCorrect ? '回答正确' : '回答错误' }}
+      </view>
+
+      <view class="explanation-content">
+        <text class="explanation-text">{{ currentQuestion.explanation }}</text>
+
+        <!-- 英语单词专有解析 -->
+        <view wx:if="{{ currentQuestion.displayMode === 'word' }}" class="word-detail">
+          <view wx:if="{{ currentQuestion.exampleSentence }}" class="word-detail-item">
+            <text class="word-detail-label">例句：</text>
+            <text class="word-detail-value">{{ currentQuestion.exampleSentence }}</text>
+          </view>
+          <view wx:if="{{ currentQuestion.wordRoot }}" class="word-detail-item">
+            <text class="word-detail-label">词根：</text>
+            <text class="word-detail-value">{{ currentQuestion.wordRoot }}</text>
+          </view>
+          <view wx:if="{{ currentQuestion.affix }}" class="word-detail-item">
+            <text class="word-detail-label">词缀：</text>
+            <text class="word-detail-value">{{ currentQuestion.affix }}</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+
+  <!-- 底部按钮 -->
+  <view wx:if="{{ currentQuestion }}" class="action-bar">
+    <view
+      wx:if="{{ !hasAnswered }}"
+      class="action-btn {{ selectedOption ? 'action-btn--primary' : 'action-btn--disabled' }}"
+      bindtap="{{ selectedOption ? 'onSubmit' : '' }}"
+    >
+      提交答案
+    </view>
+    <view
+      wx:else
+      class="action-btn action-btn--primary"
+      bindtap="onNext"
+    >
+      {{ currentIndex + 1 >= total ? '完成练习' : '下一题' }}
+    </view>
+  </view>
+
+  <question-filter
+    visible="{{ filterVisible }}"
+    filters="{{ filters }}"
+    bind:close="onFilterClose"
+    bind:confirm="onFilterConfirm"
+    bind:reset="onFilterReset"
+  />
+
+  <ky-safe-area position="bottom" />
+</view>

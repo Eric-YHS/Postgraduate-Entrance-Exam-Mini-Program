@@ -1,0 +1,11 @@
+{
+  "usingComponents": {
+    "ky-loading": "/components/ky-loading/ky-loading",
+    "ky-error": "/components/ky-error/ky-error",
+    "ky-empty": "/components/ky-empty/ky-empty",
+    "ky-safe-area": "/components/ky-safe-area/ky-safe-area"
+  },
+  "navigationBarTitleText": "错题本",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark"
+}

@@ -1,0 +1,83 @@
+.detail-container {
+  padding-bottom: 160rpx;
+}
+
+.cover-section {
+  position: relative;
+  width: 100%;
+  height: 420rpx;
+  border-radius: 16rpx;
+  overflow: hidden;
+  margin-bottom: 24rpx;
+  box-shadow: var(--shadow);
+}
+
+.course-cover {
+  width: 100%;
+  height: 100%;
+}
+
+.cover-mask {
+  position: absolute;
+  top: 20rpx;
+  right: 20rpx;
+}
+
+.cover-badge {
+  padding: 8rpx 20rpx;
+  border-radius: 8rpx;
+  font-size: 24rpx;
+  font-weight: 500;
+  color: #fff;
+  background: var(--success);
+}
+
+.cover-badge--trial {
+  background: var(--warning);
+}
+
+.info-card {
+  margin-bottom: 24rpx;
+}
+
+.course-title {
+  font-size: 36rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16rpx;
+  line-height: 1.4;
+}
+
+.course-meta {
+  display: flex;
+  gap: 24rpx;
+  margin-bottom: 16rpx;
+}
+
+.meta-item {
+  font-size: 26rpx;
+  color: var(--text-secondary);
+}
+
+.course-desc {
+  font-size: 28rpx;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.chapter-card {
+  margin-bottom: 24rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--primary);
+  margin-bottom: 24rpx;
+  border-left: 8rpx solid var(--primary);
+  padding-left: 16rpx;
+}
+
+.buy-bar-placeholder {
+  height: 120rpx;
+}

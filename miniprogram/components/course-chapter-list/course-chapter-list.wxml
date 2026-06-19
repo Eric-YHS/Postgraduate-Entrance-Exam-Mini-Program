@@ -1,0 +1,49 @@
+<view class="chapter-list">
+  <view class="chapter-item" wx:for="{{ course.chapters }}" wx:key="id" wx:for-item="chapter">
+    <view class="chapter-header" bindtap="onChapterTap" data-id="{{ chapter.id }}">
+      <view class="chapter-info">
+        <text class="chapter-title">{{ chapter.title }}</text>
+        <text class="chapter-count">{{ chapter.videos.length }} 节</text>
+      </view>
+      <view class="chapter-arrow {{ expandedChapters[chapter.id] ? 'chapter-arrow--up' : '' }}">></view>
+    </view>
+
+    <view class="chapter-videos {{ expandedChapters[chapter.id] ? 'chapter-videos--expanded' : '' }}">
+      <view
+        wx:for="{{ chapter.videos }}"
+        wx:key="id"
+        wx:for-item="video"
+        class="video-item {{ !isUnlocked(video, course) ? 'video-item--locked' : '' }}"
+        bindtap="onVideoTap"
+        data-video-id="{{ video.id }}"
+        data-chapter-id="{{ chapter.id }}"
+      >
+        <view class="video-icon">
+          <text wx:if="{{ isUnlocked(video, course) }}">▶</text>
+          <text wx:else>🔒</text>
+        </view>
+
+        <view class="video-info">
+          <view class="video-title-row">
+            <text class="video-title">{{ video.title }}</text>
+            <view class="video-tags">
+              <view class="video-tag video-tag--trial" wx:if="{{ video.isTrial }}">{{ formatTrialTag(video, course) }}</view>
+              <view class="video-tag video-tag--locked" wx:elif="{{ !isUnlocked(video, course) }}">锁定</view>
+            </view>
+          </view>
+
+          <view class="video-meta">
+            <text class="video-duration">{{ formatDuration(video.duration) }}</text>
+            <view class="video-progress" wx:if="{{ getProgressPercent(video.id) > 0 && getProgressPercent(video.id) < 100 }}">
+              <view class="video-progress__bar">
+                <view class="video-progress__fill" style="width: {{ getProgressPercent(video.id) }}%;"></view>
+              </view>
+              <text class="video-progress__text">已学 {{ getProgressPercent(video.id) }}%</text>
+            </view>
+            <text class="video-completed" wx:if="{{ getProgressPercent(video.id) >= 100 }}">已完成</text>
+          </view>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>

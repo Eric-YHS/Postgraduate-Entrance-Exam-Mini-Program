@@ -1,0 +1,10 @@
+{
+  "usingComponents": {
+    "ky-loading": "/components/ky-loading/ky-loading",
+    "ky-empty": "/components/ky-empty/ky-empty",
+    "ky-error": "/components/ky-error/ky-error",
+    "course-chapter-list": "/components/course-chapter-list/course-chapter-list",
+    "course-buy-bar": "/components/course-buy-bar/course-buy-bar"
+  },
+  "navigationBarTitleText": "课程详情"
+}

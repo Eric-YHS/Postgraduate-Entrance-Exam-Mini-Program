@@ -1,0 +1,51 @@
+<view class="media-uploader">
+  <!-- 图片 -->
+  <view class="image-grid">
+    <view
+      class="image-item"
+      wx:for="{{ images }}"
+      wx:key="*this"
+      bindtap="onPreviewImage"
+      data-index="{{ index }}"
+    >
+      <image class="image-thumb" src="{{ item }}" mode="aspectFill" />
+      <view class="delete-btn" catchtap="onDeleteImage" data-index="{{ index }}">×</view>
+    </view>
+    <view
+      wx:if="{{ images.length < maxImages }}"
+      class="upload-btn upload-btn--image"
+      bindtap="onChooseImage"
+    >
+      <text class="upload-icon">+</text>
+      <text class="upload-text">图片</text>
+    </view>
+  </view>
+
+  <!-- 视频 -->
+  <view class="video-section" wx:if="{{ maxVideo > 0 }}">
+    <view wx:if="{{ video }}" class="video-item">
+      <video class="video-player" src="{{ video }}" object-fit="cover" show-center-play-btn />
+      <view class="delete-btn" catchtap="onDeleteVideo">×</view>
+    </view>
+    <view wx:else class="upload-btn upload-btn--video" bindtap="onChooseVideo">
+      <text class="upload-icon">▶</text>
+      <text class="upload-text">视频</text>
+    </view>
+  </view>
+
+  <!-- 附件 -->
+  <view class="attachment-list" wx:if="{{ attachments.length > 0 }}">
+    <view class="attachment-item" wx:for="{{ attachments }}" wx:key="path">
+      <text class="attachment-name">{{ item.name }}</text>
+      <text class="delete-text" catchtap="onDeleteAttachment" data-index="{{ index }}">删除</text>
+    </view>
+  </view>
+  <view
+    wx:if="{{ attachments.length < maxAttachments }}"
+    class="upload-btn upload-btn--attachment"
+    bindtap="onChooseAttachment"
+  >
+    <text class="upload-icon">📎</text>
+    <text class="upload-text">附件</text>
+  </view>
+</view>

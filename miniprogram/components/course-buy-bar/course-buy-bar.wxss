@@ -1,0 +1,54 @@
+.buy-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-white);
+  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.06);
+  z-index: 100;
+}
+
+.buy-bar__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 32rpx;
+}
+
+.buy-bar__price-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.buy-bar__info {
+  display: flex;
+  flex-direction: column;
+}
+
+.buy-bar__price {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: var(--danger);
+}
+
+.buy-bar__main-text {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.buy-bar__sub-text {
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+  margin-top: 4rpx;
+}
+
+.buy-bar__button {
+  padding: 24rpx 56rpx;
+  border-radius: 40rpx;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 500;
+  box-shadow: 0 8rpx 20rpx rgba(29, 78, 137, 0.25);
+}

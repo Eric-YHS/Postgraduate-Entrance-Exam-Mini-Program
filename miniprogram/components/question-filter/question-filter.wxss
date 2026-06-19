@@ -1,0 +1,100 @@
+.filter-mask {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.filter-panel {
+  width: 80%;
+  height: 100%;
+  background-color: #ffffff;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx;
+  border-bottom: 1rpx solid var(--border, #eeeeee);
+}
+
+.filter-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-primary, #333333);
+}
+
+.filter-close {
+  font-size: 40rpx;
+  color: var(--text-tertiary, #999999);
+  padding: 8rpx;
+}
+
+.filter-body {
+  flex: 1;
+  padding: 16rpx 24rpx;
+}
+
+.filter-section {
+  margin-bottom: 24rpx;
+}
+
+.filter-section-title {
+  font-size: 28rpx;
+  font-weight: 500;
+  color: var(--text-primary, #333333);
+  margin-bottom: 16rpx;
+}
+
+.filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.filter-chip {
+  padding: 12rpx 24rpx;
+  font-size: 26rpx;
+  color: var(--text-secondary, #666666);
+  background-color: var(--bg-gray, #f5f5f7);
+  border-radius: 28rpx;
+}
+
+.filter-chip--active {
+  color: #ffffff;
+  background-color: var(--primary, #1d4e89);
+}
+
+.filter-footer {
+  display: flex;
+  padding: 16rpx 24rpx 24rpx;
+  border-top: 1rpx solid var(--border, #eeeeee);
+  gap: 16rpx;
+}
+
+.filter-btn {
+  flex: 1;
+  height: 80rpx;
+  line-height: 80rpx;
+  text-align: center;
+  font-size: 30rpx;
+  border-radius: 40rpx;
+}
+
+.filter-btn--reset {
+  color: var(--text-secondary, #666666);
+  background-color: var(--bg-gray, #f5f5f7);
+}
+
+.filter-btn--confirm {
+  color: #ffffff;
+  background-color: var(--primary, #1d4e89);
+}

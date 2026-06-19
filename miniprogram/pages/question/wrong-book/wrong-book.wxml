@@ -1,0 +1,82 @@
+<view class="wrong-book-page">
+  <!-- Tab 切换 -->
+  <view class="tab-bar">
+    <view
+      class="tab-item {{ activeTab === 'active' ? 'tab-item--active' : '' }}"
+      bindtap="onTabTap"
+      data-tab="active"
+    >
+      未掌握
+    </view>
+    <view
+      class="tab-item {{ activeTab === 'mastered' ? 'tab-item--active' : '' }}"
+      bindtap="onTabTap"
+      data-tab="mastered"
+    >
+      已掌握
+    </view>
+  </view>
+
+  <!-- 列表 -->
+  <view class="question-list card">
+    <ky-loading wx:if="{{ loading && questions.length === 0 }}" />
+
+    <ky-error wx:elif="{{ error }}" bind:retry="onRetry" />
+
+    <block wx:elif="{{ questions.length > 0 }}">
+      <view
+        wx:for="{{ questions }}"
+        wx:key="id"
+        class="question-item"
+        bindtap="onQuestionTap"
+        data-id="{{ item.id }}"
+        data-subject="{{ item.subject }}"
+      >
+        <view class="question-main">
+          <view class="question-header">
+            <text class="question-subject">{{ getSubjectName(item.subject) }}</text>
+            <text wx:if="{{ activeTab === 'active' }}" class="question-wrong-count">错 {{ item.wrongCount }} 次</text>
+          </view>
+
+          <view class="question-stem">
+            <block wx:if="{{ item.displayMode === 'word' }}">
+              <text class="stem-word">{{ item.stem }}</text>
+              <text wx:if="{{ item.phonetic }}" class="stem-phonetic">{{ item.phonetic }}</text>
+            </block>
+            <block wx:else>
+              <text class="stem-text">{{ item.stem }}</text>
+            </block>
+          </view>
+
+          <view class="question-meta">
+            <text class="meta-time">
+              {{ activeTab === 'active' ? '最近做错：' : '掌握时间：' }}
+              {{ formatTime(activeTab === 'active' ? item.lastWrongAt : item.masteredAt) }}
+            </text>
+          </view>
+        </view>
+
+        <view
+          wx:if="{{ activeTab === 'active' }}"
+          class="master-btn"
+          catchtap="onMasterTap"
+          data-id="{{ item.id }}"
+        >
+          已掌握
+        </view>
+      </view>
+
+      <view class="load-more" wx:if="{{ loading && questions.length > 0 }}">加载中...</view>
+      <view class="load-more" wx:elif="{{ !hasMore && questions.length > 0 }}">没有更多了</view>
+    </block>
+
+    <ky-empty
+      wx:else
+      description="{{ activeTab === 'active' ? '暂无错题，继续加油' : '暂无已掌握题目' }}"
+      button-text="刷新"
+      bind:buttontap="onRetry"
+    />
+  </view>
+
+  <ky-safe-area position="bottom" />
+</view>

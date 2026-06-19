@@ -1,0 +1,3 @@
+<view class="ky-safe-area ky-safe-area--{{ position }}" style="background: {{ background }};">
+  <slot />
+</view>

@@ -1,0 +1,10 @@
+<view class="ky-empty">
+  <image class="ky-empty__image" wx:if="{{ image }}" src="{{ image }}" mode="aspectFit" />
+  <view class="ky-empty__placeholder" wx:else>
+    <view class="ky-empty__icon">📭</view>
+  </view>
+  <text class="ky-empty__description">{{ description }}</text>
+  <view class="ky-empty__button" wx:if="{{ buttonText }}" bindtap="onButtonTap">
+    {{ buttonText }}
+  </view>
+</view>

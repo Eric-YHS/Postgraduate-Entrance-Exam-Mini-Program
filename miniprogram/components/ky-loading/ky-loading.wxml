@@ -1,0 +1,4 @@
+<view class="ky-loading {{ fullscreen ? 'ky-loading--fullscreen' : '' }}">
+  <view class="ky-loading__spinner" style="width: {{ size }}; height: {{ size }}; border-color: {{ color }};"></view>
+  <text class="ky-loading__text" style="color: {{ textColor }};" wx:if="{{ text }}">{{ text }}</text>
+</view>

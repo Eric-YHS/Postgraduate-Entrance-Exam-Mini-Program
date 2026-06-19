@@ -1,0 +1,111 @@
+<view wx:if="{{ visible }}" class="filter-mask" bindtap="onClose">
+  <view class="filter-panel" catchtap="preventBubble">
+    <view class="filter-header">
+      <text class="filter-title">筛选条件</text>
+      <text class="filter-close" bindtap="onClose">×</text>
+    </view>
+
+    <scroll-view scroll-y class="filter-body">
+      <!-- 学科 -->
+      <view class="filter-section">
+        <view class="filter-section-title">学科</view>
+        <view class="filter-options">
+          <view
+            wx:for="{{ subjects }}"
+            wx:key="value"
+            class="filter-chip {{ localFilters.subject === item.value ? 'filter-chip--active' : '' }}"
+            bindtap="onSubjectTap"
+            data-value="{{ item.value }}"
+          >
+            {{ item.label }}
+          </view>
+        </view>
+      </view>
+
+      <!-- 题型 -->
+      <view class="filter-section">
+        <view class="filter-section-title">题型</view>
+        <view class="filter-options">
+          <view
+            wx:for="{{ displayModes }}"
+            wx:key="value"
+            class="filter-chip {{ localFilters.displayMode === item.value ? 'filter-chip--active' : '' }}"
+            bindtap="onDisplayModeTap"
+            data-value="{{ item.value }}"
+          >
+            {{ item.label }}
+          </view>
+        </view>
+      </view>
+
+      <!-- 真题 -->
+      <view class="filter-section">
+        <view class="filter-section-title">真题</view>
+        <view class="filter-options">
+          <view
+            wx:for="{{ realExamOptions }}"
+            wx:key="label"
+            class="filter-chip {{ (localFilters.isRealExam === '' && item.value === '') || localFilters.isRealExam === item.value ? 'filter-chip--active' : '' }}"
+            bindtap="onRealExamTap"
+            data-value="{{ item.value }}"
+          >
+            {{ item.label }}
+          </view>
+        </view>
+      </view>
+
+      <!-- 年份 -->
+      <view class="filter-section">
+        <view class="filter-section-title">年份</view>
+        <view class="filter-options">
+          <view
+            wx:for="{{ years }}"
+            wx:key="value"
+            class="filter-chip {{ (localFilters.sourceYear === '' && item.value === '') || localFilters.sourceYear === item.value ? 'filter-chip--active' : '' }}"
+            bindtap="onYearTap"
+            data-value="{{ item.value }}"
+          >
+            {{ item.label }}
+          </view>
+        </view>
+      </view>
+
+      <!-- 试卷 -->
+      <view class="filter-section">
+        <view class="filter-section-title">试卷</view>
+        <view class="filter-options">
+          <view
+            wx:for="{{ papers }}"
+            wx:key="value"
+            class="filter-chip {{ localFilters.sourcePaper === item.value ? 'filter-chip--active' : '' }}"
+            bindtap="onPaperTap"
+            data-value="{{ item.value }}"
+          >
+            {{ item.label }}
+          </view>
+        </view>
+      </view>
+
+      <!-- 难度 -->
+      <view class="filter-section">
+        <view class="filter-section-title">难度</view>
+        <view class="filter-options">
+          <view
+            wx:for="{{ difficulties }}"
+            wx:key="value"
+            class="filter-chip {{ (localFilters.difficulty === '' && item.value === '') || localFilters.difficulty === item.value ? 'filter-chip--active' : '' }}"
+            bindtap="onDifficultyTap"
+            data-value="{{ item.value }}"
+          >
+            {{ item.label }}
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+
+    <view class="filter-footer">
+      <view class="filter-btn filter-btn--reset" bindtap="onReset">重置</view>
+      <view class="filter-btn filter-btn--confirm" bindtap="onConfirm">确定</view>
+    </view>
+  </view>
+</view>

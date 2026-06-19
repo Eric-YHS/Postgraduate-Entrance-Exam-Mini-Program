@@ -1,0 +1,11 @@
+{
+  "usingComponents": {
+    "ky-loading": "/components/ky-loading/ky-loading",
+    "ky-error": "/components/ky-error/ky-error",
+    "ky-safe-area": "/components/ky-safe-area/ky-safe-area",
+    "forum-reply-tree": "/components/forum-reply-tree/forum-reply-tree"
+  },
+  "navigationBarTitleText": "帖子详情",
+  "enablePullDownRefresh": true,
+  "backgroundTextStyle": "dark"
+}

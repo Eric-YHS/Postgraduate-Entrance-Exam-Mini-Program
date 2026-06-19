@@ -1,0 +1,34 @@
+.ky-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80rpx 48rpx;
+}
+
+.ky-error__icon {
+  font-size: 80rpx;
+  margin-bottom: 16rpx;
+}
+
+.ky-error__title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 12rpx;
+}
+
+.ky-error__message {
+  font-size: 28rpx;
+  color: var(--text-secondary);
+  margin-bottom: 32rpx;
+  text-align: center;
+}
+
+.ky-error__retry {
+  padding: 16rpx 48rpx;
+  border-radius: 32rpx;
+  border: 2rpx solid var(--primary);
+  color: var(--primary);
+  font-size: 28rpx;
+}
