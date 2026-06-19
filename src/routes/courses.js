@@ -4,7 +4,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerCourseRoutes(app, shared) {
-  const { db, requireTeacher, requireAuth, toPublicPath, uploadRootDir, courseUpload, cloudUpload, safeJsonParse, stripHtml, serializeCourse, canAccessContent } = shared;
+  const { db, requireTeacher, requireAuth, requireRole, toPublicPath, uploadRootDir, courseUpload, cloudUpload, safeJsonParse, stripHtml, serializeCourse, canAccessContent } = shared;
 
   // 创建课程
   app.post('/api/courses', requireTeacher, (request, response) => {
@@ -30,13 +30,14 @@ module.exports = function registerCourseRoutes(app, shared) {
       const courseResult = db.prepare(
         `
           INSERT INTO courses (
-            title, description, subject, visibility, subject_scope, video_path, video_url, created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            title, description, subject, category_id, visibility, subject_scope, video_path, video_url, created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         title,
         sanitizeText(request.body.description),
         sanitizeText(request.body.subject || '考研规划'),
+        request.body.categoryId ? Number(request.body.categoryId) : null,
         visibility,
         sanitizeText(request.body.subjectScope || ''),
         request.file ? toPublicPath(request.file.path) : '',
@@ -92,10 +93,11 @@ module.exports = function registerCourseRoutes(app, shared) {
     };
   }
 
-  function serializeFolderItem(row) {
-    return {
+  function serializeFolderItem(row, accessInfo = {}) {
+    const item = {
       id: row.id,
       folderId: row.folder_id,
+      chapterId: row.chapter_id || null,
       itemType: row.item_type,
       title: row.title,
       description: row.description,
@@ -106,12 +108,19 @@ module.exports = function registerCourseRoutes(app, shared) {
       fileUrl: row.file_url,
       fileSize: row.file_size,
       sortOrder: row.sort_order,
+      isFreePreview: row.is_free_preview || 0,
       createdBy: row.created_by,
       createdAt: row.created_at
     };
+    if (accessInfo.locked) {
+      item.locked = true;
+      item.filePath = '';
+      item.fileUrl = '';
+    }
+    return item;
   }
 
-  function getFolderChildren(rawParentId) {
+  function getFolderChildren(rawParentId, studentId = null) {
     const parentId = rawParentId === null || rawParentId === undefined || rawParentId === ''
       ? null
       : Number(rawParentId);
@@ -120,11 +129,15 @@ module.exports = function registerCourseRoutes(app, shared) {
     }
 
     const folders = db.prepare('SELECT * FROM folders WHERE parent_id IS ? ORDER BY name').all(parentId);
-    const items = db.prepare('SELECT * FROM folder_items WHERE folder_id IS ? ORDER BY sort_order, created_at DESC').all(parentId);
-    return {
-      folders: folders.map(serializeFolder),
-      items: items.map(serializeFolderItem)
-    };
+    const rows = db.prepare('SELECT * FROM folder_items WHERE folder_id IS ? ORDER BY sort_order, created_at DESC').all(parentId);
+    const items = rows.map((row) => {
+      if (studentId) {
+        const canAccess = (row.is_free_preview || 0) || canAccessContent(studentId, { visibility: row.visibility, subjectScope: row.subject_scope, subject: row.subject });
+        return serializeFolderItem(row, { locked: !canAccess });
+      }
+      return serializeFolderItem(row);
+    });
+    return { folders: folders.map(serializeFolder), items };
   }
 
   function getFolderPath(folderId) {
@@ -146,12 +159,10 @@ module.exports = function registerCourseRoutes(app, shared) {
 
   app.get('/api/folders', requireAuth, (request, response) => {
     const { parentId, subject } = request.query;
-    const children = getFolderChildren(parentId || null);
+    const studentId = request.currentUser.role === 'student' ? request.currentUser.id : null;
+    const children = getFolderChildren(parentId || null, studentId);
     if (subject) {
       children.items = children.items.filter((item) => item.subject === subject);
-    }
-    if (request.currentUser.role === 'student') {
-      children.items = children.items.filter((item) => canAccessContent(request.currentUser.id, { visibility: item.visibility, subjectScope: item.subjectScope, subject: item.subject }));
     }
     response.json({
       path: parentId ? getFolderPath(Number(parentId)) : [],
@@ -168,10 +179,8 @@ module.exports = function registerCourseRoutes(app, shared) {
       return;
     }
 
-    const children = getFolderChildren(folder.id);
-    if (request.currentUser.role === 'student') {
-      children.items = children.items.filter((item) => canAccessContent(request.currentUser.id, { visibility: item.visibility, subjectScope: item.subjectScope, subject: item.subject }));
-    }
+    const studentId = request.currentUser.role === 'student' ? request.currentUser.id : null;
+    const children = getFolderChildren(folder.id, studentId);
     response.json({
       folder: serializeFolder(folder),
       path: getFolderPath(folder.id),
@@ -292,6 +301,9 @@ module.exports = function registerCourseRoutes(app, shared) {
         response.status(400).json({ error: '无效的可见性类型。' });
         return;
       }
+      const chapterId = request.body.chapterId ? Number(request.body.chapterId) : null;
+      const sortOrder = Number(request.body.sortOrder) || 0;
+      const isFreePreview = request.body.isFreePreview === true || request.body.isFreePreview === '1' || request.body.isFreePreview === 1 ? 1 : 0;
 
       if (!title) {
         response.status(400).json({ error: '文件标题不能为空。' });
@@ -305,10 +317,11 @@ module.exports = function registerCourseRoutes(app, shared) {
 
       const now = dayjs().toISOString();
       db.prepare(
-        `INSERT INTO folder_items (folder_id, item_type, title, description, subject, visibility, subject_scope, file_path, file_url, file_size, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO folder_items (folder_id, chapter_id, item_type, title, description, subject, visibility, subject_scope, file_path, file_url, file_size, sort_order, is_free_preview, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         folderId,
+        chapterId,
         itemType,
         title,
         sanitizeText(request.body.description),
@@ -318,6 +331,8 @@ module.exports = function registerCourseRoutes(app, shared) {
         request.file ? toPublicPath(request.file.path) : '',
         fileUrl,
         request.file ? request.file.size : 0,
+        sortOrder,
+        isFreePreview,
         request.currentUser.id,
         now
       );
@@ -347,6 +362,100 @@ module.exports = function registerCourseRoutes(app, shared) {
     }
 
     db.prepare('DELETE FROM folder_items WHERE id = ?').run(id);
+    response.status(204).end();
+  });
+
+  // 更新文件项（试看、排序、章节、可见性）
+  app.put('/api/folder-items/:id', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const item = db.prepare('SELECT * FROM folder_items WHERE id = ?').get(id);
+    if (!item) return response.status(404).json({ error: '文件不存在。' });
+    if (item.created_by !== request.currentUser.id) return response.status(403).json({ error: '无权操作其他教师的文件。' });
+
+    const updates = [];
+    const params = [];
+    const body = request.body || {};
+    if (body.title !== undefined) { updates.push('title = ?'); params.push(sanitizeText(body.title)); }
+    if (body.description !== undefined) { updates.push('description = ?'); params.push(sanitizeText(body.description)); }
+    if (body.subject !== undefined) { updates.push('subject = ?'); params.push(sanitizeText(body.subject)); }
+    if (body.visibility !== undefined) { updates.push('visibility = ?'); params.push(body.visibility); }
+    if (body.subjectScope !== undefined) { updates.push('subject_scope = ?'); params.push(sanitizeText(body.subjectScope)); }
+    if (body.chapterId !== undefined) { updates.push('chapter_id = ?'); params.push(body.chapterId ? Number(body.chapterId) : null); }
+    if (body.sortOrder !== undefined) { updates.push('sort_order = ?'); params.push(Number(body.sortOrder) || 0); }
+    if (body.isFreePreview !== undefined) { updates.push('is_free_preview = ?'); params.push(body.isFreePreview === true || body.isFreePreview === '1' || body.isFreePreview === 1 ? 1 : 0); }
+
+    if (!updates.length) return response.status(400).json({ error: '没有需要更新的字段。' });
+    params.push(id);
+    db.prepare(`UPDATE folder_items SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    response.json({ ok: true });
+  });
+
+  // 课程章节管理
+  app.get('/api/courses/:id/chapters', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const course = db.prepare('SELECT * FROM courses WHERE id = ?').get(id);
+    if (!course) return response.status(404).json({ error: '课程不存在。' });
+
+    const chapters = db.prepare('SELECT * FROM course_chapters WHERE course_id = ? ORDER BY sort_order, created_at ASC').all(id);
+    const items = db.prepare('SELECT * FROM folder_items WHERE folder_id IN (SELECT id FROM folders WHERE parent_id IS NULL) AND chapter_id IN (SELECT id FROM course_chapters WHERE course_id = ?) ORDER BY sort_order, created_at ASC').all(id);
+    // 简单方案：章节与 folder_items 通过 chapter_id 关联，不限制 folder_id
+    const itemsByChapter = {};
+    const rows = db.prepare('SELECT fi.* FROM folder_items fi WHERE fi.chapter_id IN (SELECT id FROM course_chapters WHERE course_id = ?) ORDER BY fi.sort_order, fi.created_at ASC').all(id);
+    rows.forEach((row) => {
+      if (!itemsByChapter[row.chapter_id]) itemsByChapter[row.chapter_id] = [];
+      const studentId = request.currentUser.role === 'student' ? request.currentUser.id : null;
+      const canAccess = studentId ? ((row.is_free_preview || 0) || canAccessContent(studentId, { visibility: row.visibility, subjectScope: row.subject_scope, subject: row.subject })) : true;
+      itemsByChapter[row.chapter_id].push(serializeFolderItem(row, { locked: studentId ? !canAccess : false }));
+    });
+
+    response.json({
+      chapters: chapters.map((c) => ({ id: c.id, courseId: c.course_id, title: c.title, sortOrder: c.sort_order, createdAt: c.created_at, items: itemsByChapter[c.id] || [] }))
+    });
+  });
+
+  app.post('/api/courses/:id/chapters', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const course = db.prepare('SELECT * FROM courses WHERE id = ?').get(id);
+    if (!course) return response.status(404).json({ error: '课程不存在。' });
+    if (course.created_by !== request.currentUser.id) return response.status(403).json({ error: '无权操作。' });
+    const title = sanitizeText(request.body.title);
+    if (!title) return response.status(400).json({ error: '章节标题不能为空。' });
+    const sortOrder = Number(request.body.sortOrder) || 0;
+    const result = db.prepare('INSERT INTO course_chapters (course_id, title, sort_order, created_at) VALUES (?, ?, ?, ?)').run(id, title, sortOrder, dayjs().toISOString());
+    response.json({ ok: true, id: result.lastInsertRowid });
+  });
+
+  app.put('/api/courses/:id/chapters/:chapterId', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    const chapterId = Number(request.params.chapterId);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(chapterId) || chapterId <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const chapter = db.prepare('SELECT * FROM course_chapters WHERE id = ? AND course_id = ?').get(chapterId, id);
+    if (!chapter) return response.status(404).json({ error: '章节不存在。' });
+    const course = db.prepare('SELECT created_by FROM courses WHERE id = ?').get(id);
+    if (course && course.created_by !== request.currentUser.id) return response.status(403).json({ error: '无权操作。' });
+
+    const updates = [];
+    const params = [];
+    if (request.body.title !== undefined) { updates.push('title = ?'); params.push(sanitizeText(request.body.title)); }
+    if (request.body.sortOrder !== undefined) { updates.push('sort_order = ?'); params.push(Number(request.body.sortOrder) || 0); }
+    if (!updates.length) return response.status(400).json({ error: '没有需要更新的字段。' });
+    params.push(chapterId);
+    db.prepare(`UPDATE course_chapters SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+    response.json({ ok: true });
+  });
+
+  app.delete('/api/courses/:id/chapters/:chapterId', requireTeacher, (request, response) => {
+    const id = Number(request.params.id);
+    const chapterId = Number(request.params.chapterId);
+    if (!Number.isInteger(id) || id <= 0 || !Number.isInteger(chapterId) || chapterId <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const chapter = db.prepare('SELECT * FROM course_chapters WHERE id = ? AND course_id = ?').get(chapterId, id);
+    if (!chapter) return response.status(404).json({ error: '章节不存在。' });
+    const course = db.prepare('SELECT created_by FROM courses WHERE id = ?').get(id);
+    if (course && course.created_by !== request.currentUser.id) return response.status(403).json({ error: '无权操作。' });
+    db.prepare('DELETE FROM course_chapters WHERE id = ?').run(chapterId);
     response.status(204).end();
   });
 
@@ -390,14 +499,42 @@ module.exports = function registerCourseRoutes(app, shared) {
     response.json({ reviews, myReview });
   });
 
-  app.post('/api/courses/:id/reviews', requireAuth, (request, response) => {
-    const rating = Number(request.body.rating);
-    if (!rating || rating < 1 || rating > 5) { response.status(400).json({ error: '评分须为1-5。' }); return; }
-    db.prepare(
-      `INSERT INTO course_reviews (item_id, student_id, rating, content, created_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(item_id, student_id) DO UPDATE SET rating = excluded.rating, content = excluded.content, created_at = excluded.created_at`
-    ).run(id, request.currentUser.id, rating, stripHtml(request.body.content || ''), dayjs().toISOString());
+  // 课程分类
+  app.get('/api/course-categories', requireAuth, (_request, response) => {
+    const rows = db.prepare('SELECT * FROM course_categories ORDER BY type, sort_order, id').all();
+    response.json({ categories: rows });
+  });
+
+  app.post('/api/admin/course-categories', requireRole(['admin', 'teacher']), (request, response) => {
+    const { name, type = 'public', parentId, sortOrder = 0 } = request.body || {};
+    const cleanName = sanitizeText(name);
+    if (!cleanName) return response.status(400).json({ error: '分类名称不能为空。' });
+    if (!['public', 'major'].includes(type)) return response.status(400).json({ error: '无效的分类类型。' });
+    const result = db.prepare('INSERT INTO course_categories (name, type, parent_id, sort_order, created_at) VALUES (?, ?, ?, ?, ?)').run(cleanName, type, parentId ? Number(parentId) : null, Number(sortOrder) || 0, dayjs().toISOString());
+    response.json({ ok: true, id: result.lastInsertRowid });
+  });
+
+  app.put('/api/admin/course-categories/:id', requireRole(['admin', 'teacher']), (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const cat = db.prepare('SELECT * FROM course_categories WHERE id = ?').get(id);
+    if (!cat) return response.status(404).json({ error: '分类不存在。' });
+    const updates = [];
+    const params = [];
+    if (request.body.name !== undefined) { updates.push('name = ?'); params.push(sanitizeText(request.body.name)); }
+    if (request.body.type !== undefined) { updates.push('type = ?'); params.push(request.body.type); }
+    if (request.body.parentId !== undefined) { updates.push('parent_id = ?'); params.push(request.body.parentId ? Number(request.body.parentId) : null); }
+    if (request.body.sortOrder !== undefined) { updates.push('sort_order = ?'); params.push(Number(request.body.sortOrder) || 0); }
+    if (!updates.length) return response.status(400).json({ error: '没有需要更新的字段。' });
+    params.push(id);
+    db.prepare(`UPDATE course_categories SET ${updates.join(', ')} WHERE id = ?`).run(...params);
     response.json({ ok: true });
+  });
+
+  app.delete('/api/admin/course-categories/:id', requireRole(['admin', 'teacher']), (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    db.prepare('DELETE FROM course_categories WHERE id = ?').run(id);
+    response.status(204).end();
   });
 };

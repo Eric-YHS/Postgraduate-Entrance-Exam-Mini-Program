@@ -341,6 +341,7 @@ function serializeCourse(row) {
     title: row.title,
     description: row.description,
     subject: row.subject,
+    categoryId: row.category_id || null,
     visibility: row.visibility || 'free',
     subjectScope: row.subject_scope || '',
     videoPath: row.video_path,

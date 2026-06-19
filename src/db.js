@@ -185,6 +185,7 @@ function initializeDatabase() {
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       subject TEXT DEFAULT '考研规划',
+      category_id INTEGER DEFAULT NULL,
       visibility TEXT NOT NULL DEFAULT 'free' CHECK (visibility IN ('free', 'preview', 'trial_paid', 'subject_paid', 'all_paid')),
       subject_scope TEXT DEFAULT '',
       video_path TEXT DEFAULT '',
@@ -193,6 +194,16 @@ function initializeDatabase() {
       created_at TEXT NOT NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS course_chapters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      course_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_course_chapters_course ON course_chapters(course_id, sort_order);
 
     CREATE TABLE IF NOT EXISTS folders (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -209,6 +220,7 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS folder_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       folder_id INTEGER NOT NULL,
+      chapter_id INTEGER DEFAULT NULL,
       item_type TEXT NOT NULL DEFAULT 'course' CHECK (item_type IN ('course', 'file', 'video')),
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
@@ -219,9 +231,11 @@ function initializeDatabase() {
       file_url TEXT DEFAULT '',
       file_size INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
+      is_free_preview INTEGER DEFAULT 0,
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
+      FOREIGN KEY (chapter_id) REFERENCES course_chapters(id) ON DELETE SET NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
 
@@ -234,6 +248,7 @@ function initializeDatabase() {
       subject TEXT DEFAULT '考研规划',
       visibility TEXT NOT NULL DEFAULT 'free' CHECK (visibility IN ('free', 'preview', 'trial_paid', 'subject_paid', 'all_paid')),
       status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'live', 'ended')),
+      recording_path TEXT DEFAULT '',
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       started_at TEXT DEFAULT NULL,
@@ -948,6 +963,7 @@ function migrate() {
     CREATE TABLE IF NOT EXISTS folder_items (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       folder_id INTEGER NOT NULL,
+      chapter_id INTEGER DEFAULT NULL,
       item_type TEXT NOT NULL DEFAULT 'course' CHECK (item_type IN ('course', 'file', 'video')),
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
@@ -958,12 +974,27 @@ function migrate() {
       file_url TEXT DEFAULT '',
       file_size INTEGER DEFAULT 0,
       sort_order INTEGER DEFAULT 0,
+      is_free_preview INTEGER DEFAULT 0,
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE CASCADE,
+      FOREIGN KEY (chapter_id) REFERENCES course_chapters(id) ON DELETE SET NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
     );
     CREATE INDEX IF NOT EXISTS idx_folder_items_folder ON folder_items(folder_id);
+  `);
+
+  // 课程章节表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS course_chapters (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      course_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (course_id) REFERENCES courses(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_course_chapters_course ON course_chapters(course_id, sort_order);
   `);
 
   // 论坛表添加媒体列
@@ -1958,22 +1989,50 @@ function migrate() {
     insertSetting.run('payment_mode', 'simulated', now);
   }
 
-  // 为已有学生补录体验权益
-  const trialDaysSetting = db.prepare("SELECT value FROM system_settings WHERE key = 'trial_days'").get();
-  const trialDays = Number(trialDaysSetting ? trialDaysSetting.value : 7);
-  const existingStudents = db.prepare("SELECT id, created_at FROM users WHERE role = 'student'").all();
-  const insertEntitlement = db.prepare(`
-    INSERT OR IGNORE INTO user_entitlements
-    (student_id, tier, trial_started_at, trial_ended_at, package_type, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+  // 课程分类表
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS course_categories (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'public' CHECK (type IN ('public', 'major')),
+      parent_id INTEGER DEFAULT NULL,
+      sort_order INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (parent_id) REFERENCES course_categories(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_course_categories_type ON course_categories(type, sort_order);
   `);
-  for (const student of existingStudents) {
-    const hasEntitlement = db.prepare('SELECT id FROM user_entitlements WHERE student_id = ?').get(student.id);
-    if (!hasEntitlement) {
-      const started = student.created_at || dayjs().toISOString();
-      const ended = dayjs(started).add(trialDays, 'day').toISOString();
-      insertEntitlement.run(student.id, 'trial', started, ended, 'none', dayjs().toISOString(), dayjs().toISOString());
-    }
+
+  // A-12 / A-13 / A-10 迁移：试看字段、章节外键、课程分类、直播录制路径
+  const folderItemColsA = db.prepare('PRAGMA table_info(folder_items)').all();
+  if (!folderItemColsA.some((c) => c.name === 'is_free_preview')) {
+    db.exec('ALTER TABLE folder_items ADD COLUMN is_free_preview INTEGER DEFAULT 0');
+  }
+  if (!folderItemColsA.some((c) => c.name === 'chapter_id')) {
+    db.exec('ALTER TABLE folder_items ADD COLUMN chapter_id INTEGER DEFAULT NULL');
+  }
+  const courseColsA = db.prepare('PRAGMA table_info(courses)').all();
+  if (!courseColsA.some((c) => c.name === 'category_id')) {
+    db.exec('ALTER TABLE courses ADD COLUMN category_id INTEGER DEFAULT NULL');
+  }
+  const liveSessionColsA = db.prepare('PRAGMA table_info(live_sessions)').all();
+  if (!liveSessionColsA.some((c) => c.name === 'recording_path')) {
+    db.exec('ALTER TABLE live_sessions ADD COLUMN recording_path TEXT DEFAULT ""');
+  }
+
+  // 初始化默认课程分类（公共课/专业课）
+  const categoryCount = db.prepare('SELECT COUNT(*) AS cnt FROM course_categories').get().cnt;
+  if (categoryCount === 0) {
+    const now = dayjs().toISOString();
+    const insertCat = db.prepare('INSERT OR IGNORE INTO course_categories (name, type, sort_order, created_at) VALUES (?, ?, ?, ?)');
+    insertCat.run('公共课', 'public', 1, now);
+    insertCat.run('专业课', 'major', 2, now);
+    insertCat.run('政治', 'public', 3, now);
+    insertCat.run('英语', 'public', 4, now);
+    insertCat.run('数学', 'public', 5, now);
+    insertCat.run('计算机', 'major', 6, now);
+    insertCat.run('金融', 'major', 7, now);
+    insertCat.run('法律', 'major', 8, now);
   }
 }
 

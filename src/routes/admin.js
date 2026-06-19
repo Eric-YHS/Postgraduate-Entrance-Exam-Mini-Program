@@ -594,12 +594,15 @@ module.exports = function registerAdminRoutes(app, shared) {
         id: row.id,
         folderId: row.folder_id,
         folderName: row.folder_name,
+        chapterId: row.chapter_id || null,
         itemType: row.item_type,
         title: row.title,
         description: row.description,
         subject: row.subject,
         visibility: row.visibility || 'free',
         subjectScope: row.subject_scope || '',
+        sortOrder: row.sort_order || 0,
+        isFreePreview: row.is_free_preview || 0,
         createdBy: row.created_by,
         teacherName: row.teacher_name,
         createdAt: row.created_at
@@ -658,6 +661,22 @@ module.exports = function registerAdminRoutes(app, shared) {
     if (request.body.isPaidOnly !== undefined && table === 'folder_items') {
       updates.push('is_paid_only = ?');
       params.push(request.body.isPaidOnly ? 1 : 0);
+    }
+    if (request.body.isFreePreview !== undefined && table === 'folder_items') {
+      updates.push('is_free_preview = ?');
+      params.push(request.body.isFreePreview ? 1 : 0);
+    }
+    if (request.body.sortOrder !== undefined && table === 'folder_items') {
+      updates.push('sort_order = ?');
+      params.push(Number(request.body.sortOrder) || 0);
+    }
+    if (request.body.chapterId !== undefined && table === 'folder_items') {
+      updates.push('chapter_id = ?');
+      params.push(request.body.chapterId ? Number(request.body.chapterId) : null);
+    }
+    if (request.body.categoryId !== undefined && table === 'courses') {
+      updates.push('category_id = ?');
+      params.push(request.body.categoryId ? Number(request.body.categoryId) : null);
     }
 
     if (!updates.length) return response.status(400).json({ error: '没有需要更新的字段。' });
