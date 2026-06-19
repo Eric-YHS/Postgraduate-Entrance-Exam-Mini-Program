@@ -2,7 +2,29 @@ const wecom = require('../services/wecom');
 const config = require('../config');
 const { handleMessage: handleFreeTutorMessage } = require('../services/bots/freeTutorBot');
 const { handleQuestion } = require('../services/bots/answerBot');
+const { handleQuestion: handleSchoolQuestion, recognizeIntent } = require('../services/bots/schoolSelectorBot');
+const { handleReply: handleSupervisionReply } = require('../services/bots/supervisorBot');
 const { isHandoffRequest, startHandoff, isInHandoff, notifyHumanAgents } = require('../services/bots/humanHandoff');
+
+/**
+ * 判断一条消息是否像「督学打卡回复」（完成/未完成进度反馈），
+ * 而非普通提问。用于把督学打卡分流给 supervisorBot.handleReply。
+ * 规则：消息较短，且整体由“编号/完成态/连接词”构成，不包含疑问特征。
+ * @param {string} text
+ * @returns {boolean}
+ */
+function looksLikeSupervisionReply(text) {
+  const t = (text || '').trim();
+  if (!t || t.length > 30) return false;
+  // 含明显疑问/求解特征的，一律不当作打卡
+  if (/[?？]|怎么|为什么|如何|是什么|求|帮我|推荐|哪个|哪些|什么意思/.test(t)) return false;
+  // 全局完成态：完成 / 未完成 / 都做完了 / 没做 等
+  if (/^(全部|今天|今日|都|已|全)?\s*(完成|做完了?|搞定|done|ok|好了)[了!！。.]*$/i.test(t)) return true;
+  if (/^(还?没|未|没有)\s*(完成|做完|做|搞定)?[了!！。.]*$/.test(t)) return true;
+  // 编号+状态：1完成 / 2没做 / 完成1和2 / 1、2完成
+  if (/\d/.test(t) && /(完成|未完成|没做|做完|搞定|ok)/i.test(t)) return true;
+  return false;
+}
 
 module.exports = function registerWecomRoutes(app, shared) {
   const { requireAdmin } = shared;
@@ -100,8 +122,37 @@ module.exports = function registerWecomRoutes(app, shared) {
           console.log(`[wecom] 用户 ${userId} 身份: ${userRow ? userRow.role : '未绑定'}, 是否付费: ${isPaid}`);
 
           if (isPaid) {
-            const result = await handleQuestion({ userId, question: message, source, groupId: null, attachments: [] });
-            replyText = result && result.answer ? result.answer : '抱歉，我暂时无法回答这个问题。';
+            const studentId = userRow.id;
+            // C-06 督学闭环：先识别是否为「完成/未完成」打卡回复，命中则更新任务进度
+            if (looksLikeSupervisionReply(message)) {
+              try {
+                const supRes = await handleSupervisionReply(db, studentId, message);
+                if (supRes && supRes.updated && supRes.updated.length > 0) {
+                  replyText = supRes.message;
+                }
+              } catch (supErr) {
+                console.error('[wecom] 督学回复处理失败:', supErr.message);
+              }
+            }
+
+            // C-08 择校分发：识别到择校意图（高置信度）则走择校机器人
+            if (!replyText) {
+              const intentResult = recognizeIntent(message);
+              if (intentResult && intentResult.confidence >= 1) {
+                try {
+                  const schoolRes = await handleSchoolQuestion({ userId: String(studentId), question: message, context: {} });
+                  replyText = schoolRes && schoolRes.answer ? schoolRes.answer : '';
+                } catch (schoolErr) {
+                  console.error('[wecom] 择校机器人处理失败:', schoolErr.message);
+                }
+              }
+            }
+
+            // 兜底：普通付费答疑（三层应答）
+            if (!replyText) {
+              const result = await handleQuestion({ userId, question: message, source, groupId: null, attachments: [] });
+              replyText = result && result.answer ? result.answer : '抱歉，我暂时无法回答这个问题。';
+            }
           } else {
             const result = await handleFreeTutorMessage({ userId, message, source, groupId: null });
             replyText = result && result.reply ? result.reply : '抱歉，我暂时无法回答这个问题。';
@@ -228,12 +279,40 @@ module.exports = function registerWecomRoutes(app, shared) {
 
       // 3. 判断用户类型：付费 vs 免费
       // 付费学员判断：当前以 role='student' 兜底，后续可接入权益体系
-      const userRow = db.prepare('SELECT role, id FROM users WHERE id = ?').get(userId);
+      const userRow = db.prepare('SELECT role, id FROM users WHERE wecom_userid = ?').get(userId)
+        || db.prepare('SELECT role, id FROM users WHERE id = ?').get(userId);
       const isPaid = userRow && userRow.role === 'student';
 
       let result;
       if (isPaid) {
-        // 付费用户走 answerBot（三层应答：知识库RAG -> AI生成 -> 联网搜索）
+        const studentId = userRow.id;
+
+        // C-06 督学闭环：识别「完成/未完成」打卡回复
+        if (looksLikeSupervisionReply(message)) {
+          try {
+            const supRes = await handleSupervisionReply(db, studentId, message);
+            if (supRes && supRes.updated && supRes.updated.length > 0) {
+              return response.json({ success: true, bot: 'supervisor', answer: supRes.message, updated: supRes.updated });
+            }
+          } catch (supErr) {
+            console.error('[wecom] 督学回复处理失败:', supErr.message);
+          }
+        }
+
+        // C-08 择校分发：高置信度择校意图走择校机器人
+        const intentResult = recognizeIntent(message);
+        if (intentResult && intentResult.confidence >= 1) {
+          try {
+            const schoolRes = await handleSchoolQuestion({ userId: String(studentId), question: message, context: {} });
+            if (schoolRes && schoolRes.answer) {
+              return response.json({ success: true, bot: 'school_selector', ...schoolRes });
+            }
+          } catch (schoolErr) {
+            console.error('[wecom] 择校机器人处理失败:', schoolErr.message);
+          }
+        }
+
+        // 兜底：付费用户走 answerBot（三层应答：知识库RAG -> AI生成 -> 联网搜索）
         result = await handleQuestion({
           userId,
           question: message,
