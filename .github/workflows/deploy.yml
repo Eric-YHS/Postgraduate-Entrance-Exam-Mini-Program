@@ -47,11 +47,9 @@ jobs:
       - name: Setup SSH key
         run: |
           mkdir -p ~/.ssh
-          echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
+          (umask 077 && echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key)
           # Add server host key to known_hosts to avoid interactive prompt
-          echo "159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
+          (umask 077 && echo "159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ" > ~/.ssh/known_hosts)
         env:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
 
