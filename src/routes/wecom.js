@@ -102,9 +102,12 @@ module.exports = function registerWecomRoutes(app, shared) {
 
       const msgType = extractXmlField(parsed.message, 'MsgType');
       const userId = extractXmlField(parsed.message, 'FromUserName');
+      const chatId = extractXmlField(parsed.message, 'ChatId');
+      const senderId = extractXmlField(parsed.message, 'Send') || userId;
       const message = extractXmlField(parsed.message, 'Content');
+      const isGroupChat = !!chatId;
 
-      console.log(`[wecom] 解析消息 | 类型: ${msgType} | 用户: ${userId} | 内容: ${message.slice(0, 100)}`);
+      console.log(`[wecom] 解析消息 | 类型: ${msgType} | 群聊: ${isGroupChat} | 用户: ${userId} | 发送者: ${senderId} | 内容: ${message.slice(0, 100)}`);
 
       // 先返回 success，避免企业微信重试；回复消息异步发送
       response.send('success');
@@ -113,6 +116,40 @@ module.exports = function registerWecomRoutes(app, shared) {
         const { db } = shared;
         const source = 'wecom';
         let replyText = '';
+
+        // 群聊只响应 @ 机器人的消息
+        if (isGroupChat) {
+          const mentionMatch = message.match(/^@[^\s]+\s*(.*)$/s);
+          if (!mentionMatch) {
+            console.log('[wecom] 群聊消息未 @ 机器人，忽略');
+            return;
+          }
+          const question = mentionMatch[1].trim() || '你好';
+          console.log(`[wecom] 群聊 @ 机器人 | chatId: ${chatId} | 发送者: ${senderId} | 问题: ${question}`);
+
+          // 群聊统一走免费答疑机器人（避免权限判断复杂化，后续可按发送者身份区分）
+          try {
+            const result = await handleFreeTutorMessage({ userId: senderId, message: question, source, groupId: chatId });
+            replyText = result && result.reply ? result.reply : '抱歉，我暂时无法回答这个问题。';
+          } catch (err) {
+            console.error('[wecom] 群聊机器人处理失败:', err.message);
+            replyText = '机器人处理失败，请稍后再试。';
+          }
+
+          if (replyText) {
+            try {
+              const sendResult = await wecom.sendAppChatMessage({
+                chatid: chatId,
+                msgtype: 'text',
+                text: { content: replyText }
+              });
+              console.log(`[wecom] 回复群聊 ${chatId} 结果:`, sendResult);
+            } catch (sendErr) {
+              console.error('[wecom] 回复群聊消息失败:', sendErr.message);
+            }
+          }
+          return;
+        }
 
         if (isInHandoff(db, userId)) {
           await notifyHumanAgents(db, userId, message, source);
@@ -252,6 +289,27 @@ module.exports = function registerWecomRoutes(app, shared) {
     } catch (error) {
       console.error('邀请成员到群聊失败:', error.message);
       response.status(500).json({ error: '邀请成员到群聊失败。' });
+    }
+  });
+
+  // 发送应用群聊消息
+  app.post('/api/wecom/chat/send', requireAdmin, async (request, response) => {
+    try {
+      const { chatid, msgtype, text, markdown } = request.body;
+      if (!chatid || !chatid.trim()) {
+        return response.status(400).json({ error: 'chatid 不能为空。' });
+      }
+      if (!msgtype) {
+        return response.status(400).json({ error: 'msgtype 不能为空。' });
+      }
+      const payload = { chatid, msgtype };
+      if (text) payload.text = text;
+      if (markdown) payload.markdown = markdown;
+      const result = await wecom.sendAppChatMessage(payload);
+      response.json({ success: true, result });
+    } catch (error) {
+      console.error('发送应用群聊消息失败:', error.message);
+      response.status(500).json({ error: '发送应用群聊消息失败。' });
     }
   });
 
