@@ -31,15 +31,37 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Check secrets are set
+        run: |
+          echo "SERVER_HOST length: ${#SERVER_HOST}"
+          echo "SERVER_USER length: ${#SERVER_USER}"
+          echo "SERVER_SSH_KEY length: ${#SERVER_SSH_KEY}"
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          SERVER_USER: ${{ secrets.SERVER_USER }}
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Add server host key to known_hosts to avoid interactive prompt
+          echo "159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+        env:
+          SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
+
+      - name: Test SSH connection
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} "echo 'SSH connection OK'"
+
       - name: Deploy via SSH
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          key: ${{ secrets.SERVER_SSH_KEY }}
-          fingerprint: SHA256:iLvZqf2B9Vxrw6vFqpVFKTTND8svG+4K/xTCIGjfEkE
-          debug: true
-          script: |
+        run: |
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=~/.ssh/known_hosts -o BatchMode=yes ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }} << 'EOF'
             set -e
             APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
             BACKUP_DIR=$APP_DIR/backups
@@ -103,3 +125,4 @@ jobs:
 
             pm2 save
             echo "Deploy completed at $(date)"
+          EOF
