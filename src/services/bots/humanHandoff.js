@@ -1,5 +1,6 @@
 const dayjs = require('dayjs');
 const { sendAppMessage } = require('../wecom');
+const { db: globalDb } = require('../../db');
 
 // 人工客服关键词列表
 const HANDOFF_KEYWORDS = [
@@ -137,9 +138,10 @@ function endHandoff(db, userId) {
  * @returns {boolean}
  */
 function isInHandoff(db, userId) {
-  if (!db || !userId) return false;
+  const conn = db || globalDb;
+  if (!conn || !userId) return false;
 
-  const row = db.prepare(
+  const row = conn.prepare(
     'SELECT 1 FROM handoff_status WHERE user_id = ? AND status = ? LIMIT 1'
   ).get(userId, 'active');
 
@@ -283,18 +285,31 @@ async function notifyHumanAgents(db, userId, message, source = 'wecom') {
         failed++;
       }
     } else {
-      // 缺少企微 userId，仅记录到日志
-      details.push({
-        agentId: agent.id,
-        agentName: agent.display_name,
-        channel: 'log_only',
-        status: 'no_openid',
-        message: '该用户未绑定企微 userId，仅记录通知日志'
-      });
-      // 记录到控制台，方便后续排查
+      // 缺少企微 userId，写一条站内通知兜底，确保老师在后台能看到
+      try {
+        const now = dayjs().toISOString();
+        db.prepare(`
+          INSERT INTO notifications (student_id, type, title, body, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(agent.id, '人工客服', '人工客服介入通知', notificationText, now);
+        details.push({
+          agentId: agent.id,
+          agentName: agent.display_name,
+          channel: 'notification',
+          status: 'sent',
+          message: '缺少企微 userId，已写入站内通知'
+        });
+      } catch (notifErr) {
+        details.push({
+          agentId: agent.id,
+          agentName: agent.display_name,
+          channel: 'notification',
+          status: 'failed',
+          error: notifErr.message
+        });
+      }
       console.log(
-        `[humanHandoff] 客服老师 ${agent.display_name}(id=${agent.id}) 缺少 openid，` +
-        `无法发送企微通知。用户 ${userDisplay} 请求人工客服。`
+        `[humanHandoff] 客服老师 ${agent.display_name}(id=${agent.id}) 缺少企微 userId，已写入站内通知。用户 ${userDisplay} 请求人工客服。`
       );
     }
   }

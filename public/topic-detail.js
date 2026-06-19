@@ -76,6 +76,10 @@ function renderHashtags(text) {
 }
 
 function buildReplyTree(replies) {
+  // 后端已返回树形结构时直接复用
+  if (replies.length > 0 && replies[0].children && !replies.some((r) => r.replyToId)) {
+    return replies;
+  }
   const map = {};
   const roots = [];
   replies.forEach((r) => {

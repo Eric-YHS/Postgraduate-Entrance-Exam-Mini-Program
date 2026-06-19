@@ -291,6 +291,49 @@ async function inviteChatMembers(params, retry = true) {
   }
 }
 
+/**
+ * 发送应用群聊消息（appchat/send）
+ * 用于向自建应用群聊发送消息，环境依赖 WECOM_AGENT_ID。
+ * @param {object} params
+ * @param {string} params.chatid - 群聊 ID
+ * @param {string} params.msgtype - 消息类型
+ * @param {object} params.text / params.markdown 等 - 消息内容
+ * @param {boolean} [retry=true]
+ * @returns {Promise<object|null>}
+ */
+async function sendAppChatMessage(params, retry = true) {
+  if (!params || typeof params !== 'object' || !params.chatid) {
+    throw new Error('sendAppChatMessage 需要有效的 params 对象且必须包含 chatid');
+  }
+
+  const agentId = config.wecomAgentId;
+  if (!agentId) {
+    console.warn('[wecom] WECOM_AGENT_ID 未配置');
+    return null;
+  }
+
+  const token = await getWecomAccessToken();
+  if (!token) return null;
+
+  const body = { ...params };
+  const url = `https://qyapi.weixin.qq.com/cgi-bin/appchat/send?access_token=${token}`;
+
+  try {
+    const result = await httpsPost(url, body);
+    if (isTokenError(result.errcode) && retry) {
+      clearWecomTokenCache();
+      return sendAppChatMessage(params, false);
+    }
+    if (result.errcode !== 0) {
+      console.error('[wecom] 发送应用群聊消息失败:', result.errmsg, '| params:', JSON.stringify(body));
+    }
+    return result;
+  } catch (error) {
+    console.error('[wecom] 发送应用群聊消息异常:', error.message);
+    throw error;
+  }
+}
+
 // ==================== 企业微信消息加解密（API 接收消息）====================
 
 const AES_BLOCK_SIZE = 32;
@@ -444,6 +487,7 @@ module.exports = {
   getWecomAccessToken,
   clearWecomTokenCache,
   sendAppMessage,
+  sendAppChatMessage,
   sendWebhookMessage,
   createAppChat,
   inviteChatMembers,

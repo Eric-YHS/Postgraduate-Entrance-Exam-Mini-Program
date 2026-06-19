@@ -573,6 +573,7 @@ function initOperationsListeners() {
     const action = btn.dataset.forumAction;
     const id = Number(btn.dataset.forumId);
     const type = btn.dataset.forumType;
+    const wordId = Number(btn.dataset.wordId);
     try {
       if (action === 'delete') {
         if (!await confirmDialog({ title: '删除', message: '确定删除吗？', confirmText: '删除', danger: true })) return;
@@ -587,6 +588,22 @@ function initOperationsListeners() {
       } else if (action === 'review') {
         await fetchJSON(`/api/admin/forum/reports/${id}/review`, { method: 'POST', body: JSON.stringify({ status: btn.dataset.status }) });
         createToast('已更新', 'success');
+      } else if (action === 'approve-topic') {
+        await fetchJSON(`/api/admin/moderation/topics/${id}/approve`, { method: 'POST' });
+        createToast('已通过', 'success');
+      } else if (action === 'reject-topic') {
+        await fetchJSON(`/api/admin/moderation/topics/${id}/reject`, { method: 'POST' });
+        createToast('已拒绝', 'success');
+      } else if (action === 'approve-reply') {
+        await fetchJSON(`/api/admin/moderation/replies/${id}/approve`, { method: 'POST' });
+        createToast('已通过', 'success');
+      } else if (action === 'reject-reply') {
+        await fetchJSON(`/api/admin/moderation/replies/${id}/reject`, { method: 'POST' });
+        createToast('已拒绝', 'success');
+      } else if (action === 'delete-word') {
+        if (!await confirmDialog({ title: '删除敏感词', message: '确定删除该敏感词吗？', confirmText: '删除', danger: true })) return;
+        await fetchJSON(`/api/admin/moderation/words/${wordId}`, { method: 'DELETE' });
+        createToast('已删除', 'success');
       }
       loadForum();
     } catch (error) {
@@ -735,9 +752,20 @@ function renderQuestions() {
 async function loadForum() {
   try {
     const tab = adminState.forumTab;
-    const url = tab === 'topics' ? '/api/admin/forum/topics' : tab === 'replies' ? '/api/admin/forum/replies' : '/api/admin/forum/reports';
-    const data = await fetchJSON(url);
-    adminState.forumData[tab] = data[tab === 'topics' ? 'topics' : tab === 'replies' ? 'replies' : 'reports'];
+    const form = document.getElementById('forum-words-form');
+    form.style.display = 'none';
+    if (tab === 'words') {
+      const data = await fetchJSON('/api/admin/moderation/words');
+      adminState.forumData[tab] = data.words;
+      renderWordsForm();
+    } else if (tab === 'pending') {
+      const data = await fetchJSON('/api/admin/moderation/pending');
+      adminState.forumData[tab] = data;
+    } else {
+      const url = tab === 'topics' ? '/api/admin/forum/topics' : tab === 'replies' ? '/api/admin/forum/replies' : '/api/admin/forum/reports';
+      const data = await fetchJSON(url);
+      adminState.forumData[tab] = data[tab === 'topics' ? 'topics' : tab === 'replies' ? 'replies' : 'reports'];
+    }
     renderForum();
   } catch (error) {
     createToast(error.message, 'error');
@@ -746,8 +774,67 @@ async function loadForum() {
 
 function renderForum() {
   const container = document.getElementById('forum-list');
+  const wordsForm = document.getElementById('forum-words-form');
   const tab = adminState.forumTab;
+  wordsForm.style.display = tab === 'words' ? 'block' : 'none';
   const items = adminState.forumData[tab] || [];
+
+  if (tab === 'words') {
+    if (!items.length) {
+      container.innerHTML = '<p class="muted">暂无敏感词。</p>';
+      return;
+    }
+    let html = '<table style="width: 100%; border-collapse: collapse;">';
+    html += '<thead><tr style="border-bottom: 2px solid var(--border);"><th style="text-align:left;padding:8px;">敏感词</th><th style="text-align:left;padding:8px;">级别</th><th style="text-align:right;padding:8px;">操作</th></tr></thead><tbody>';
+    items.forEach((w) => {
+      html += `<tr style="border-bottom:1px solid var(--border);">
+        <td style="padding:8px;">${escapeHtml(w.word)}</td>
+        <td style="padding:8px;">${w.level === 'block' ? '<span class="badge" style="background:var(--danger);color:white;">拦截</span>' : '<span class="badge" style="background:var(--warning);">人工复核</span>'}</td>
+        <td style="padding:8px;text-align:right;"><button class="ghost-button" style="font-size:12px;color:var(--danger);" data-forum-action="delete-word" data-word-id="${w.id}">删除</button></td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    container.innerHTML = html;
+    return;
+  }
+
+  if (tab === 'pending') {
+    const topics = items.topics || [];
+    const replies = items.replies || [];
+    if (!topics.length && !replies.length) {
+      container.innerHTML = '<p class="muted">暂无待审核内容。</p>';
+      return;
+    }
+    let html = '<div style="display: grid; gap: 12px;">';
+    topics.forEach((t) => {
+      html += `
+        <div class="paper-card" style="padding: 12px;">
+          <span class="badge" style="background:var(--warning);">帖子</span>
+          <strong style="margin-left:6px;">${escapeHtml(t.title)}</strong>
+          <p class="muted" style="margin-top:6px;">${escapeHtml((t.content || '').slice(0, 120))}...</p>
+          <p class="muted" style="font-size:12px; margin-top:4px;">${escapeHtml(t.author_name || '')} · ${formatDateTime(t.created_at)}</p>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="button" style="font-size:12px;padding:4px 10px;" data-forum-action="approve-topic" data-forum-id="${t.id}">通过</button>
+            <button class="ghost-button" style="font-size:12px;color:var(--danger);" data-forum-action="reject-topic" data-forum-id="${t.id}">拒绝</button>
+          </div>
+        </div>`;
+    });
+    replies.forEach((r) => {
+      html += `
+        <div class="paper-card" style="padding: 12px;">
+          <span class="badge" style="background:#6366f1;color:white;">回复</span>
+          <p class="muted" style="margin-top:6px;">${escapeHtml((r.content || '').slice(0, 120))}...</p>
+          <p class="muted" style="font-size:12px; margin-top:4px;">${escapeHtml(r.author_name || '')} · ${formatDateTime(r.created_at)}</p>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="button" style="font-size:12px;padding:4px 10px;" data-forum-action="approve-reply" data-forum-id="${r.id}">通过</button>
+            <button class="ghost-button" style="font-size:12px;color:var(--danger);" data-forum-action="reject-reply" data-forum-id="${r.id}">拒绝</button>
+          </div>
+        </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+    return;
+  }
 
   if (!items.length) {
     container.innerHTML = '<p class="muted">暂无数据。</p>';
@@ -762,6 +849,7 @@ function renderForum() {
           <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
             <div>
               <strong>${escapeHtml(t.title)}</strong>
+              ${t.moderationStatus && t.moderationStatus !== 'approved' ? `<span class="badge" style="background:var(--warning);margin-left:6px;">${t.moderationStatus}</span>` : ''}
               <p class="muted" style="margin-top: 6px;">${escapeHtml((t.content || '').slice(0, 80))}...</p>
               <p class="muted" style="font-size: 12px; margin-top: 4px;">${escapeHtml(t.authorName || '')} · ${formatDateTime(t.createdAt)} · 👍 ${t.likeCount || 0} · 💬 ${t.replies ? t.replies.length : 0}</p>
             </div>
@@ -778,7 +866,7 @@ function renderForum() {
       html += `
         <div class="paper-card" style="padding: 12px;">
           <p class="muted">${escapeHtml((r.content || '').slice(0, 100))}...</p>
-          <p class="muted" style="font-size: 12px; margin-top: 4px;">${escapeHtml(r.authorName || '')} · ${formatDateTime(r.createdAt)}</p>
+          <p class="muted" style="font-size: 12px; margin-top: 4px;">${escapeHtml(r.authorName || r.author_name || '')} · ${formatDateTime(r.createdAt || r.created_at)}</p>
           <button class="ghost-button" style="font-size: 12px; color: var(--danger); margin-top: 8px;" data-forum-action="delete" data-forum-type="replies" data-forum-id="${r.id}">删除</button>
         </div>`;
     });
@@ -797,6 +885,35 @@ function renderForum() {
   }
   html += '</div>';
   container.innerHTML = html;
+}
+
+function renderWordsForm() {
+  const container = document.getElementById('forum-words-form');
+  container.innerHTML = `
+    <div class="paper-card" style="padding: 16px;">
+      <h4 style="margin:0 0 12px;">添加敏感词</h4>
+      <div style="display:flex;gap:12px;align-items:flex-end;">
+        <label style="flex:1;">敏感词<input id="new-word-text" class="input" type="text" placeholder="输入关键词" /></label>
+        <label>级别
+          <select id="new-word-level" class="input">
+            <option value="review">人工复核</option>
+            <option value="block">直接拦截</option>
+          </select>
+        </label>
+        <button class="button" id="add-word-button" type="button">添加</button>
+      </div>
+    </div>
+  `;
+  container.querySelector('#add-word-button').addEventListener('click', async () => {
+    const word = document.getElementById('new-word-text').value.trim();
+    const level = document.getElementById('new-word-level').value;
+    if (!word) return createToast('请输入敏感词。', 'error');
+    try {
+      await fetchJSON('/api/admin/moderation/words', { method: 'POST', body: JSON.stringify({ word, level }) });
+      createToast('已添加。', 'success');
+      loadForum();
+    } catch (error) { createToast(error.message, 'error'); }
+  });
 }
 
 // 在切换菜单时按需加载运营数据

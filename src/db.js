@@ -261,6 +261,7 @@ function initializeDatabase() {
       attachment_paths TEXT DEFAULT '[]',
       video_paths TEXT DEFAULT '[]',
       links TEXT DEFAULT '[]',
+      moderation_status TEXT DEFAULT 'approved' CHECK (moderation_status IN ('approved', 'pending', 'rejected')),
       created_at TEXT NOT NULL,
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
@@ -274,9 +275,19 @@ function initializeDatabase() {
       attachment_paths TEXT DEFAULT '[]',
       video_paths TEXT DEFAULT '[]',
       links TEXT DEFAULT '[]',
+      reply_to_id INTEGER DEFAULT NULL,
+      reply_to_user TEXT DEFAULT '',
+      moderation_status TEXT DEFAULT 'approved' CHECK (moderation_status IN ('approved', 'pending', 'rejected')),
       created_at TEXT NOT NULL,
       FOREIGN KEY (topic_id) REFERENCES forum_topics(id),
       FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sensitive_words (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      word TEXT NOT NULL UNIQUE,
+      level TEXT NOT NULL DEFAULT 'block' CHECK (level IN ('block', 'review')),
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS forum_likes (
@@ -304,6 +315,12 @@ function initializeDatabase() {
       analysis_video_url TEXT DEFAULT '',
       is_paid_only INTEGER DEFAULT 0,
       subject_scope TEXT DEFAULT '',
+      display_mode TEXT DEFAULT 'radio',
+      formula_image_path TEXT DEFAULT '',
+      source_year INTEGER DEFAULT NULL,
+      source_paper TEXT DEFAULT '',
+      difficulty INTEGER DEFAULT NULL,
+      is_real_exam INTEGER DEFAULT 0,
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
@@ -1496,6 +1513,7 @@ function migrate() {
       review_date TEXT NOT NULL,
       review_round INTEGER NOT NULL DEFAULT 1,
       is_done INTEGER DEFAULT 0,
+      is_mastered INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (question_id) REFERENCES questions(id) ON DELETE CASCADE,
       FOREIGN KEY (student_id) REFERENCES users(id)
@@ -1693,7 +1711,74 @@ function migrate() {
   db.exec('CREATE INDEX IF NOT EXISTS idx_handoff_status_user ON handoff_status(user_id, status)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_handoff_status_active ON handoff_status(status, started_at)');
 
-  // ===== Phase 3 迁移：兼容旧版 study_reports 表结构 =====
+  // ===== Phase 3 迁移：为错题本新增 is_mastered 字段 =====
+  try {
+    const wColumns = db.prepare('PRAGMA table_info(wrong_review_schedule)').all();
+    if (wColumns.length > 0 && !wColumns.some(c => c.name === 'is_mastered')) {
+      db.exec('ALTER TABLE wrong_review_schedule ADD COLUMN is_mastered INTEGER DEFAULT 0');
+      console.log('[db] 已迁移 wrong_review_schedule.is_mastered 字段');
+    }
+  } catch (err) {
+    console.error('[db] wrong_review_schedule 字段迁移失败:', err.message);
+  }
+  // ===== Phase 3 迁移：为题库新增 display_mode / formula_image_path / 真题元数据字段 =====
+  try {
+    const qColumns = db.prepare('PRAGMA table_info(questions)').all();
+    const addIfMissing = (col, def) => {
+      if (!qColumns.some((c) => c.name === col)) {
+        try { db.exec(`ALTER TABLE questions ADD COLUMN ${col} ${def}`); } catch (_) {}
+      }
+    };
+    addIfMissing('display_mode', "TEXT DEFAULT 'radio'");
+    addIfMissing('formula_image_path', "TEXT DEFAULT ''");
+    addIfMissing('source_year', 'INTEGER DEFAULT NULL');
+    addIfMissing('source_paper', "TEXT DEFAULT ''");
+    addIfMissing('difficulty', 'INTEGER DEFAULT NULL');
+    addIfMissing('is_real_exam', 'INTEGER DEFAULT 0');
+    console.log('[db] 已迁移 questions 题库扩展字段');
+  } catch (err) {
+    console.error('[db] questions 字段迁移失败:', err.message);
+  }
+
+  // ===== Phase 3 迁移：论坛审核字段与敏感词库 =====
+  try {
+    const forumTables = [
+      { table: 'forum_topics', status: 'approved' },
+      { table: 'forum_replies', status: 'approved' }
+    ];
+    for (const { table } of forumTables) {
+      const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+      if (cols.length > 0 && !cols.some((c) => c.name === 'moderation_status')) {
+        try {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN moderation_status TEXT DEFAULT 'approved' CHECK (moderation_status IN ('approved', 'pending', 'rejected'))`);
+        } catch (_) {}
+      }
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sensitive_words (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        word TEXT NOT NULL UNIQUE,
+        level TEXT NOT NULL DEFAULT 'block' CHECK (level IN ('block', 'review')),
+        created_at TEXT NOT NULL
+      )
+    `);
+
+    // 插入默认敏感词库（若为空），实际生产环境应通过后台管理维护
+    const count = db.prepare('SELECT COUNT(*) AS c FROM sensitive_words').get().c;
+    if (count === 0) {
+      const now = dayjs().toISOString();
+      const insert = db.prepare('INSERT OR IGNORE INTO sensitive_words (word, level, created_at) VALUES (?, ?, ?)');
+      const blockWords = ['枪支', '弹药', '毒品', '赌博', '色情', '淫秽', '嫖娼', '法轮功', '反动', '暴乱', '恐怖袭击', '自杀', '自残', '洗钱', '诈骗', '传销', '翻墙', 'VPN'];
+      const reviewWords = ['政治', '领导人', '政府', '党', '革命', '维权', '上访', '抗议'];
+      for (const w of blockWords) insert.run(w, 'block', now);
+      for (const w of reviewWords) insert.run(w, 'review', now);
+      console.log('[db] 已初始化默认敏感词库');
+    }
+  } catch (err) {
+    console.error('[db] 论坛审核迁移失败:', err.message);
+  }
+
   const srColumns = db.prepare('PRAGMA table_info(study_reports)').all();
   if (srColumns.length > 0) {
     if (!srColumns.some((c) => c.name === 'week_start')) {

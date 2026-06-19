@@ -23,7 +23,8 @@ const DEFAULT_BOTS = [
       description: '监督学习进度，提醒打卡和任务完成',
       welcomeMessage: '我是你的督学助手，会帮你监督学习进度，记得每天打卡哦！',
       checkInTime: '20:00',
-      reminderInterval: 24
+      reminderInterval: 24,
+      wecomUserId: 'bot_supervisor'
     },
     isActive: 1
   },
@@ -35,7 +36,8 @@ const DEFAULT_BOTS = [
       description: '针对具体题目提供详细解答和思路分析',
       welcomeMessage: '我是解答专家，把不会的题目发给我，我会给你详细的解题思路。',
       subjects: ['数学', '英语', '政治'],
-      detailLevel: 'detailed'
+      detailLevel: 'detailed',
+      wecomUserId: 'bot_answer'
     },
     isActive: 1
   },
@@ -46,7 +48,8 @@ const DEFAULT_BOTS = [
     config: {
       description: '根据学生情况推荐合适的院校和专业',
       welcomeMessage: '我是择校顾问，告诉我你的目标、成绩和偏好，我帮你推荐合适的院校。',
-      factors: ['成绩水平', '地域偏好', '专业方向', '院校层次']
+      factors: ['成绩水平', '地域偏好', '专业方向', '院校层次'],
+      wecomUserId: 'bot_school_selector'
     },
     isActive: 1
   },
@@ -58,7 +61,8 @@ const DEFAULT_BOTS = [
       description: '根据知识点生成自测题目',
       welcomeMessage: '我是自测生成器，告诉我你想练习的知识点，我为你生成题目。',
       questionCount: 10,
-      difficulty: 'adaptive'
+      difficulty: 'adaptive',
+      wecomUserId: 'bot_exam_generator'
     },
     isActive: 1
   },
@@ -69,7 +73,8 @@ const DEFAULT_BOTS = [
     config: {
       description: '制定个性化考研复习计划',
       welcomeMessage: '我是你的考研规划师，告诉我你的备考时间和目标，我帮你制定复习计划。',
-      planTypes: ['全程规划', '月度规划', '周规划', '日规划']
+      planTypes: ['全程规划', '月度规划', '周规划', '日规划'],
+      wecomUserId: 'bot_planner'
     },
     isActive: 1
   }

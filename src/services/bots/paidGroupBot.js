@@ -1,5 +1,5 @@
 const dayjs = require('dayjs');
-const { createAppChat, inviteChatMembers, sendAppMessage } = require('../wecom');
+const { createAppChat, inviteChatMembers, sendAppChatMessage } = require('../wecom');
 const { getBotByCode, assignBotToGroup } = require('../botManager');
 const { renderTemplate } = require('../messageTemplate');
 
@@ -104,13 +104,13 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
 
     const chatId = createResult.chatid;
 
-    // 7. 将群信息存入 wecom_groups 表
+    // 7. 将群信息存入 wecom_groups 表（携带 student_id / order_id 便于后续关联）
     const now = dayjs().toISOString();
     const groupInsert = db.prepare(`
-      INSERT INTO wecom_groups (chat_id, name, owner, created_at)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO wecom_groups (chat_id, name, owner, student_id, order_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
     `);
-    const groupResult = groupInsert.run(chatId, groupName, ownerUserId, now);
+    const groupResult = groupInsert.run(chatId, groupName, ownerUserId, studentId, orderId, now);
     const groupDbId = groupResult.lastInsertRowid;
 
     // 8. 将成员关系存入 wecom_group_members 表
@@ -122,24 +122,40 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
       memberInsert.run(groupDbId, userId, now);
     }
 
-    // 9. 邀请5大机器人入群（通过 botManager 获取机器人信息并建立关联）
-    const botIds = [];
+    // 9. 邀请5大机器人入群：从 bot 配置读取企微 userId，调用 appchat/update 真正邀请入群
+    const botWecomUserIds = [];
     for (const botCode of REQUIRED_BOT_CODES) {
       const bot = getBotByCode(botCode);
       if (bot && bot.is_active) {
-        botIds.push(bot.id);
         // 建立机器人与群组的分配关系
         try {
           assignBotToGroup(bot.id, groupDbId);
         } catch (assignErr) {
           console.warn(`[paidGroupBot] 分配机器人 ${botCode} 到群组失败:`, assignErr.message);
         }
+        const botWecomId = bot.config && bot.config.wecomUserId;
+        if (botWecomId) {
+          botWecomUserIds.push(botWecomId);
+        } else {
+          console.warn(`[paidGroupBot] 机器人 ${botCode} 未配置企微 userId，无法邀请入群`);
+        }
       } else {
         console.warn(`[paidGroupBot] 机器人 ${botCode} 不存在或未激活`);
       }
     }
 
-    // 10. 发送欢迎消息（使用模板或默认文案）
+    if (botWecomUserIds.length > 0) {
+      try {
+        const inviteResult = await inviteChatMembers({ chatid: chatId, userlist: botWecomUserIds });
+        if (!inviteResult || inviteResult.errcode !== 0) {
+          console.warn(`[paidGroupBot] 邀请机器人入群部分失败:`, inviteResult?.errmsg);
+        }
+      } catch (inviteErr) {
+        console.error(`[paidGroupBot] 邀请机器人入群失败:`, inviteErr.message);
+      }
+    }
+
+    // 10. 发送欢迎消息（使用模板或默认文案），通过 appchat/send 发送到群聊
     let welcomeMessage = renderTemplate(db, 'paid_group_welcome', {
       studentName: student.display_name,
       productName: product ? product.title : '考研专属服务',
@@ -150,12 +166,15 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
       welcomeMessage = DEFAULT_WELCOME_MESSAGE;
     }
 
-    // 通过企业微信应用消息发送到群聊
-    await sendAppMessage({
-      chatid: chatId,
-      msgtype: 'text',
-      text: { content: welcomeMessage }
-    });
+    try {
+      await sendAppChatMessage({
+        chatid: chatId,
+        msgtype: 'text',
+        text: { content: welcomeMessage }
+      });
+    } catch (welcomeErr) {
+      console.error('[paidGroupBot] 发送群欢迎消息失败:', welcomeErr.message);
+    }
 
     // 11. 记录订单与群的关联（可选：扩展 orders 表或新建关联表）
     // 当前通过日志记录，后续可扩展为 order_group_relations 表

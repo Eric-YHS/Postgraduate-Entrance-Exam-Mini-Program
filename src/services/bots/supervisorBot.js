@@ -3,6 +3,7 @@ const { getTasksForStudentOnDate } = require('../taskService');
 const { renderTemplate } = require('../messageTemplate');
 const { getBotByCode, logConversation } = require('../botManager');
 const { sendAppMessage } = require('../wecom');
+const { getUserEntitlement, computeEffectiveTier } = require('../entitlements');
 
 const BOT_CODE = 'supervisor';
 const BOT_TYPE = 'supervisor';
@@ -11,19 +12,19 @@ const BOT_TYPE = 'supervisor';
 
 /**
  * 判断学生是否为付费学员
- * 当前 users 表无 tier 字段，暂以 role='student' 兜底；
- * 后续接入权益体系时，只需修改此函数即可。
+ * 接入权益体系：查询 user_entitlements，effectiveTier === 'paid' 视为付费学员。
  * @param {Database} db
  * @param {number} studentId
  * @returns {boolean}
  */
 function isPaidStudent(db, studentId) {
-  const user = db.prepare("SELECT role FROM users WHERE id = ?").get(studentId);
-  return user && user.role === 'student';
+  const entitlement = getUserEntitlement(studentId);
+  return computeEffectiveTier(entitlement) === 'paid';
 }
 
 /**
  * 获取所有应接收督学消息的付费学员
+ * 仅返回 tier='paid' 且未过期的学员。
  * @param {Database} db
  * @returns {Array<{id: number, display_name: string, wecom_userid: string|null}>}
  */
@@ -34,18 +35,24 @@ function getPaidStudents(db) {
 
   if (hasWecomUserid) {
     return db.prepare(`
-      SELECT id, display_name, wecom_userid
-      FROM users
-      WHERE role = 'student'
-      ORDER BY id ASC
+      SELECT u.id, u.display_name, u.wecom_userid
+      FROM users u
+      JOIN user_entitlements e ON u.id = e.student_id
+      WHERE u.role = 'student'
+        AND e.tier = 'paid'
+        AND (e.paid_until IS NULL OR e.paid_until >= datetime('now'))
+      ORDER BY u.id ASC
     `).all();
   }
 
   return db.prepare(`
-    SELECT id, display_name, NULL as wecom_userid
-    FROM users
-    WHERE role = 'student'
-    ORDER BY id ASC
+    SELECT u.id, u.display_name, NULL as wecom_userid
+    FROM users u
+    JOIN user_entitlements e ON u.id = e.student_id
+    WHERE u.role = 'student'
+      AND e.tier = 'paid'
+      AND (e.paid_until IS NULL OR e.paid_until >= datetime('now'))
+    ORDER BY u.id ASC
   `).all();
 }
 

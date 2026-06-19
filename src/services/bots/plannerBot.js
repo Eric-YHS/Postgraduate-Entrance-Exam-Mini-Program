@@ -2,6 +2,7 @@ const dayjs = require('dayjs');
 const { quickAsk } = require('../ai');
 const { getBotByCode, logConversation } = require('../botManager');
 const { sendAppMessage } = require('../wecom');
+const { getUserEntitlement, computeEffectiveTier } = require('../entitlements');
 
 const BOT_CODE = 'planner';
 
@@ -344,8 +345,15 @@ function saveReport(db, studentId, weekStart, report) {
 async function generateReportsForAllPaidStudents(db) {
   const lastMonday = dayjs().startOf('week').add(1, 'day').subtract(7, 'day').format('YYYY-MM-DD');
 
+  // 仅对付费且未过期学员生成周报
   const students = db.prepare(`
-    SELECT id FROM users WHERE role = 'student' ORDER BY id ASC
+    SELECT u.id
+    FROM users u
+    JOIN user_entitlements e ON u.id = e.student_id
+    WHERE u.role = 'student'
+      AND e.tier = 'paid'
+      AND (e.paid_until IS NULL OR e.paid_until >= datetime('now'))
+    ORDER BY u.id ASC
   `).all();
 
   const results = [];

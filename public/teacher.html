@@ -365,6 +365,37 @@
                     <textarea class="textarea" name="analysisText"></textarea>
                   </div>
                   <div class="field">
+                    <label>展示模式</label>
+                    <select class="select" name="displayMode">
+                      <option value="radio">普通单选</option>
+                      <option value="word">英语单词</option>
+                      <option value="formula">数学公式</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>公式题干图片</label>
+                    <input class="input" type="file" name="formulaImage" accept="image/*" />
+                  </div>
+                  <div class="field">
+                    <label>是否真题</label>
+                    <select class="select" name="isRealExam">
+                      <option value="0">否</option>
+                      <option value="1">是</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>年份</label>
+                    <input class="input" type="number" name="sourceYear" placeholder="如 2024" />
+                  </div>
+                  <div class="field">
+                    <label>试卷编号/名称</label>
+                    <input class="input" name="sourcePaper" placeholder="如 英语一" />
+                  </div>
+                  <div class="field">
+                    <label>难度 (1-10)</label>
+                    <input class="input" type="number" min="1" max="10" name="difficulty" placeholder="1-10" />
+                  </div>
+                  <div class="field">
                     <label>解析视频文件</label>
                     <input class="input" type="file" name="analysisVideo" accept="video/*" />
                   </div>

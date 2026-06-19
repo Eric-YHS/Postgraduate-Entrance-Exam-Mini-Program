@@ -620,8 +620,14 @@ function renderQuestions() {
           <div class="card-head">
             <div>
               <div class="badge badge-brand">${escapeHtml(question.subject)}</div>
+              ${question.displayMode && question.displayMode !== 'radio' ? `<div class="badge">${escapeHtml(question.displayMode === 'word' ? '英语单词' : '数学公式')}</div>` : ''}
+              ${question.isRealExam ? '<div class="badge badge-danger">真题</div>' : ''}
+              ${question.sourceYear ? `<div class="badge">${escapeHtml(question.sourceYear)}年</div>` : ''}
+              ${question.sourcePaper ? `<div class="badge">${escapeHtml(question.sourcePaper)}</div>` : ''}
+              ${question.difficulty ? `<div class="badge">难度 ${escapeHtml(question.difficulty)}</div>` : ''}
               <h3>${escapeHtml(question.title)}</h3>
               <p>${escapeHtml(question.stem)}</p>
+              ${question.formulaImagePath ? `<img src="${escapeHtml(question.formulaImagePath)}" style="max-width:100%;margin-top:8px;" />` : ''}
             </div>
             <div class="badge">答案 ${escapeHtml(question.correctAnswer)}</div>
           </div>

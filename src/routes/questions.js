@@ -42,8 +42,13 @@ module.exports = function registerQuestionRoutes(app, shared) {
         const optionB = sanitizeText(getFieldValue(row, ['选项B', 'optionB', 'OptionB']));
         const optionC = sanitizeText(getFieldValue(row, ['选项C', 'optionC', 'OptionC']));
         const optionD = sanitizeText(getFieldValue(row, ['选项D', 'optionD', 'OptionD']));
-        const correctAnswer = getFieldValue(row, ['正确答案', 'correctAnswer', 'CorrectAnswer']).toUpperCase();
+        const correctAnswer = String(getFieldValue(row, ['正确答案', 'correctAnswer', 'CorrectAnswer']) || '').trim().toUpperCase();
         const analysisText = sanitizeText(getFieldValue(row, ['文字解析', 'analysisText', 'AnalysisText']));
+        const displayMode = sanitizeText(getFieldValue(row, ['展示模式', 'displayMode', 'DisplayMode']) || 'radio');
+        const sourceYear = Number(getFieldValue(row, ['年份', 'sourceYear', 'SourceYear', 'Year']) || 0) || null;
+        const sourcePaper = sanitizeText(getFieldValue(row, ['试卷', 'sourcePaper', 'SourcePaper', 'Paper']) || '');
+        const difficulty = Number(getFieldValue(row, ['难度', 'difficulty', 'Difficulty']) || 0) || null;
+        const isRealExam = ['1', '是', 'true', 'TRUE', 'True'].includes(String(getFieldValue(row, ['是否真题', 'isRealExam', 'IsRealExam', '真题']) || '').trim()) ? 1 : 0;
 
         if (!title || !stem || !correctAnswer) {
           skipped += 1;
@@ -63,9 +68,15 @@ module.exports = function registerQuestionRoutes(app, shared) {
         }
 
         db.prepare(
-          `INSERT INTO questions (title, subject, question_type, textbook, stem, options, correct_answer, analysis_text, created_by, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        ).run(title, subject, questionType, textbook, stem, JSON.stringify(options), correctAnswer, analysisText, request.currentUser.id, dayjs().toISOString());
+          `INSERT INTO questions (
+            title, subject, question_type, textbook, stem, options, correct_answer, analysis_text,
+            display_mode, source_year, source_paper, difficulty, is_real_exam, created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        ).run(
+          title, subject, questionType, textbook, stem, JSON.stringify(options), correctAnswer, analysisText,
+          displayMode || 'radio', sourceYear, sourcePaper, difficulty, isRealExam,
+          request.currentUser.id, dayjs().toISOString()
+        );
 
         imported += 1;
       });
@@ -104,11 +115,23 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
       const isPaidOnly = request.body.isPaidOnly === true || request.body.isPaidOnly === '1' || request.body.isPaidOnly === 1 ? 1 : 0;
 
+      const displayMode = sanitizeText(request.body.displayMode || 'radio');
+      const sourceYear = Number(request.body.sourceYear || 0) || null;
+      const sourcePaper = sanitizeText(request.body.sourcePaper || '');
+      const difficulty = Number(request.body.difficulty || 0) || null;
+      const isRealExam = request.body.isRealExam === true || request.body.isRealExam === '1' || request.body.isRealExam === 1 ? 1 : 0;
+      const formulaImagePath = request.files && request.files.formulaImage
+        ? toPublicPath(request.files.formulaImage[0].path)
+        : (String(request.body.formulaImagePath || '').trim());
+
       const questionResult = db.prepare(
         `
           INSERT INTO questions (
-            title, subject, question_type, textbook, stem, options, correct_answer, analysis_text, analysis_video_path, analysis_video_url, is_paid_only, subject_scope, created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            title, subject, question_type, textbook, stem, options, correct_answer, analysis_text,
+            analysis_video_path, analysis_video_url, is_paid_only, subject_scope,
+            display_mode, formula_image_path, source_year, source_paper, difficulty, is_real_exam,
+            created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         title,
@@ -123,6 +146,12 @@ module.exports = function registerQuestionRoutes(app, shared) {
         String(request.body.analysisVideoUrl || '').trim(),
         isPaidOnly,
         sanitizeText(request.body.subjectScope || ''),
+        displayMode,
+        formulaImagePath,
+        sourceYear,
+        sourcePaper,
+        difficulty,
+        isRealExam,
         request.currentUser.id,
         dayjs().toISOString()
       );
@@ -231,7 +260,10 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
   // 题库筛选（学生可用）
   app.get('/api/questions', requireAuth, (request, response) => {
-    const { subject, questionType, textbook, tagId, page, limit, mode, ids } = request.query;
+    const {
+      subject, questionType, textbook, tagId, page, limit, mode, ids,
+      displayMode, isRealExam, sourceYear, sourcePaper, difficulty, minDifficulty, maxDifficulty
+    } = request.query;
     const maxLimit = Math.min(Number(limit) || 20, 100);
     const pageNum = Number(page) || 1;
     const skip = (pageNum - 1) * maxLimit;
@@ -257,6 +289,20 @@ module.exports = function registerQuestionRoutes(app, shared) {
     if (subject) { conditions.push('questions.subject = ?'); params.push(subject); }
     if (questionType) { conditions.push('questions.question_type = ?'); params.push(questionType); }
     if (textbook) { conditions.push('questions.textbook = ?'); params.push(textbook); }
+    if (displayMode) { conditions.push('questions.display_mode = ?'); params.push(displayMode); }
+    if (isRealExam === '1' || isRealExam === 'true' || isRealExam === 1) { conditions.push('questions.is_real_exam = 1'); }
+    if (isRealExam === '0' || isRealExam === 'false' || isRealExam === 0) { conditions.push('questions.is_real_exam = 0'); }
+    if (sourceYear) { conditions.push('questions.source_year = ?'); params.push(Number(sourceYear)); }
+    if (sourcePaper) { conditions.push('questions.source_paper LIKE ?'); params.push(`%${sourcePaper}%`); }
+    const minDiff = Number(minDifficulty) || 0;
+    const maxDiff = Number(maxDifficulty) || 0;
+    if (minDiff > 0 && maxDiff >= minDiff) {
+      conditions.push('questions.difficulty BETWEEN ? AND ?');
+      params.push(minDiff, maxDiff);
+    } else if (difficulty) {
+      conditions.push('questions.difficulty = ?');
+      params.push(Number(difficulty));
+    }
     if (tagId) {
       query += ' JOIN question_tag_relations ON question_tag_relations.question_id = questions.id ';
       conditions.push('question_tag_relations.tag_id = ?');
@@ -356,16 +402,20 @@ module.exports = function registerQuestionRoutes(app, shared) {
   });
 
   // 错题列��（增加 subject 筛选）
+  // 错题列表（增加 subject 筛选，过滤已掌握）
   app.get('/api/practice/wrong', requireStudent, (request, response) => {
     const { subject, page, limit } = request.query;
     const maxLimit = Math.min(Number(limit) || 20, 100);
     const pageNum = Number(page) || 1;
     const skip = (pageNum - 1) * maxLimit;
     let query = `
-      SELECT questions.*, MAX(practice_records.selected_answer) AS selected_answer, MAX(practice_records.created_at) AS answered_at
+      SELECT questions.*, MAX(practice_records.selected_answer) AS selected_answer, MAX(practice_records.created_at) AS answered_at,
+        COALESCE(wrs.is_mastered, 0) AS is_mastered
       FROM practice_records
       JOIN questions ON questions.id = practice_records.question_id
+      LEFT JOIN wrong_review_schedule wrs ON wrs.question_id = practice_records.question_id AND wrs.student_id = practice_records.student_id
       WHERE practice_records.student_id = ? AND practice_records.is_correct = 0
+        AND COALESCE(wrs.is_mastered, 0) = 0
     `;
     const params = [request.currentUser.id];
     if (subject) { query += ' AND questions.subject = ?'; params.push(subject); }
@@ -377,9 +427,44 @@ module.exports = function registerQuestionRoutes(app, shared) {
       questions: rows.map((row) => ({
         ...serializeQuestionForStudent(row, null),
         selectedAnswer: row.selected_answer,
-        answeredAt: row.answered_at
+        answeredAt: row.answered_at,
+        isMastered: Boolean(row.is_mastered)
       })).filter((q) => questionIsAccessible(request.currentUser.id, q))
     });
+  });
+
+  // 错题标记为已掌握（从错题本移除）
+  app.post('/api/practice/wrong/:questionId/master', requireStudent, (request, response) => {
+    const questionId = Number(request.params.questionId);
+    const studentId = request.currentUser.id;
+    if (!Number.isInteger(questionId) || questionId <= 0) {
+      return response.status(400).json({ error: '无效的题目ID' });
+    }
+
+    // 校验该学生确实做错过这道题
+    const wrongRecord = db.prepare(
+      'SELECT 1 FROM practice_records WHERE student_id = ? AND question_id = ? AND is_correct = 0 LIMIT 1'
+    ).get(studentId, questionId);
+    if (!wrongRecord) {
+      return response.status(404).json({ error: '未找到该学生的错题记录' });
+    }
+
+    const now = dayjs().toISOString();
+    // 插入或更新复习计划为已掌握
+    const existing = db.prepare(
+      'SELECT id FROM wrong_review_schedule WHERE student_id = ? AND question_id = ?'
+    ).get(studentId, questionId);
+    if (existing) {
+      db.prepare(
+        'UPDATE wrong_review_schedule SET is_mastered = 1, is_done = 1, review_date = ? WHERE id = ?'
+      ).run(now, existing.id);
+    } else {
+      db.prepare(
+        'INSERT INTO wrong_review_schedule (question_id, student_id, review_date, review_round, is_done, is_mastered, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      ).run(questionId, studentId, now, 1, 1, 1, now);
+    }
+
+    response.json({ ok: true, questionId, isMastered: true });
   });
 
   // 题库筛选元数据
@@ -387,8 +472,10 @@ module.exports = function registerQuestionRoutes(app, shared) {
     const subjects = db.prepare("SELECT DISTINCT subject FROM questions WHERE subject != '' ORDER BY subject").all().map((r) => r.subject);
     const types = db.prepare("SELECT DISTINCT question_type FROM questions WHERE question_type != '' ORDER BY question_type").all().map((r) => r.question_type);
     const textbooks = db.prepare("SELECT DISTINCT textbook FROM questions WHERE textbook != '' ORDER BY textbook").all().map((r) => r.textbook);
+    const sourceYears = db.prepare("SELECT DISTINCT source_year FROM questions WHERE source_year IS NOT NULL ORDER BY source_year DESC").all().map((r) => r.source_year);
+    const sourcePapers = db.prepare("SELECT DISTINCT source_paper FROM questions WHERE source_paper != '' ORDER BY source_paper").all().map((r) => r.source_paper);
     const tags = db.prepare('SELECT id, name, category FROM question_tags ORDER BY name').all();
-    response.json({ subjects, types, textbooks, tags });
+    response.json({ subjects, types, textbooks, sourceYears, sourcePapers, tags });
   });
 
   // 练习会话 API

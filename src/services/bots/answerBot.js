@@ -16,6 +16,7 @@ const { searchByVector } = require('../knowledgeBase');
 const { chat, quickAsk } = require('../ai');
 const { logConversation, getBotByCode } = require('../botManager');
 const { sendAppMessage, sendWebhookMessage } = require('../wecom');
+const { isInHandoff } = require('./humanHandoff');
 const config = require('../../config');
 
 // ── 常量 ──
@@ -428,6 +429,17 @@ async function handleQuestion({
   }
 
   console.log(`[answerBot] 收到问题 | 用户: ${userId} | 来源: ${source} | 问题: ${question?.slice(0, 50)}...`);
+
+  // 若处于人工接管状态，不自动回复，提示已转人工
+  if (isInHandoff(null, userId)) {
+    return {
+      success: true,
+      answer: '当前会话已由人工客服接管，机器人暂不自动回复，请等待老师回复。',
+      layer: 'handoff',
+      sources: [],
+      disclaimer: ''
+    };
+  }
 
   // 1. 处理附件
   const { text: attachmentText, notes: attachmentNotes } = await processAttachments(attachments);

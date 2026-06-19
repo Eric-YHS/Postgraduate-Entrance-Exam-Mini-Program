@@ -1,12 +1,18 @@
 const dayjs = require('dayjs');
 const { sanitizeText, stripHtml } = require('../utils/sanitize');
+const { detectSensitiveWords } = require('../services/moderation');
 
 module.exports = function registerForumRoutes(app, shared) {
   const { db, requireAuth, safeJsonParse, toPublicPath, forumUpload, serializeForumTopic, batchLoadForumReplies, batchLoadForumLikes, checkAndUnlockAchievements, sendMentionNotifications } = shared;
 
+  function isModerator(user) {
+    return user && ['admin', 'teacher', 'customer_service'].includes(user.role);
+  }
+
   // 论坛主题列表（独立页面用）
   app.get('/api/forum/topics', requireAuth, (request, response) => {
     const { category, limit, offset, search, sort, hashtag } = request.query;
+    const includePending = isModerator(request.currentUser);
     const maxLimit = Math.min(Number(limit) || 50, 200);
     const skip = Number(offset) || 0;
     let query = `
@@ -16,6 +22,11 @@ module.exports = function registerForumRoutes(app, shared) {
     `;
     const params = [];
     const conditions = [];
+    if (sort === 'hot') {
+      query += ' LEFT JOIN (SELECT topic_id, COUNT(*) AS like_cnt FROM forum_likes GROUP BY topic_id) lk ON lk.topic_id = forum_topics.id';
+      query += ' LEFT JOIN (SELECT topic_id, COUNT(*) AS reply_cnt FROM forum_replies GROUP BY topic_id) rp ON rp.topic_id = forum_topics.id';
+    }
+    if (!includePending) { conditions.push("forum_topics.moderation_status = 'approved'"); }
     if (category) { conditions.push('forum_topics.category = ?'); params.push(category); }
     if (search) { const esc = String(search).replace(/[%_]/g, '\\$&'); conditions.push("(forum_topics.title LIKE ? ESCAPE '\\' OR forum_topics.content LIKE ? ESCAPE '\\')"); params.push('%' + esc + '%', '%' + esc + '%'); }
     if (hashtag) {
@@ -26,8 +37,6 @@ module.exports = function registerForumRoutes(app, shared) {
     if (conditions.length) { query += ' WHERE ' + conditions.join(' AND '); }
 
     if (sort === 'hot') {
-      query += ' LEFT JOIN (SELECT topic_id, COUNT(*) AS like_cnt FROM forum_likes GROUP BY topic_id) lk ON lk.topic_id = forum_topics.id';
-      query += ' LEFT JOIN (SELECT topic_id, COUNT(*) AS reply_cnt FROM forum_replies GROUP BY topic_id) rp ON rp.topic_id = forum_topics.id';
       query += ' ORDER BY forum_topics.is_pinned DESC, (COALESCE(lk.like_cnt, 0) * 2 + COALESCE(rp.reply_cnt, 0) * 3) / MAX(julianday("now") - julianday(forum_topics.created_at), 0.5) DESC';
     } else {
       query += ' ORDER BY forum_topics.is_pinned DESC, forum_topics.created_at DESC';
@@ -36,7 +45,7 @@ module.exports = function registerForumRoutes(app, shared) {
     params.push(maxLimit, skip);
     const topics = db.prepare(query).all(...params);
     const topicIds = topics.map((t) => t.id);
-    const repliesMap = batchLoadForumReplies(topicIds);
+    const repliesMap = batchLoadForumReplies(topicIds, { includePending });
     const likesMap = batchLoadForumLikes(topicIds, request.currentUser.id);
     const favRows = db.prepare(`SELECT topic_id FROM forum_favorites WHERE topic_id IN (${topicIds.length ? topicIds.map(() => '?').join(',') : '0'}) AND user_id = ?`).all(...(topicIds.length ? topicIds : []), request.currentUser.id);
     const favSet = new Set(favRows.map((r) => r.topic_id));
@@ -68,6 +77,13 @@ module.exports = function registerForumRoutes(app, shared) {
       if (title.length > 200) { response.status(400).json({ error: '标题不能超过200字。' }); return; }
       if (content.length > 10000) { response.status(400).json({ error: '内容不能超过10000字。' }); return; }
 
+      const moderation = detectSensitiveWords(db, title + ' ' + content);
+      if (moderation.blocked) {
+        response.status(400).json({ error: '内容包含敏感词：' + moderation.matched.join(', ') });
+        return;
+      }
+      const moderationStatus = moderation.review ? 'pending' : 'approved';
+
       const imagePaths = (request.files?.images || []).map((f) => toPublicPath(f.path));
       const videoPaths = (request.files?.videos || []).map((f) => toPublicPath(f.path));
       const attachmentPaths = (request.files?.attachments || []).map((f) => toPublicPath(f.path));
@@ -83,8 +99,8 @@ module.exports = function registerForumRoutes(app, shared) {
 
       const topicResult = db.prepare(
         `
-          INSERT INTO forum_topics (user_id, title, content, category, hashtags, image_paths, attachment_paths, video_paths, links, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO forum_topics (user_id, title, content, category, hashtags, image_paths, attachment_paths, video_paths, links, moderation_status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         request.currentUser.id, title, content,
@@ -92,6 +108,7 @@ module.exports = function registerForumRoutes(app, shared) {
         JSON.stringify(extractedTags),
         JSON.stringify(imagePaths), JSON.stringify(attachmentPaths),
         JSON.stringify(videoPaths), JSON.stringify(links),
+        moderationStatus,
         dayjs().toISOString()
       );
 
@@ -101,7 +118,7 @@ module.exports = function registerForumRoutes(app, shared) {
       // @提及通知
       sendMentionNotifications(content, request.currentUser.id, title);
 
-      response.json({ ok: true, id: topicResult.lastInsertRowid });
+      response.json({ ok: true, id: topicResult.lastInsertRowid, moderationStatus });
     });
   });
 
@@ -119,6 +136,13 @@ module.exports = function registerForumRoutes(app, shared) {
         response.status(400).json({ error: '回复内容不能为空。' });
         return;
       }
+
+      const moderation = detectSensitiveWords(db, content);
+      if (moderation.blocked) {
+        response.status(400).json({ error: '内容包含敏感词：' + moderation.matched.join(', ') });
+        return;
+      }
+      const moderationStatus = moderation.review ? 'pending' : 'approved';
 
       const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(id);
       if (!topic) {
@@ -147,14 +171,15 @@ module.exports = function registerForumRoutes(app, shared) {
 
       db.prepare(
         `
-          INSERT INTO forum_replies (topic_id, user_id, content, image_paths, attachment_paths, video_paths, links, reply_to_id, reply_to_user, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO forum_replies (topic_id, user_id, content, image_paths, attachment_paths, video_paths, links, reply_to_id, reply_to_user, moderation_status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         id, request.currentUser.id, content,
         JSON.stringify(imagePaths), JSON.stringify(attachmentPaths),
         JSON.stringify(videoPaths), JSON.stringify(links),
         replyToId, replyToUser,
+        moderationStatus,
         dayjs().toISOString()
       );
 
@@ -162,13 +187,14 @@ module.exports = function registerForumRoutes(app, shared) {
       const topicTitle = db.prepare('SELECT title FROM forum_topics WHERE id = ?').get(id);
       sendMentionNotifications(content, request.currentUser.id, topicTitle ? topicTitle.title : '回复');
 
-      response.json({ ok: true });
+      response.json({ ok: true, moderationStatus });
     });
   });
 
   // 论坛收藏列表（必须在 :id 路由之前，否则被参数路由遮蔽）
   app.get('/api/forum/topics/favorites', requireAuth, (request, response) => {
     const { category } = request.query;
+    const includePending = isModerator(request.currentUser);
     let query = `
       SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role
       FROM forum_favorites
@@ -177,11 +203,12 @@ module.exports = function registerForumRoutes(app, shared) {
       WHERE forum_favorites.user_id = ?
     `;
     const params = [request.currentUser.id];
+    if (!includePending) { query += " AND forum_topics.moderation_status = 'approved'"; }
     if (category) { query += ' AND forum_topics.category = ?'; params.push(category); }
     query += ' ORDER BY forum_favorites.created_at DESC LIMIT 50';
     const topics = db.prepare(query).all(...params);
     const topicIds = topics.map((t) => t.id);
-    const repliesMap = batchLoadForumReplies(topicIds);
+    const repliesMap = batchLoadForumReplies(topicIds, { includePending });
     const likesMap = batchLoadForumLikes(topicIds, request.currentUser.id);
     response.json({ topics: topics.map((t) => serializeForumTopic(t, repliesMap, likesMap)) });
   });
@@ -190,6 +217,7 @@ module.exports = function registerForumRoutes(app, shared) {
   app.get('/api/forum/topics/:id', requireAuth, (request, response) => {
     const id = Number(request.params.id);
     if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const includePending = isModerator(request.currentUser);
     const topic = db.prepare(
       `SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role
        FROM forum_topics
@@ -201,8 +229,11 @@ module.exports = function registerForumRoutes(app, shared) {
       response.status(404).json({ error: '帖子不存在。' });
       return;
     }
+    if (!includePending && topic.moderation_status !== 'approved') {
+      return response.status(403).json({ error: '该帖子正在审核中，暂不可见。' });
+    }
 
-    const repliesMap = batchLoadForumReplies([topic.id]);
+    const repliesMap = batchLoadForumReplies([topic.id], { includePending });
     const likesMap = batchLoadForumLikes([topic.id], request.currentUser.id);
     response.json({ topic: serializeForumTopic(topic, repliesMap, likesMap) });
   });

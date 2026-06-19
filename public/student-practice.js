@@ -12,10 +12,12 @@ async function loadQuestionFilters() {
     const typeSel = document.getElementById('qf-type');
     const tagSel = document.getElementById('qf-tag');
     const textbookSel = document.getElementById('qf-textbook');
+    const yearSel = document.getElementById('qf-source-year');
     subjectSel.innerHTML = '<option value="">全部科目</option>' + meta.subjects.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     typeSel.innerHTML = '<option value="">全部题型</option>' + meta.types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
     if (textbookSel) textbookSel.innerHTML = '<option value="">全部书本</option>' + meta.textbooks.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
     tagSel.innerHTML = '<option value="">全部标签</option>' + meta.tags.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
+    if (yearSel) yearSel.innerHTML = '<option value="">全部年份</option>' + (meta.sourceYears || []).map((y) => `<option value="${y}">${y}</option>`).join('');
   } catch (_) {}
 }
 
@@ -26,6 +28,10 @@ async function loadFilteredQuestions() {
   if (f.questionType) params.set('questionType', f.questionType);
   if (f.textbook) params.set('textbook', f.textbook);
   if (f.tagId) params.set('tagId', f.tagId);
+  if (f.displayMode) params.set('displayMode', f.displayMode);
+  if (f.isRealExam) params.set('isRealExam', f.isRealExam);
+  if (f.sourceYear) params.set('sourceYear', f.sourceYear);
+  if (f.minDifficulty) { params.set('minDifficulty', f.minDifficulty); params.set('maxDifficulty', f.maxDifficulty); }
   if (f.mode && f.mode !== 'sequential') params.set('mode', f.mode);
   params.set('page', f.page);
   params.set('limit', '10');
@@ -83,13 +89,20 @@ function renderQuestionCard(question, showWrong) {
           <h3>${escapeHtml(question.title)}</h3>
           <p>${escapeHtml(question.stem)}</p>
         </div>
-        <div style="display:flex;gap:6px;">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${showWrong && question.selectedAnswer ? `<div class="badge badge-danger">你的答案 ${escapeHtml(question.selectedAnswer)}</div>` : ''}
+          ${question.displayMode === 'word' ? '<div class="badge">英语单词</div>' : ''}
+          ${question.displayMode === 'formula' ? '<div class="badge">数学公式</div>' : ''}
+          ${question.isRealExam ? '<div class="badge badge-danger">真题</div>' : ''}
+          ${question.sourceYear ? `<div class="badge">${escapeHtml(question.sourceYear)}年</div>` : ''}
+          ${question.difficulty ? `<div class="badge">难度 ${escapeHtml(question.difficulty)}</div>` : ''}
           ${question.latestRecord ? `<div class="badge">${question.latestRecord.isCorrect ? '上次答对' : '上次答错'}</div>` : ''}
           <button class="ghost-button" data-action="toggle-fav" data-id="${question.id}" type="button" style="font-size:12px;padding:4px 8px;">${question.favorited ? '&#9733;' : '&#9734;'}</button>
+          ${showWrong ? `<button class="ghost-button" data-action="mark-mastered" data-id="${question.id}" type="button" style="font-size:12px;padding:4px 8px;color:#10b981;">已掌握</button>` : ''}
         </div>
       </div>
       ${!showWrong ? `
+      ${question.formulaImagePath ? `<div class="field full-span"><img src="${escapeHtml(question.formulaImagePath)}" style="max-width:100%;border-radius:8px;" /></div>` : ''}
       <form class="form-grid answer-form" data-question-id="${question.id}">
         <div class="field full-span">
           <div class="reply-list">
@@ -300,9 +313,31 @@ function bindAutoPaper() {
   });
 }
 
-// ── 题目笔记 ──
+// ── 错题本：已掌握 ──
+function bindWrongBookActions() {
+  const root = document.getElementById('qtab-wrong');
+  if (!root) return;
+  root.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action="mark-mastered"]');
+    if (!btn) return;
+    const qId = btn.dataset.id;
+    if (!confirm('确定已将这道题掌握？掌握后该题将从错题本中移除。')) return;
+    try {
+      await fetchJSON('/api/practice/wrong/' + qId + '/master', { method: 'POST' });
+      createToast('已标记为掌握。', 'success');
+      // 移除卡片或刷新列表
+      const card = btn.closest('.question-card');
+      if (card) card.remove();
+      if (!root.querySelector('.question-card')) {
+        root.innerHTML = buildEmptyState('没有错题', '太棒了，继续保持！');
+      }
+    } catch (err) { createToast(err.message, 'error'); }
+  });
+}
 
-function bindQuestionNotes() {
+// 在页面初始化时调用一次
+bindWrongBookActions();
+
   document.getElementById('student-questions').addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action="add-note"]');
     if (btn) {
@@ -315,4 +350,4 @@ function bindQuestionNotes() {
       } catch (err) { createToast(err.message, 'error'); }
     }
   });
-}
+

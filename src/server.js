@@ -368,7 +368,7 @@ function serializeLiveSession(row) {
 }
 
 function serializeForumTopic(topic, repliesMap, likesMap) {
-  const replies = (repliesMap ? repliesMap.get(topic.id) || [] : []).map((reply) => ({
+  const flatReplies = (repliesMap ? repliesMap.get(topic.id) || [] : []).map((reply) => ({
     id: reply.id,
     topicId: reply.topic_id,
     content: reply.content,
@@ -378,10 +378,19 @@ function serializeForumTopic(topic, repliesMap, likesMap) {
     links: safeJsonParse(reply.links, []),
     authorName: reply.author_name,
     authorRole: reply.author_role,
+    author: {
+      nickname: reply.author_name || '',
+      avatarUrl: ''
+    },
     replyToId: reply.reply_to_id || null,
     replyToUser: reply.reply_to_user || '',
-    createdAt: reply.created_at
+    replyToAuthorName: reply.reply_to_user || '',
+    createdAt: reply.created_at,
+    children: []
   }));
+
+  // 将扁平回复按 replyToId 构建为树形结构（支持楼中楼嵌套）
+  const replies = buildForumReplyTree(flatReplies);
 
   const likeEntry = likesMap ? likesMap.get(topic.id) : null;
 
@@ -407,15 +416,34 @@ function serializeForumTopic(topic, repliesMap, likesMap) {
   };
 }
 
+function buildForumReplyTree(replies) {
+  const map = {};
+  const roots = [];
+  replies.forEach((r) => {
+    map[r.id] = { ...r };
+  });
+  replies.forEach((r) => {
+    if (r.replyToId && map[r.replyToId]) {
+      if (!map[r.replyToId].children) map[r.replyToId].children = [];
+      map[r.replyToId].children.push(map[r.id]);
+    } else {
+      roots.push(map[r.id]);
+    }
+  });
+  return roots;
+}
+
 // BUG-020: 批量预加载论坛回复，避免 N+1 查询
-function batchLoadForumReplies(topicIds) {
+function batchLoadForumReplies(topicIds, options = {}) {
   if (!topicIds.length) return new Map();
   const placeholders = topicIds.map(() => '?').join(',');
+  const { includePending = false } = options;
+  const moderationClause = includePending ? '' : "AND forum_replies.moderation_status = 'approved'";
   const rows = db.prepare(
     `SELECT forum_replies.*, users.display_name AS author_name, users.role AS author_role
      FROM forum_replies
      LEFT JOIN users ON users.id = forum_replies.user_id
-     WHERE forum_replies.topic_id IN (${placeholders})
+     WHERE forum_replies.topic_id IN (${placeholders}) ${moderationClause}
      ORDER BY forum_replies.created_at ASC`
   ).all(...topicIds);
   const map = new Map();
@@ -465,6 +493,12 @@ function serializeQuestionForTeacher(row) {
     analysisVideoUrl: row.analysis_video_url,
     isPaidOnly: row.is_paid_only || 0,
     subjectScope: row.subject_scope || '',
+    displayMode: row.display_mode || 'radio',
+    formulaImagePath: row.formula_image_path || '',
+    sourceYear: row.source_year || null,
+    sourcePaper: row.source_paper || '',
+    difficulty: row.difficulty || null,
+    isRealExam: row.is_real_exam || 0,
     createdAt: row.created_at
   };
 }
@@ -478,6 +512,12 @@ function serializeQuestionForStudent(row, latestRecord) {
     options: safeJsonParse(row.options, []),
     isPaidOnly: row.is_paid_only || 0,
     subjectScope: row.subject_scope || '',
+    displayMode: row.display_mode || 'radio',
+    formulaImagePath: row.formula_image_path || '',
+    sourceYear: row.source_year || null,
+    sourcePaper: row.source_paper || '',
+    difficulty: row.difficulty || null,
+    isRealExam: row.is_real_exam || 0,
     createdAt: row.created_at,
     latestRecord: latestRecord
       ? {

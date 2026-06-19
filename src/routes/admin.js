@@ -1,6 +1,7 @@
 const dayjs = require('dayjs');
 const bcrypt = require('bcryptjs');
 const { sanitizeText, stripHtml } = require('../utils/sanitize');
+const { detectSensitiveWords, invalidateCache } = require('../services/moderation');
 
 module.exports = function registerAdminRoutes(app, shared) {
   const {
@@ -776,7 +777,7 @@ module.exports = function registerAdminRoutes(app, shared) {
     if (category) { query += ' AND forum_topics.category = ?'; params.push(category); }
     query += ' ORDER BY forum_topics.is_pinned DESC, forum_topics.created_at DESC LIMIT 200';
     const topics = db.prepare(query).all(...params);
-    const replies = batchLoadForumReplies(topics.map((t) => t.id));
+    const replies = batchLoadForumReplies(topics.map((t) => t.id), { includePending: true });
     const likes = batchLoadForumLikes(topics.map((t) => t.id));
     response.json({ topics: topics.map((t) => serializeForumTopic(t, replies, likes)) });
   });
@@ -850,6 +851,96 @@ module.exports = function registerAdminRoutes(app, shared) {
     }
     db.prepare('UPDATE content_reports SET status = ? WHERE id = ?').run(status, id);
     response.json({ ok: true });
+  });
+
+  // ===== 论坛内容审核（敏感词 / 人工二审） =====
+
+  app.get('/api/admin/moderation/words', requireRole(['admin', 'teacher']), (_request, response) => {
+    const words = db.prepare('SELECT * FROM sensitive_words ORDER BY level, word ASC').all();
+    response.json({ words });
+  });
+
+  app.post('/api/admin/moderation/words', requireRole(['admin', 'teacher']), (request, response) => {
+    const { word, level = 'review' } = request.body || {};
+    const cleanWord = String(word || '').trim();
+    if (!cleanWord) return response.status(400).json({ error: '敏感词不能为空。' });
+    if (!['block', 'review'].includes(level)) return response.status(400).json({ error: '无效的级别。' });
+    try {
+      db.prepare('INSERT INTO sensitive_words (word, level, created_at) VALUES (?, ?, ?)').run(cleanWord, level, dayjs().toISOString());
+      invalidateCache();
+      response.json({ ok: true });
+    } catch (err) {
+      if (err.message && err.message.includes('UNIQUE constraint')) {
+        return response.status(400).json({ error: '该敏感词已存在。' });
+      }
+      throw err;
+    }
+  });
+
+  app.delete('/api/admin/moderation/words/:id', requireRole(['admin', 'teacher']), (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    db.prepare('DELETE FROM sensitive_words WHERE id = ?').run(id);
+    invalidateCache();
+    response.status(204).end();
+  });
+
+  app.get('/api/admin/moderation/pending', requireRole(['admin', 'teacher', 'customer_service']), (_request, response) => {
+    const topics = db.prepare(`
+      SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role
+      FROM forum_topics LEFT JOIN users ON users.id = forum_topics.user_id
+      WHERE forum_topics.moderation_status = 'pending'
+      ORDER BY forum_topics.created_at DESC LIMIT 200
+    `).all();
+    const replies = db.prepare(`
+      SELECT forum_replies.*, users.display_name AS author_name, users.role AS author_role
+      FROM forum_replies LEFT JOIN users ON users.id = forum_replies.user_id
+      WHERE forum_replies.moderation_status = 'pending'
+      ORDER BY forum_replies.created_at DESC LIMIT 200
+    `).all();
+    response.json({ topics, replies });
+  });
+
+  function updateModerationStatus(table, id, status) {
+    if (!['approved', 'rejected'].includes(status)) throw new Error('无效的审核状态。');
+    const result = db.prepare(`UPDATE ${table} SET moderation_status = ? WHERE id = ?`).run(status, id);
+    if (!result.changes) throw new Error('记录不存在。');
+  }
+
+  app.post('/api/admin/moderation/topics/:id/approve', requireRole(['admin', 'teacher', 'customer_service']), (request, response) => {
+    try {
+      updateModerationStatus('forum_topics', Number(request.params.id), 'approved');
+      response.json({ ok: true });
+    } catch (err) { response.status(400).json({ error: err.message }); }
+  });
+
+  app.post('/api/admin/moderation/topics/:id/reject', requireRole(['admin', 'teacher', 'customer_service']), (request, response) => {
+    try {
+      updateModerationStatus('forum_topics', Number(request.params.id), 'rejected');
+      response.json({ ok: true });
+    } catch (err) { response.status(400).json({ error: err.message }); }
+  });
+
+  app.post('/api/admin/moderation/replies/:id/approve', requireRole(['admin', 'teacher', 'customer_service']), (request, response) => {
+    try {
+      updateModerationStatus('forum_replies', Number(request.params.id), 'approved');
+      response.json({ ok: true });
+    } catch (err) { response.status(400).json({ error: err.message }); }
+  });
+
+  app.post('/api/admin/moderation/replies/:id/reject', requireRole(['admin', 'teacher', 'customer_service']), (request, response) => {
+    try {
+      updateModerationStatus('forum_replies', Number(request.params.id), 'rejected');
+      response.json({ ok: true });
+    } catch (err) { response.status(400).json({ error: err.message }); }
+  });
+
+  // 对已有内容做敏感词检测（便于管理后台复核）
+  app.post('/api/admin/moderation/detect', requireRole(['admin', 'teacher', 'customer_service']), (request, response) => {
+    const text = String(request.body.text || '');
+    if (!text) return response.status(400).json({ error: '缺少 text。' });
+    const result = detectSensitiveWords(db, text);
+    response.json({ result });
   });
 
   // ===== P6 数据看板 =====

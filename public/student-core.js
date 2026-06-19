@@ -10,7 +10,7 @@ const studentState = {
   token: null,
   cloudState: { currentParentId: null, path: [], folders: [], items: [] },
   flashcardState: { dueCards: [], currentIndex: 0, isFlipped: false, stats: { total: 0, again: 0, hard: 0, good: 0, easy: 0 } },
-  questionFilter: { subject: '', questionType: '', tagId: '', textbook: '', page: 1, mode: 'sequential' },
+  questionFilter: { subject: '', questionType: '', tagId: '', textbook: '', displayMode: '', isRealExam: '', sourceYear: '', difficulty: '', page: 1, mode: 'sequential' },
   questionTimers: {},
   focusTimer: { running: false, paused: false, totalSeconds: 1500, remainingSeconds: 1500, intervalId: null, taskName: '' },
   notificationFilter: 'all'
@@ -458,7 +458,7 @@ function bindStudentForms() {
   });
 
   // 题库筛选器
-  ['qf-subject', 'qf-type', 'qf-tag', 'qf-textbook'].forEach((id) => {
+  ['qf-subject', 'qf-type', 'qf-tag', 'qf-textbook', 'qf-display-mode', 'qf-real-exam', 'qf-source-year', 'qf-difficulty'].forEach((id) => {
     const el = document.getElementById(id);
     if (!el) return;
     el.addEventListener('change', () => {
@@ -466,8 +466,18 @@ function bindStudentForms() {
       studentState.questionFilter.questionType = document.getElementById('qf-type').value;
       studentState.questionFilter.tagId = document.getElementById('qf-tag').value;
       studentState.questionFilter.textbook = document.getElementById('qf-textbook')?.value || '';
+      studentState.questionFilter.displayMode = document.getElementById('qf-display-mode')?.value || '';
+      studentState.questionFilter.isRealExam = document.getElementById('qf-real-exam')?.value || '';
+      studentState.questionFilter.sourceYear = document.getElementById('qf-source-year')?.value || '';
+      const diffSel = document.getElementById('qf-difficulty');
+      if (diffSel) {
+        const diffMap = { '': '', '1': { min: 1, max: 3 }, '2': { min: 4, max: 6 }, '3': { min: 7, max: 10 } };
+        const d = diffMap[diffSel.value];
+        studentState.questionFilter.minDifficulty = d ? d.min : '';
+        studentState.questionFilter.maxDifficulty = d ? d.max : '';
+      }
       studentState.questionFilter.page = 1;
-      // W-10: 切换科��/模式时清空 answerResults，避免内存泄漏
+      // W-10: 切换科目/模式时清空 answerResults，避免内存泄漏
       studentState.answerResults = {};
       loadFilteredQuestions();
     });
