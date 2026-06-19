@@ -78,6 +78,12 @@ jobs:
         run: |
           ssh deploy-server 'bash -s' <<'REMOTESCRIPT'
           set -e
+
+          # 加载 nvm 环境（服务器使用 nvm 管理 Node）
+          export NVM_DIR="$HOME/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          command -v node && command -v npm && command -v pm2
+
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
           BACKUP_DIR=$APP_DIR/backups
           cd $APP_DIR
