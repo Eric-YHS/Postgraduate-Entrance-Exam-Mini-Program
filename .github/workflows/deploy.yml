@@ -38,6 +38,7 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
           fingerprint: SHA256:iLvZqf2B9Vxrw6vFqpVFKTTND8svG+4K/xTCIGjfEkE
+          debug: true
           script: |
             set -e
             APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
