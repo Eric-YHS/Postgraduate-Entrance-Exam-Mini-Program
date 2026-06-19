@@ -117,15 +117,11 @@ module.exports = function registerWecomRoutes(app, shared) {
         const source = 'wecom';
         let replyText = '';
 
-        // 群聊只响应 @ 机器人的消息
+        // 群聊消息：直接处理群里的文字消息（不再强制 @ 机器人）
         if (isGroupChat) {
-          const mentionMatch = message.match(/^@[^\s]+\s*(.*)$/s);
-          if (!mentionMatch) {
-            console.log('[wecom] 群聊消息未 @ 机器人，忽略');
-            return;
-          }
-          const question = mentionMatch[1].trim() || '你好';
-          console.log(`[wecom] 群聊 @ 机器人 | chatId: ${chatId} | 发送者: ${senderId} | 问题: ${question}`);
+          const question = message.trim();
+          if (!question) return;
+          console.log(`[wecom] 群聊消息 | chatId: ${chatId} | 发送者: ${senderId} | 问题: ${question}`);
 
           // 群聊统一走免费答疑机器人（避免权限判断复杂化，后续可按发送者身份区分）
           try {
