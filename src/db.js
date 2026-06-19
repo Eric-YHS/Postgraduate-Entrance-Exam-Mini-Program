@@ -1628,11 +1628,13 @@ function migrate() {
   `);
 
   // AI 功能记录表
+  // 说明：type 取值覆盖站内 AI（tutor/essay/plan/generate/summary）与企微机器人
+  //（answer 解答、supervisor 督学、advisor 择校、planner 规划、generate 自测出卷）。
   db.exec(`
     CREATE TABLE IF NOT EXISTS ai_conversations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
-      type TEXT NOT NULL DEFAULT 'tutor' CHECK (type IN ('tutor', 'essay', 'plan', 'generate', 'summary', 'advisor', 'planner')),
+      type TEXT NOT NULL DEFAULT 'tutor' CHECK (type IN ('tutor', 'essay', 'plan', 'generate', 'summary', 'advisor', 'planner', 'answer', 'supervisor', 'school_selector', 'free_tutor')),
       context TEXT DEFAULT '',
       prompt TEXT NOT NULL,
       response TEXT NOT NULL,
@@ -1641,6 +1643,38 @@ function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id, type);
   `);
+
+  // 迁移：旧版 ai_conversations 的 CHECK 约束缺少机器人 type（answer/supervisor 等），
+  // 会导致督学/答疑机器人写库抛错。检测到旧约束则重建表，保留历史数据。
+  try {
+    const aiConvDef = db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'ai_conversations'"
+    ).get();
+    if (aiConvDef && aiConvDef.sql && !/'answer'/.test(aiConvDef.sql)) {
+      db.exec(`
+        BEGIN;
+        ALTER TABLE ai_conversations RENAME TO ai_conversations_legacy;
+        CREATE TABLE ai_conversations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          type TEXT NOT NULL DEFAULT 'tutor' CHECK (type IN ('tutor', 'essay', 'plan', 'generate', 'summary', 'advisor', 'planner', 'answer', 'supervisor', 'school_selector', 'free_tutor')),
+          context TEXT DEFAULT '',
+          prompt TEXT NOT NULL,
+          response TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        INSERT INTO ai_conversations (id, user_id, type, context, prompt, response, created_at)
+          SELECT id, user_id, type, context, prompt, response, created_at FROM ai_conversations_legacy;
+        DROP TABLE ai_conversations_legacy;
+        CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id, type);
+        COMMIT;
+      `);
+      console.log('[db] 已迁移 ai_conversations.type CHECK 约束（新增机器人 type）');
+    }
+  } catch (err) {
+    console.error('[db] ai_conversations 约束迁移失败:', err.message);
+  }
 
   // ===== Phase 3 迁移：确保 handoff_status 表存在（兼容已有表） =====
   db.exec(`

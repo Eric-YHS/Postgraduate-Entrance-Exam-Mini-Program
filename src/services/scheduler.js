@@ -321,25 +321,55 @@ function startScheduler(db, notifyClient) {
     }
   });
 
-  // ===== Phase 3: 每周一 09:00 生成学情周报 =====
-  cron.schedule('0 9 * * 1', () => {
+  // ===== Phase 3(C-10): 每周日凌晨 06:30 生成学情周报并同步师生 =====
+  cron.schedule('30 6 * * 0', () => {
     try {
       if (plannerBot && typeof plannerBot.generateReportsForAllPaidStudents === 'function') {
         plannerBot.generateReportsForAllPaidStudents(db).then((results) => {
-          const successCount = results.filter((r) => r.success).length;
-          console.log(`[scheduler] 学情周报生成完成: ${successCount}/${results.length} 成功`);
-          // 可选：发送报告到学员企微
-          if (plannerBot.sendReportToUser) {
-            for (const r of results.filter((r) => r.success)) {
-              const reportRow = db.prepare('SELECT * FROM study_reports WHERE id = ?').get(r.reportId);
-              if (reportRow && reportRow.data_json) {
-                try {
-                  const reportData = JSON.parse(reportRow.data_json);
-                  plannerBot.sendReportToUser(db, r.studentId, reportData).catch((err) => {
-                    console.error(`[scheduler] 发送周报失败 studentId=${r.studentId}:`, err.message);
-                  });
-                } catch (_) {}
-              }
+          const succeeded = results.filter((r) => r.success);
+          console.log(`[scheduler] 学情周报生成完成: ${succeeded.length}/${results.length} 成功`);
+          const weekTag = dayjs().subtract(7, 'day').format('YYYY-MM-DD');
+
+          for (const r of succeeded) {
+            const reportRow = db.prepare('SELECT * FROM study_reports WHERE id = ?').get(r.reportId);
+            let reportData = null;
+            if (reportRow && reportRow.data_json) {
+              try { reportData = JSON.parse(reportRow.data_json); } catch (_) {}
+            } else if (reportRow && reportRow.content) {
+              try { reportData = JSON.parse(reportRow.content); } catch (_) {}
+            }
+
+            // 学生站内通知
+            const weakPoints = reportData && Array.isArray(reportData.weakPoints) ? reportData.weakPoints : [];
+            createNotification(db, notifyClient, {
+              studentId: r.studentId,
+              type: '学情周报',
+              title: '本周学情周报已生成',
+              body: weakPoints.length
+                ? `本周薄弱点：${weakPoints.slice(0, 3).join('、')}。点击查看完整周报与下周计划。`
+                : '本周学情周报已生成，点击查看掌握情况与下周计划。',
+              scheduleKey: `weekly_report:${r.studentId}:${weekTag}`
+            });
+
+            // 学生企微推送（已有能力，无 wecom_userid 时内部跳过）
+            if (reportData && plannerBot.sendReportToUser) {
+              plannerBot.sendReportToUser(db, r.studentId, reportData).catch((err) => {
+                console.error(`[scheduler] 发送周报失败 studentId=${r.studentId}:`, err.message);
+              });
+            }
+          }
+
+          // 同步给老师：聚合一条站内通知，提示到后台查看
+          if (succeeded.length > 0) {
+            const teachers = db.prepare(`SELECT id FROM users WHERE role IN ('teacher', 'admin')`).all();
+            for (const teacher of teachers) {
+              createNotification(db, notifyClient, {
+                studentId: teacher.id,
+                type: '学情周报',
+                title: '学员学情周报已生成',
+                body: `本周已为 ${succeeded.length} 名学员生成学情周报，请在后台「学情分析」中查看并调整计划。`,
+                scheduleKey: `weekly_report_teacher:${teacher.id}:${weekTag}`
+              });
             }
           }
         }).catch((err) => {

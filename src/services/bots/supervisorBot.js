@@ -98,14 +98,18 @@ async function sendToStudent(db, studentId, message, context = '') {
   const student = getStudent(db, studentId);
   if (!student) return { sent: false, reason: 'student_not_found' };
 
-  // 记录对话
-  logConversation({
-    userId: studentId,
-    botCode: BOT_CODE,
-    type: BOT_TYPE,
-    prompt: context || message,
-    response: message
-  });
+  // 记录对话（失败不应阻断消息发送）
+  try {
+    logConversation({
+      userId: studentId,
+      botCode: BOT_CODE,
+      type: BOT_TYPE,
+      prompt: context || message,
+      response: message
+    });
+  } catch (err) {
+    console.error(`[supervisorBot] 记录对话失败 studentId=${studentId}:`, err.message);
+  }
 
   // 若学生有企业微信 userId，则发送应用消息
   if (student.wecom_userid) {

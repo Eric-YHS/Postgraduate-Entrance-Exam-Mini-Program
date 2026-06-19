@@ -22,6 +22,13 @@ const DEFAULT_TEMPLATES = [
     content: '晚上好，{name}！\n今日学习总结：\n- 已完成：{completed}\n- 待完成：{pending}\n记得早点休息，明天继续加油！',
     channels: JSON.stringify(['wx_subscribe', 'push']),
     isActive: 1
+  },
+  {
+    code: 'paid_group_welcome',
+    name: '付费服务群欢迎语',
+    content: '欢迎 {studentName} 加入「{groupName}」！\n你已开通 {productName}，专属督学老师、答疑老师、择校顾问已就位。\n有任何学习问题随时在群里 @ 我们，祝你考研顺利上岸！',
+    channels: JSON.stringify(['wecom']),
+    isActive: 1
   }
 ];
 
