@@ -90,7 +90,21 @@ module.exports = function registerAdminRoutes(app, shared) {
       'low_stock_threshold',
       'customer_service_account',
       'wx_subscribe_template_id',
-      'payment_mode'
+      'payment_mode',
+      'wechat_appid',
+      'wechat_secret',
+      'alipay_appid',
+      'alipay_private_key',
+      'alipay_public_key',
+      'sms_access_key',
+      'sms_secret',
+      'oss_access_key',
+      'oss_secret',
+      'oss_bucket',
+      'oss_region',
+      'cdn_domain',
+      'robot_api_key',
+      'robot_api_endpoint'
     ];
     const now = dayjs().toISOString();
     const updateStmt = db.prepare('UPDATE system_settings SET value = ?, updated_at = ? WHERE key = ?');
@@ -324,14 +338,14 @@ module.exports = function registerAdminRoutes(app, shared) {
   });
 
   // 权益管理
-  app.get('/api/admin/entitlements/:userId', requireRole(['admin', 'teacher']), (request, response) => {
+  app.get('/api/admin/entitlements/:userId', requireRole(['admin', 'teacher', 'customer_service']), (request, response) => {
     const userId = Number(request.params.userId);
     if (!Number.isInteger(userId) || userId <= 0) return response.status(400).json({ error: '无效的用户 ID。' });
     const entitlement = getUserEntitlement(userId);
     response.json({ entitlement });
   });
 
-  app.post('/api/admin/entitlements/:userId', requireAdmin, (request, response) => {
+  app.post('/api/admin/entitlements/:userId', requireRole(['admin', 'customer_service']), (request, response) => {
     const userId = Number(request.params.userId);
     if (!Number.isInteger(userId) || userId <= 0) return response.status(400).json({ error: '无效的用户 ID。' });
     try {
@@ -612,7 +626,15 @@ module.exports = function registerAdminRoutes(app, shared) {
       result.liveSessions = db.prepare('SELECT live_sessions.*, users.display_name AS teacher_name FROM live_sessions LEFT JOIN users ON users.id = live_sessions.created_by ORDER BY live_sessions.created_at DESC LIMIT 200').all().map(serializeLiveSession);
     }
     if (!type || type === 'products') {
-      result.products = db.prepare('SELECT products.*, users.display_name AS teacher_name FROM products LEFT JOIN users ON users.id = products.created_by ORDER BY products.created_at DESC LIMIT 200').all().map(serializeProduct);
+      let productQuery = 'SELECT products.*, users.display_name AS teacher_name FROM products LEFT JOIN users ON users.id = products.created_by';
+      const productParams = [];
+      // B-14: 支持低库存阈值参数
+      const lowStockThreshold = Number(request.query.low_stock_threshold) || Number(getSetting('low_stock_threshold', '10'));
+      result.products = db.prepare(productQuery + ' ORDER BY products.created_at DESC LIMIT 200').all(...productParams).map((row) => {
+        const product = serializeProduct(row);
+        product.isLowStock = product.stock <= lowStockThreshold;
+        return product;
+      });
     }
     response.json(result);
   });
@@ -709,13 +731,15 @@ module.exports = function registerAdminRoutes(app, shared) {
 
   // 题库管理：列表与筛选
   app.get('/api/admin/questions', requireRole(['admin', 'teacher']), (request, response) => {
-    const { subject, questionType, textbook, isPaidOnly } = request.query;
+    const { subject, questionType, textbook, sourceYear, difficulty, isPaidOnly } = request.query;
     let query = 'SELECT questions.*, users.display_name AS teacher_name FROM questions LEFT JOIN users ON users.id = questions.created_by WHERE 1=1';
     const params = [];
 
     if (subject) { query += ' AND questions.subject = ?'; params.push(subject); }
     if (questionType) { query += ' AND questions.question_type = ?'; params.push(questionType); }
     if (textbook) { query += ' AND questions.textbook = ?'; params.push(textbook); }
+    if (sourceYear) { query += ' AND questions.source_year = ?'; params.push(sourceYear); }
+    if (difficulty) { query += ' AND questions.difficulty = ?'; params.push(difficulty); }
     if (isPaidOnly !== undefined) { query += ' AND questions.is_paid_only = ?'; params.push(Number(isPaidOnly)); }
 
     query += ' ORDER BY questions.created_at DESC LIMIT 200';
@@ -757,10 +781,13 @@ module.exports = function registerAdminRoutes(app, shared) {
     if (body.subject !== undefined) { updates.push('subject = ?'); params.push(sanitizeText(body.subject)); }
     if (body.questionType !== undefined) { updates.push('question_type = ?'); params.push(sanitizeText(body.questionType)); }
     if (body.textbook !== undefined) { updates.push('textbook = ?'); params.push(sanitizeText(body.textbook)); }
+    if (body.sourceYear !== undefined) { updates.push('source_year = ?'); params.push(sanitizeText(body.sourceYear)); }
+    if (body.difficulty !== undefined) { updates.push('difficulty = ?'); params.push(sanitizeText(body.difficulty)); }
     if (body.stem !== undefined) { updates.push('stem = ?'); params.push(stripHtml(body.stem)); }
     if (Array.isArray(body.options)) { updates.push('options = ?'); params.push(JSON.stringify(options)); }
     if (body.correctAnswer !== undefined) { updates.push('correct_answer = ?'); params.push(correctAnswer); }
     if (body.analysisText !== undefined) { updates.push('analysis_text = ?'); params.push(sanitizeText(body.analysisText)); }
+    if (body.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(Array.isArray(body.tags) ? body.tags : [])); }
     if (body.isPaidOnly !== undefined) { updates.push('is_paid_only = ?'); params.push(body.isPaidOnly ? 1 : 0); }
     if (body.subjectScope !== undefined) { updates.push('subject_scope = ?'); params.push(sanitizeText(body.subjectScope)); }
 
@@ -1029,6 +1056,11 @@ module.exports = function registerAdminRoutes(app, shared) {
     const correctQuestions = db.prepare('SELECT COUNT(*) AS cnt FROM practice_records WHERE is_correct = 1').get().cnt;
     const questionAccuracy = totalQuestions > 0 ? Math.round((correctQuestions / totalQuestions) * 100) : 0;
 
+    // B-07: 课程完成率 = 已完成课程数 / 总课程数
+    const totalCourses = db.prepare('SELECT COUNT(*) AS cnt FROM courses').get().cnt;
+    const completedCourses = db.prepare('SELECT COUNT(DISTINCT course_id) AS cnt FROM course_progress WHERE progress >= 100').get().cnt;
+    const courseCompletionRate = totalCourses > 0 ? Math.round((completedCourses / totalCourses) * 100) : 0;
+
     const lowStockThreshold = Number(getSetting('low_stock_threshold', '10'));
     const lowStockCount = db.prepare('SELECT COUNT(*) AS cnt FROM products WHERE stock <= ? AND status = ?').get(lowStockThreshold, 'active').cnt;
 
@@ -1072,6 +1104,7 @@ module.exports = function registerAdminRoutes(app, shared) {
       courseViews,
       totalQuestions,
       questionAccuracy,
+      courseCompletionRate,
       lowStockCount,
       robotData: '等待 C 线接入',
       trend7: buildTrend(7),

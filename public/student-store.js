@@ -1,11 +1,56 @@
 // student-store.js — Store rendering, cart, orders, address, product reviews, virtual goods, group buys
 
+// B-14: 商城搜索筛选状态
+const storeFilterState = {
+  search: '',
+  category: '',
+  sort: ''
+};
+
 function renderStore() {
   const productsRoot = document.getElementById('student-products-list');
   const ordersRoot = document.getElementById('student-orders-list');
 
-  productsRoot.innerHTML = studentState.data.products.length
-    ? studentState.data.products
+  // B-14: 商品列表（带搜索筛选）
+  const products = studentState.data.products || [];
+  let filteredProducts = products;
+  if (storeFilterState.search) {
+    const s = storeFilterState.search.toLowerCase();
+    filteredProducts = filteredProducts.filter(p => (p.title || '').toLowerCase().includes(s) || (p.description || '').toLowerCase().includes(s));
+  }
+  if (storeFilterState.category) {
+    filteredProducts = filteredProducts.filter(p => p.category === storeFilterState.category);
+  }
+  if (storeFilterState.sort === 'price_asc') {
+    filteredProducts.sort((a, b) => a.price - b.price);
+  } else if (storeFilterState.sort === 'price_desc') {
+    filteredProducts.sort((a, b) => b.price - a.price);
+  } else if (storeFilterState.sort === 'created_desc') {
+    filteredProducts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  }
+
+  // B-14: 提取所有分类用于筛选下拉
+  const categories = [...new Set(products.map(p => p.category).filter(Boolean))];
+
+  let productsHtml = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <input class="input" id="store-search-input" type="text" placeholder="搜索商品名称..." value="${escapeHtml(storeFilterState.search)}" style="flex:1;min-width:180px;padding:8px 12px;font-size:13px;border-radius:10px;" />
+      <select class="input" id="store-category-filter" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+        <option value="">全部分类</option>
+        ${categories.map(c => `<option value="${escapeHtml(c)}" ${storeFilterState.category === c ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('')}
+      </select>
+      <select class="input" id="store-sort-select" style="padding:8px 12px;font-size:13px;border-radius:10px;">
+        <option value="">默认排序</option>
+        <option value="price_asc" ${storeFilterState.sort === 'price_asc' ? 'selected' : ''}>价格从低到高</option>
+        <option value="price_desc" ${storeFilterState.sort === 'price_desc' ? 'selected' : ''}>价格从高到低</option>
+        <option value="created_desc" ${storeFilterState.sort === 'created_desc' ? 'selected' : ''}>最新上架</option>
+      </select>
+      <button class="button" id="store-search-btn" type="button" style="font-size:12px;padding:8px 16px;">搜索</button>
+    </div>
+  `;
+
+  productsHtml += filteredProducts.length
+    ? filteredProducts
         .map(
           (product) => `
             <article class="store-card">
@@ -29,6 +74,11 @@ function renderStore() {
         )
         .join('')
     : buildEmptyState('暂无资料商品', '老师上架后可直接购买。');
+
+  productsRoot.innerHTML = productsHtml;
+
+  // B-14: 绑定搜索筛选事件
+  bindStoreFilterEvents();
 
   ordersRoot.innerHTML = studentState.data.orders.length
     ? studentState.data.orders
@@ -55,6 +105,52 @@ function renderStore() {
         .join('')
     : buildEmptyState('还没有订单', '在上方加入购物车下单。');
   loadCart();
+}
+
+// B-14: 绑定商城搜索筛选事件
+function bindStoreFilterEvents() {
+  const searchBtn = document.getElementById('store-search-btn');
+  const searchInput = document.getElementById('store-search-input');
+  const categoryFilter = document.getElementById('store-category-filter');
+  const sortSelect = document.getElementById('store-sort-select');
+
+  if (searchBtn) {
+    searchBtn.addEventListener('click', () => {
+      storeFilterState.search = searchInput ? searchInput.value.trim() : '';
+      storeFilterState.category = categoryFilter ? categoryFilter.value : '';
+      storeFilterState.sort = sortSelect ? sortSelect.value : '';
+      renderStore();
+    });
+  }
+
+  if (searchInput) {
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        storeFilterState.search = searchInput.value.trim();
+        storeFilterState.category = categoryFilter ? categoryFilter.value : '';
+        storeFilterState.sort = sortSelect ? sortSelect.value : '';
+        renderStore();
+      }
+    });
+  }
+
+  if (categoryFilter) {
+    categoryFilter.addEventListener('change', () => {
+      storeFilterState.search = searchInput ? searchInput.value.trim() : '';
+      storeFilterState.category = categoryFilter.value;
+      storeFilterState.sort = sortSelect ? sortSelect.value : '';
+      renderStore();
+    });
+  }
+
+  if (sortSelect) {
+    sortSelect.addEventListener('change', () => {
+      storeFilterState.search = searchInput ? searchInput.value.trim() : '';
+      storeFilterState.category = categoryFilter ? categoryFilter.value : '';
+      storeFilterState.sort = sortSelect.value;
+      renderStore();
+    });
+  }
 }
 
 // ── 购物车 ──

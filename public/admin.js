@@ -192,7 +192,21 @@ function renderSettingsForm() {
     { key: 'low_stock_threshold', label: '低库存阈值', type: 'number' },
     { key: 'customer_service_account', label: '客服通知账号', type: 'text' },
     { key: 'wx_subscribe_template_id', label: '微信订阅消息模板 ID', type: 'text' },
-    { key: 'payment_mode', label: '支付开关', type: 'select', options: { simulated: '开发环境模拟支付', wechat: '正式微信支付' } }
+    { key: 'payment_mode', label: '支付开关', type: 'select', options: { simulated: '开发环境模拟支付', wechat: '正式微信支付' } },
+    { key: 'wechat_appid', label: '微信 AppID', type: 'text' },
+    { key: 'wechat_secret', label: '微信 Secret', type: 'text' },
+    { key: 'alipay_appid', label: '支付宝 AppID', type: 'text' },
+    { key: 'alipay_private_key', label: '支付宝私钥', type: 'text' },
+    { key: 'alipay_public_key', label: '支付宝公钥', type: 'text' },
+    { key: 'sms_access_key', label: '短信 AccessKey', type: 'text' },
+    { key: 'sms_secret', label: '短信 Secret', type: 'text' },
+    { key: 'oss_access_key', label: 'OSS AccessKey', type: 'text' },
+    { key: 'oss_secret', label: 'OSS Secret', type: 'text' },
+    { key: 'oss_bucket', label: 'OSS Bucket', type: 'text' },
+    { key: 'oss_region', label: 'OSS Region', type: 'text' },
+    { key: 'cdn_domain', label: 'CDN 域名', type: 'text' },
+    { key: 'robot_api_key', label: '机器人 API Key', type: 'text' },
+    { key: 'robot_api_endpoint', label: '机器人 API 地址', type: 'text' }
   ];
 
   container.innerHTML = fields.map((f) => {
@@ -220,7 +234,7 @@ function renderSettingsForm() {
 }
 
 async function saveSettings() {
-  const fields = ['site_name', 'trial_days', 'course_preview_count', 'low_stock_threshold', 'customer_service_account', 'wx_subscribe_template_id', 'payment_mode'];
+  const fields = ['site_name', 'trial_days', 'course_preview_count', 'low_stock_threshold', 'customer_service_account', 'wx_subscribe_template_id', 'payment_mode', 'wechat_appid', 'wechat_secret', 'alipay_appid', 'alipay_private_key', 'alipay_public_key', 'sms_access_key', 'sms_secret', 'oss_access_key', 'oss_secret', 'oss_bucket', 'oss_region', 'cdn_domain', 'robot_api_key', 'robot_api_endpoint'];
   const updates = {};
   for (const key of fields) {
     const input = document.getElementById(`setting-${key}`);
@@ -377,6 +391,26 @@ function renderDashboardStats() {
     cards.push({ label: '付费用户', value: d.tierDistribution.paid || 0 });
   }
 
+  // B-07: 新增数据看板指标
+  if (d.todayTaskCompletionRate !== undefined) {
+    cards.push({ label: '今日任务完成率', value: d.todayTaskCompletionRate + '%' });
+  }
+  if (d.courseViews !== undefined) {
+    cards.push({ label: '课程总学习次数', value: d.courseViews });
+  }
+  if (d.courseCompletionRate !== undefined) {
+    cards.push({ label: '课程完成率', value: d.courseCompletionRate + '%' });
+  }
+  if (d.totalRevenue !== undefined) {
+    cards.push({ label: '累计收入', value: '¥' + d.totalRevenue });
+  }
+  if (d.todayRevenue !== undefined) {
+    cards.push({ label: '今日收入', value: '¥' + d.todayRevenue });
+  }
+  if (d.conversionRate !== undefined) {
+    cards.push({ label: '付费转化率', value: d.conversionRate + '%' });
+  }
+
   container.innerHTML = cards.map((c) => `
     <div class="metric-card">
       <div class="metric-value">${c.value}</div>
@@ -468,6 +502,7 @@ adminState.students = [];
 adminState.questions = [];
 adminState.contentData = {};
 adminState.forumData = {};
+adminState.questionFilter = {};
 
 function initOperationsListeners() {
   document.getElementById('content-tabs').addEventListener('click', (e) => {
@@ -477,6 +512,8 @@ function initOperationsListeners() {
     document.querySelectorAll('#content-tabs button').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('category-form').classList.toggle('hidden', adminState.contentType !== 'categories');
+    // B-14: 显示/隐藏低库存阈值设置
+    document.getElementById('product-stock-filter').classList.toggle('hidden', adminState.contentType !== 'products');
     loadContent();
   });
 
@@ -521,6 +558,18 @@ function initOperationsListeners() {
     } catch (error) {
       createToast(error.message, 'error');
     }
+  });
+
+  // B-14: 低库存阈值应用按钮
+  document.getElementById('apply-low-stock-btn').addEventListener('click', () => {
+    const input = document.getElementById('low-stock-threshold-input');
+    const value = Number(input.value);
+    if (Number.isNaN(value) || value < 0) {
+      createToast('请输入有效的阈值', 'error');
+      return;
+    }
+    adminState.lowStockThreshold = value;
+    loadContent();
   });
 
   document.getElementById('content-list').addEventListener('click', async (e) => {
@@ -622,6 +671,41 @@ function initOperationsListeners() {
         createToast(error.message, 'error');
       }
     }
+    if (action === 'edit') {
+      openQuestionEditModal(id);
+    }
+  });
+
+  // 题库筛选
+  document.getElementById('apply-question-filter').addEventListener('click', () => {
+    adminState.questionFilter = {
+      subject: document.getElementById('question-filter-subject').value,
+      questionType: document.getElementById('question-filter-type').value,
+      textbook: document.getElementById('question-filter-textbook').value,
+      sourceYear: document.getElementById('question-filter-year').value,
+      difficulty: document.getElementById('question-filter-difficulty').value,
+      isPaidOnly: document.getElementById('question-filter-paid').value
+    };
+    loadQuestions();
+  });
+
+  document.getElementById('reset-question-filter').addEventListener('click', () => {
+    document.getElementById('question-filter-subject').value = '';
+    document.getElementById('question-filter-type').value = '';
+    document.getElementById('question-filter-textbook').value = '';
+    document.getElementById('question-filter-year').value = '';
+    document.getElementById('question-filter-difficulty').value = '';
+    document.getElementById('question-filter-paid').value = '';
+    adminState.questionFilter = {};
+    loadQuestions();
+  });
+
+  // 题目编辑 Modal 事件
+  document.getElementById('close-question-edit').addEventListener('click', closeQuestionEditModal);
+  document.getElementById('cancel-question-edit').addEventListener('click', closeQuestionEditModal);
+  document.getElementById('save-question-edit').addEventListener('click', saveQuestionEdit);
+  document.getElementById('question-edit-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'question-edit-modal') closeQuestionEditModal();
   });
 
   // 论坛操作
@@ -725,7 +809,13 @@ async function loadContent() {
       renderContent();
       return;
     }
-    const data = await fetchJSON(`/api/admin/content?type=${adminState.contentType}`);
+    let url = `/api/admin/content?type=${adminState.contentType}`;
+    // B-14: 商品资料 Tab 加载时传入低库存阈值
+    if (adminState.contentType === 'products') {
+      const threshold = adminState.lowStockThreshold || adminState.settings.low_stock_threshold || 10;
+      url += `&low_stock_threshold=${threshold}`;
+    }
+    const data = await fetchJSON(url);
     adminState.contentData = data;
     renderContent();
   } catch (error) {
@@ -763,9 +853,11 @@ function renderContent() {
   html += '</tr></thead><tbody>';
 
   items.forEach((item) => {
+    // B-14: 低库存商品行标红
+    const lowStockStyle = (type === 'products' && item.isLowStock) ? 'color: var(--danger); background: #fef2f2;' : '';
     html += `
-      <tr style="border-bottom: 1px solid var(--border);">
-        <td style="padding: 8px;">${escapeHtml(item.title)} <span class="muted" style="font-size: 12px;">${escapeHtml(item.teacherName || item.folderName || '')}</span></td>
+      <tr style="border-bottom: 1px solid var(--border); ${lowStockStyle}">
+        <td style="padding: 8px;">${escapeHtml(item.title)} <span class="muted" style="font-size: 12px;">${escapeHtml(item.teacherName || item.folderName || '')}</span>${type === 'products' && item.isLowStock ? ' <span class="badge" style="background:var(--danger);color:white;">低库存</span>' : ''}</td>
         <td style="padding: 8px;">${escapeHtml(item.subject || item.category || item.itemType || '-')}</td>
         <td style="padding: 8px;">
           <select class="input" style="width: auto; padding: 4px 8px; font-size: 13px;" data-content-update="${type}|${item.id}|visibility">
@@ -811,7 +903,16 @@ function renderCategories(container) {
 
 async function loadQuestions() {
   try {
-    const data = await fetchJSON('/api/admin/questions');
+    const params = new URLSearchParams();
+    const f = adminState.questionFilter || {};
+    if (f.subject) params.set('subject', f.subject);
+    if (f.questionType) params.set('questionType', f.questionType);
+    if (f.textbook) params.set('textbook', f.textbook);
+    if (f.sourceYear) params.set('sourceYear', f.sourceYear);
+    if (f.difficulty) params.set('difficulty', f.difficulty);
+    if (f.isPaidOnly !== undefined && f.isPaidOnly !== '') params.set('isPaidOnly', f.isPaidOnly);
+    const queryString = params.toString();
+    const data = await fetchJSON(`/api/admin/questions${queryString ? '?' + queryString : ''}`);
     adminState.questions = data.questions;
     renderQuestions();
   } catch (error) {
@@ -827,17 +928,21 @@ function renderQuestions() {
   }
   let html = '<table style="width: 100%; border-collapse: collapse;">';
   html += '<thead><tr style="border-bottom: 2px solid var(--border);">';
-  ['标题', '科目', '题型', '付费', '操作'].forEach((th) => html += `<th style="text-align: left; padding: 8px;">${escapeHtml(th)}</th>`);
+  ['标题', '科目', '题型', '年份', '难度', '付费', '操作'].forEach((th) => html += `<th style="text-align: left; padding: 8px;">${escapeHtml(th)}</th>`);
   html += '</tr></thead><tbody>';
 
   adminState.questions.forEach((q) => {
+    const difficultyLabel = { easy: '简单', medium: '中等', hard: '困难' }[q.difficulty] || (q.difficulty || '-');
     html += `
       <tr style="border-bottom: 1px solid var(--border);">
         <td style="padding: 8px;">${escapeHtml(q.title)}</td>
         <td style="padding: 8px;">${escapeHtml(q.subject)}</td>
         <td style="padding: 8px;">${escapeHtml(q.questionType || '-')}</td>
+        <td style="padding: 8px;">${escapeHtml(q.sourceYear || '-')}</td>
+        <td style="padding: 8px;"><span class="badge" style="background: ${q.difficulty === 'hard' ? 'var(--danger)' : q.difficulty === 'medium' ? 'var(--warning)' : 'var(--success)'}; color: white;">${escapeHtml(difficultyLabel)}</span></td>
         <td style="padding: 8px;">${q.isPaidOnly ? '<span class="badge" style="background: var(--warning);">付费</span>' : '免费'}</td>
         <td style="padding: 8px;">
+          <button class="ghost-button" style="font-size: 12px;" data-question-action="edit" data-question-id="${q.id}">编辑</button>
           <button class="ghost-button" style="font-size: 12px;" data-question-action="toggle-paid" data-question-id="${q.id}" data-paid="${q.isPaidOnly}">${q.isPaidOnly ? '设为免费' : '设为付费'}</button>
           <button class="ghost-button" style="font-size: 12px; color: var(--danger); margin-left: 8px;" data-question-action="delete" data-question-id="${q.id}">删除</button>
         </td>
@@ -845,6 +950,48 @@ function renderQuestions() {
   });
   html += '</tbody></table>';
   container.innerHTML = html;
+}
+
+function openQuestionEditModal(id) {
+  const q = adminState.questions.find((x) => x.id === id);
+  if (!q) return;
+  document.getElementById('qe-id').value = q.id;
+  document.getElementById('qe-title').value = q.title || '';
+  document.getElementById('qe-analysis').value = q.analysisText || '';
+  document.getElementById('qe-correct').value = q.correctAnswer || '';
+  document.getElementById('qe-tags').value = Array.isArray(q.tags) ? q.tags.join(',') : '';
+  document.getElementById('qe-paid').checked = q.isPaidOnly ? true : false;
+  document.getElementById('question-edit-modal').style.display = 'flex';
+}
+
+function closeQuestionEditModal() {
+  document.getElementById('question-edit-modal').style.display = 'none';
+}
+
+async function saveQuestionEdit() {
+  const id = Number(document.getElementById('qe-id').value);
+  const title = document.getElementById('qe-title').value.trim();
+  const analysisText = document.getElementById('qe-analysis').value.trim();
+  const correctAnswer = document.getElementById('qe-correct').value.trim();
+  const tagsStr = document.getElementById('qe-tags').value.trim();
+  const isPaidOnly = document.getElementById('qe-paid').checked ? 1 : 0;
+  const tags = tagsStr ? tagsStr.split(',').map((t) => t.trim()).filter(Boolean) : [];
+
+  const body = {};
+  if (title) body.title = title;
+  if (analysisText) body.analysisText = analysisText;
+  if (correctAnswer) body.correctAnswer = correctAnswer;
+  body.tags = tags;
+  body.isPaidOnly = isPaidOnly;
+
+  try {
+    await fetchJSON(`/api/admin/questions/${id}`, { method: 'PUT', body: JSON.stringify(body) });
+    createToast('题目已更新', 'success');
+    closeQuestionEditModal();
+    loadQuestions();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
 }
 
 async function loadForum() {

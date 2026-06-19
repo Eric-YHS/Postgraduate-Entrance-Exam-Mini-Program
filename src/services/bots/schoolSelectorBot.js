@@ -9,15 +9,17 @@
  *   - config                      (配置读取)
  */
 
-const { searchByVector } = require('../knowledgeBase');
+const { searchChunks } = require('../knowledgeBase');
 const { chat, quickAsk } = require('../ai');
-const { logConversation, getBotByCode } = require('../botManager');
+const { logConversation } = require('../botManager');
+const { isHandoffRequest, startHandoff, notifyHumanAgents, isHandedOff } = require('./humanHandoff');
+const { db } = require('../../db');
 const config = require('../../config');
 
 // ── 常量 ──
 
 const BOT_CODE = 'school_selector';
-const CONVERSATION_TYPE = 'advisor';
+const CONVERSATION_TYPE = 'school_selector';
 const RAG_TOP_K = 5;
 const RAG_SCORE_THRESHOLD = 0.5;
 const MAX_CONTEXT_MESSAGES = 10;
@@ -166,6 +168,55 @@ const REALTIME_KEYWORDS = [
   /报录比|录取比例|竞争程度|报考人数/
 ];
 
+// ── 预设回答模板 ──
+
+const TEMPLATES = {
+  // 缺少用户档案时的引导
+  missingProfile: {
+    recommendSchool: `为了给你更精准的择校建议，我还需要了解一些信息：
+
+1. 你的目标专业是什么？
+2. 你目前的模考成绩大约多少分？
+3. 你偏好哪些地区或城市？
+4. 你期望的院校层次（985/211/双非）？
+
+你可以直接回复，比如："目标计算机，模考340分，想去北京"，我会立刻为你分析！`,
+
+    scorelineQuery: `为了帮你查询更准确的分数线，请告诉我：
+
+1. 你想了解哪所学校的分数线？
+2. 你的目标专业是什么？
+3. 你目前的成绩水平如何？
+
+这样我可以结合你的情况给出更有针对性的建议。`,
+
+    general: `为了给你更精准的择校建议，我还需要了解一些信息：
+
+1. 你的目标专业是什么？
+2. 你目前的模考成绩大约多少分？
+3. 你偏好哪些地区或城市？
+4. 你期望的院校层次（985/211/双非）？
+
+你可以直接回复，我会立刻为你分析！`
+  },
+
+  // 最新招生信息免责声明
+  disclaimer: `【温馨提示】以上信息基于知识库中的历史数据整理，最新招生政策、分数线等可能已有调整。建议你在做决定前：
+1. 查看目标院校官网研究生院最新公告
+2. 关注中国研究生招生信息网（研招网）
+3. 如有疑问，可联系我们的老师进一步确认`,
+
+  // 人工转接提示
+  handoff: `已为你转接人工客服，老师稍后会联系你。请保持关注，也可以直接拨打我们的咨询电话。`,
+
+  // 知识库未命中时的回复
+  noKnowledge: `关于这个问题，我暂时没有足够的数据。不过我可以基于一般经验给你一些建议：
+
+{aiAnswer}
+
+如果你需要更详细、更准确的分析，建议补充你的目标院校和专业信息，或转接人工老师咨询。`
+};
+
 // ── 内部工具：意图识别 ──
 
 /**
@@ -291,28 +342,81 @@ async function searchWeb(query) {
   return [];
 }
 
-// ── 内部工具：从 context 或简化获取学生信息 ──
+// ── 内部工具：从数据库获取用户档案 ──
 
 /**
- * 构建学生画像（从 context 或简化推断）
- * 当前简化实现：优先从 context 读取，后续可扩展为查询 users/profile 表
+ * 从数据库查询用户档案（users 表）
+ * @param {number|string} userId
+ * @returns {Object|null} 用户档案
+ */
+function getUserProfileFromDB(userId) {
+  if (!userId) return null;
+
+  try {
+    // 尝试获取 users 表中的择校相关字段（通过 ALTER 动态添加的字段）
+    const user = db.prepare(
+      `SELECT id, username, display_name, target_school, target_major, current_score,
+              preferred_region, school_level, study_type, class_name
+       FROM users WHERE id = ?`
+    ).get(userId);
+
+    if (!user) return null;
+
+    return {
+      targetSchools: user.target_school ? [user.target_school] : [],
+      targetMajor: user.target_major || '',
+      currentScore: user.current_score || null,
+      preferredRegions: user.preferred_region ? user.preferred_region.split(/[,，]/).map(s => s.trim()).filter(Boolean) : [],
+      schoolLevel: user.school_level || '',
+      studyType: user.study_type || '',
+      className: user.class_name || '',
+      displayName: user.display_name || ''
+    };
+  } catch (err) {
+    // 如果字段不存在（旧表结构），返回 null
+    console.warn('[schoolSelectorBot] 获取用户档案失败（可能是字段不存在）:', err.message);
+    return null;
+  }
+}
+
+// ── 内部工具：从 context 或数据库获取学生信息 ──
+
+/**
+ * 构建学生画像（优先从数据库获取，其次从 context 读取）
  * @param {Object} context
+ * @param {number|string} userId
  * @returns {Object} 学生画像
  */
-function buildStudentProfile(context = {}) {
+function buildStudentProfile(context = {}, userId = null) {
+  // 优先从数据库获取用户档案
+  const dbProfile = userId ? getUserProfileFromDB(userId) : null;
+
   const profile = {
-    targetSchools: context.targetSchools || [],      // 目标院校列表
-    targetMajor: context.targetMajor || '',          // 目标专业
-    currentScore: context.currentScore || null,       // 当前模考成绩（总分）
-    subjectScores: context.subjectScores || {},      // 各科成绩
-    preferredRegions: context.preferredRegions || [], // 偏好地域
-    schoolLevel: context.schoolLevel || '',         // 期望院校层次（985/211/双非）
-    studyType: context.studyType || '',              // 学硕/专硕
-    year: context.year || new Date().getFullYear()    // 考研年份
+    targetSchools: dbProfile?.targetSchools || context.targetSchools || [],
+    targetMajor: dbProfile?.targetMajor || context.targetMajor || '',
+    currentScore: dbProfile?.currentScore || context.currentScore || null,
+    subjectScores: context.subjectScores || {},
+    preferredRegions: dbProfile?.preferredRegions || context.preferredRegions || [],
+    schoolLevel: dbProfile?.schoolLevel || context.schoolLevel || '',
+    studyType: dbProfile?.studyType || context.studyType || '',
+    year: context.year || new Date().getFullYear(),
+    hasProfile: !!(dbProfile && (dbProfile.targetMajor || dbProfile.currentScore))
   };
 
-  // 如果 context 中提供了具体成绩信息，在后续提示词中直接使用
   return profile;
+}
+
+// ── 内部工具：检查用户档案是否完整 ──
+
+/**
+ * 检查用户档案是否足够用于择校建议
+ * @param {Object} profile
+ * @returns {boolean}
+ */
+function hasEnoughProfile(profile) {
+  if (!profile) return false;
+  // 至少需要目标专业或当前成绩之一
+  return !!(profile.targetMajor || profile.currentScore);
 }
 
 // ── 内部工具：构建择校专用查询（用于知识库检索） ──
@@ -369,7 +473,7 @@ async function searchKnowledgeBase(question, intent, profile, baseId = null) {
   const searchQuery = buildSearchQuery(question, intent, profile);
 
   try {
-    const results = await searchByVector(targetBaseId, searchQuery, RAG_TOP_K);
+    const results = await searchChunks(targetBaseId, searchQuery, RAG_TOP_K);
 
     if (!results || results.length === 0) {
       return { hit: false, answer: '', sources: [] };
@@ -554,55 +658,101 @@ function recordConversation(userId, prompt, response, context = '') {
   }
 }
 
-// ── 主入口：处理用户问题 ──
+// ── 内部工具：选择引导模板 ──
 
 /**
- * 处理用户择校问题
- * @param {Object} params
- * @param {string} params.userId        - 用户唯一标识
- * @param {string} params.question      - 用户问题文本
- * @param {Object} [params.context={}]   - 扩展上下文（如历史对话、学生信息等）
- *   @param {Array<string>} [params.context.targetSchools]    - 目标院校列表
- *   @param {string} [params.context.targetMajor]             - 目标专业
- *   @param {number} [params.context.currentScore]          - 当前模考总分
- *   @param {Object} [params.context.subjectScores]           - 各科成绩
- *   @param {Array<string>} [params.context.preferredRegions] - 偏好地域
- *   @param {string} [params.context.schoolLevel]           - 期望院校层次
- *   @param {string} [params.context.studyType]             - 学硕/专硕
- *   @param {number} [params.context.year]                  - 考研年份
- *   @param {Array<{role:string, content:string}>} [params.context.historyMessages] - 历史对话
- *   @param {number} [params.context.baseId]                - 知识库 ID
- * @returns {Promise<{success:boolean, answer:string, intent:string, layer:string, sources:Array, disclaimer:string}>}
+ * 根据意图选择缺少档案时的引导模板
+ * @param {string} intent
+ * @returns {string}
  */
-async function handleQuestion({ userId, question, context = {} }) {
+function getMissingProfileTemplate(intent) {
+  if (intent === INTENT_TYPES.RECOMMEND_SCHOOL) {
+    return TEMPLATES.missingProfile.recommendSchool;
+  }
+  if (intent === INTENT_TYPES.SCORELINE_QUERY) {
+    return TEMPLATES.missingProfile.scorelineQuery;
+  }
+  return TEMPLATES.missingProfile.general;
+}
+
+// ── 主入口：处理用户问题（新版 handleMessage） ──
+
+/**
+ * 处理用户择校消息（企业微信/小程序统一入口）
+ * @param {string} userId - 用户唯一标识（企微 userId 或用户 ID）
+ * @param {string} message - 用户消息文本
+ * @param {Object} [options={}] - 可选参数
+ *   @param {string} [options.source='wecom'] - 来源渠道
+ *   @param {number|null} [options.groupId=null] - 企业微信群 ID
+ *   @param {Object} [options.context={}] - 扩展上下文
+ *   @param {number} [options.baseId] - 知识库 ID
+ * @returns {Promise<{reply:string, handoff:boolean, action:string}>}
+ */
+async function handleMessage(userId, message, options = {}) {
   if (!userId) {
     throw new Error('userId 为必填项');
   }
-  if (!question || !question.trim()) {
-    throw new Error('question 为必填项');
+  if (!message || !message.trim()) {
+    throw new Error('message 为必填项');
   }
 
-  console.log(`[schoolSelectorBot] 收到问题 | 用户: ${userId} | 问题: ${question.slice(0, 50)}...`);
+  const trimmedMessage = message.trim();
+  const source = options.source || 'wecom';
+  const groupId = options.groupId || null;
+  const context = options.context || {};
+  const baseId = options.baseId || null;
 
-  // 1. 意图识别
-  const intentResult = recognizeIntent(question);
+  console.log(`[schoolSelectorBot] 收到消息 | 用户: ${userId} | 消息: ${trimmedMessage.slice(0, 50)}...`);
+
+  // 0. 检查是否已处于人工接管状态
+  if (isHandedOff(userId)) {
+    const reply = '已转接人工客服，请稍候。';
+    recordConversation(userId, trimmedMessage, reply, JSON.stringify({ intent: 'already_handed_off', source }));
+    return { reply, handoff: false, action: 'already_handed_off' };
+  }
+
+  // 1. 判断是否转人工
+  if (isHandoffRequest(trimmedMessage)) {
+    const handoffResult = startHandoff(db, userId, source, groupId, trimmedMessage);
+    await notifyHumanAgents(db, userId, trimmedMessage, source);
+    const reply = TEMPLATES.handoff;
+    recordConversation(userId, trimmedMessage, reply, JSON.stringify({ intent: 'handoff', source, handoff: true }));
+    return { reply, handoff: true, action: 'handoff' };
+  }
+
+  // 2. 意图识别
+  const intentResult = recognizeIntent(trimmedMessage);
   console.log(`[schoolSelectorBot] 意图识别: ${intentResult.intent} (置信度: ${intentResult.confidence})`);
 
-  // 2. 构建学生画像
-  const profile = buildStudentProfile(context);
+  // 3. 构建学生画像（优先从数据库获取）
+  const profile = buildStudentProfile(context, userId);
 
-  // 3. 提取历史上下文
-  const historyMessages = context.historyMessages || [];
-  const baseId = context.baseId || null;
+  // 4. 如果缺少用户档案，引导用户补充（仅对推荐学校、分数线查询等核心意图）
+  const coreIntents = [
+    INTENT_TYPES.RECOMMEND_SCHOOL,
+    INTENT_TYPES.SCORELINE_QUERY,
+    INTENT_TYPES.COMPARE_SCHOOLS,
+    INTENT_TYPES.APPLY_STRATEGY
+  ];
+
+  if (coreIntents.includes(intentResult.intent) && !hasEnoughProfile(profile)) {
+    const reply = getMissingProfileTemplate(intentResult.intent);
+    recordConversation(userId, trimmedMessage, reply, JSON.stringify({
+      intent: intentResult.intent,
+      layer: 'profile_guidance',
+      missingProfile: true
+    }));
+    return { reply, handoff: false, action: 'profile_guidance' };
+  }
 
   let finalAnswer = '';
   let usedLayer = '';
   let sources = [];
   let disclaimer = '';
 
-  // ========== 第一层：知识库 RAG ==========
+  // 5. 第一层：知识库 RAG 检索
   console.log('[schoolSelectorBot] 尝试第一层：知识库检索...');
-  const kbResult = await searchKnowledgeBase(question, intentResult.intent, profile, baseId);
+  const kbResult = await searchKnowledgeBase(trimmedMessage, intentResult.intent, profile, baseId);
 
   if (kbResult.hit) {
     finalAnswer = kbResult.answer;
@@ -610,17 +760,17 @@ async function handleQuestion({ userId, question, context = {} }) {
     sources = kbResult.sources;
     console.log(`[schoolSelectorBot] 第一层命中，来源: ${sources.map((s) => s.documentTitle).join(', ')}`);
   } else {
-    // ========== 第二层/第三层：AI 生成 + 联网搜索 ==========
+    // 6. 第二层/第三层：AI 生成 + 联网搜索
     console.log('[schoolSelectorBot] 第一层未命中，进入第二层/第三层...');
 
     // 判断是否需要联网搜索
-    const needSearch = needsRealtimeSearch(question);
+    const needSearch = needsRealtimeSearch(trimmedMessage);
     let searchContext = '';
     let hasSearchResult = false;
 
     if (needSearch) {
       console.log('[schoolSelectorBot] 问题涉及实时信息，尝试第三层：联网搜索...');
-      const searchResult = await fetchWebSearch(question, intentResult.intent);
+      const searchResult = await fetchWebSearch(trimmedMessage, intentResult.intent);
       if (searchResult.hasResult) {
         searchContext = searchResult.context;
         hasSearchResult = true;
@@ -632,7 +782,8 @@ async function handleQuestion({ userId, question, context = {} }) {
 
     // 调用 AI 生成
     try {
-      finalAnswer = await generateAnswer(question, intentResult.intent, profile, historyMessages, searchContext);
+      const historyMessages = context.historyMessages || [];
+      finalAnswer = await generateAnswer(trimmedMessage, intentResult.intent, profile, historyMessages, searchContext);
       usedLayer = hasSearchResult ? 'ai_with_search' : 'ai';
 
       // 如果触发了搜索但未获取到结果，添加免责声明
@@ -646,36 +797,72 @@ async function handleQuestion({ userId, question, context = {} }) {
     }
   }
 
-  // 4. 添加免责声明
+  // 7. 对最新招生信息，添加免责声明
   let replyContent = finalAnswer;
+
+  // 如果涉及实时信息（分数线、招生简章等），无论是否命中知识库都添加免责声明
+  const realtimeIntents = [
+    INTENT_TYPES.SCORELINE_QUERY,
+    INTENT_TYPES.ADMISSION_BROCHURE,
+    INTENT_TYPES.ADMISSION_PLAN,
+    INTENT_TYPES.RETEST_POLICY,
+    INTENT_TYPES.MAJOR_DIRECTORY
+  ];
+
+  if (realtimeIntents.includes(intentResult.intent) || needsRealtimeSearch(trimmedMessage)) {
+    disclaimer = TEMPLATES.disclaimer;
+  }
+
   if (disclaimer) {
     replyContent += `\n\n${disclaimer}`;
   }
 
-  // 5. 记录对话
+  // 8. 记录对话（type='school_selector'）
   const logContext = JSON.stringify({
     intent: intentResult.intent,
     layer: usedLayer,
-    hasProfile: Object.keys(profile).some(k => profile[k] && (Array.isArray(profile[k]) ? profile[k].length > 0 : true)),
-    sources: sources.map((s) => s.documentTitle)
+    hasProfile: hasEnoughProfile(profile),
+    sources: sources.map((s) => s.documentTitle),
+    source,
+    handoff: false
   });
-  recordConversation(userId, question, finalAnswer, logContext);
+  recordConversation(userId, trimmedMessage, finalAnswer, logContext);
 
   console.log(`[schoolSelectorBot] 回答完成 | 意图: ${intentResult.intent} | 使用层: ${usedLayer} | 用户: ${userId}`);
 
   return {
-    success: usedLayer !== 'error',
-    answer: replyContent,
-    intent: intentResult.intent,
-    layer: usedLayer,
-    sources,
-    disclaimer
+    reply: replyContent,
+    handoff: false,
+    action: usedLayer === 'error' ? 'error' : 'answer'
+  };
+}
+
+// ── 兼容旧版 handleQuestion 入口 ──
+
+/**
+ * 处理用户择校问题（兼容旧版参数格式）
+ * @param {Object} params
+ * @param {string} params.userId        - 用户唯一标识
+ * @param {string} params.question      - 用户问题文本
+ * @param {Object} [params.context={}]   - 扩展上下文
+ * @returns {Promise<{success:boolean, answer:string, intent:string, layer:string, sources:Array, disclaimer:string}>}
+ */
+async function handleQuestion({ userId, question, context = {} }) {
+  const result = await handleMessage(userId, question, { context });
+  return {
+    success: result.action !== 'error',
+    answer: result.reply,
+    intent: '',
+    layer: '',
+    sources: [],
+    disclaimer: ''
   };
 }
 
 // ── 导出 ──
 
 module.exports = {
+  handleMessage,
   handleQuestion,
   recognizeIntent,
   buildStudentProfile,

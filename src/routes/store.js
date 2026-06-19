@@ -316,10 +316,20 @@ module.exports = function registerStoreRoutes(app, shared) {
 
     if (sort === 'price_asc') { query += ' ORDER BY price ASC'; }
     else if (sort === 'price_desc') { query += ' ORDER BY price DESC'; }
+    else if (sort === 'created_desc') { query += ' ORDER BY created_at DESC'; }
     else { query += ' ORDER BY created_at DESC'; }
 
     query += ' LIMIT 200';
     const products = db.prepare(query).all(...params).map(serializeProduct);
+
+    // B-14: 管理员查询时，根据低库存阈值标记库存预警
+    if (request.currentUser.role !== 'student') {
+      const lowStockThreshold = Number(request.query.low_stock_threshold) || Number(getSetting('low_stock_threshold', '10'));
+      products.forEach((p) => {
+        p.isLowStock = p.stock <= lowStockThreshold;
+      });
+    }
+
     response.json({ products });
   });
 

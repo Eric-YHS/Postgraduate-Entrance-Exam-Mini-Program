@@ -1,22 +1,33 @@
 /**
- * 解答机器人（三层应答）
- * 职责：处理用户问题，通过知识库RAG → AI生成 → 联网搜索三层流程提供答案
+ * 解答机器人（付费群内三层应答）
+ * 职责：处理用户问题，通过 知识库检索 → AI生成 → 政策确认/转人工 三层流程提供答案
  *
  * 依赖：
- *   - knowledgeBase.searchChunks  (知识库检索)
- *   - ai.chat / ai.quickAsk      (AI 对话生成)
- *   - botManager.logConversation / botManager.getBotByCode  (对话记录)
- *   - wecom.sendAppMessage / wecom.sendWebhookMessage  (消息推送)
- *   - config                      (配置读取)
+ *   - knowledgeBase.searchChunks      (知识库关键词检索)
+ *   - ai.quickAsk / ai.chat           (AI 对话生成)
+ *   - botManager.logConversation      (对话记录)
+ *   - wecom.sendAppMessage            (消息推送)
+ *   - humanHandoff.isHandoffRequest   (转人工判断)
+ *   - humanHandoff.startHandoff       (转人工)
+ *   - humanHandoff.notifyHumanAgents  (通知人工客服)
+ *   - humanHandoff.isInHandoff        (检查是否已在人工接管中)
+ *   - config                          (配置读取)
  */
 
 const fs = require('fs');
 const path = require('path');
-const { searchByVector } = require('../knowledgeBase');
-const { chat, quickAsk } = require('../ai');
+const { searchChunks } = require('../knowledgeBase');
+const { quickAsk, chat } = require('../ai');
 const { logConversation, getBotByCode } = require('../botManager');
-const { sendAppMessage, sendWebhookMessage } = require('../wecom');
-const { isInHandoff } = require('./humanHandoff');
+const { sendAppMessage } = require('../wecom');
+const {
+  isHandoffRequest,
+  startHandoff,
+  notifyHumanAgents,
+  isInHandoff,
+  isHandedOff
+} = require('./humanHandoff');
+const { db } = require('../../db');
 const config = require('../../config');
 
 // ── 常量 ──
@@ -24,7 +35,7 @@ const config = require('../../config');
 const BOT_CODE = 'answer';
 const CONVERSATION_TYPE = 'answer';
 const RAG_TOP_K = 5;                    // 知识库检索返回条数
-const RAG_SCORE_THRESHOLD = 0.5;        // 知识库命中最低分数阈值（0~1，越高越严格）
+const RAG_KEYWORD_HIT_THRESHOLD = 2;    // 关键词命中数阈值（命中至少 N 个关键词视为高相关）
 const MAX_CONTEXT_MESSAGES = 10;        // 上下文保留的最大消息数
 
 // 系统提示词：解答专家角色
@@ -35,125 +46,29 @@ const SYSTEM_PROMPT_ANSWER = `你是一位资深考研辅导专家，擅长解�
 3. 适当拓展相关知识点
 4. 语言通俗易懂，适合考研学生理解`;
 
-// 系统提示词：联网搜索辅助
-const SYSTEM_PROMPT_WITH_SEARCH = `你是一位资深考研辅导专家。用户的问题涉及可能随时间变化的信息（如政策、分数线、招生简章等）。
-以下提供了联网搜索获取的最新信息片段，请结合这些信息给出准确回答。
-如果搜索信息不足，请明确告知用户“信息可能不是最新的”，并建议用户查阅官方渠道。`;
-
-// 触发联网搜索的关键词模式
-const REALTIME_KEYWORDS = [
-  /分数线|录取线|复试线|国家线|自划线/,
-  /招生简章|招生目录|招生计划|招生人数/,
-  /政策|改革|调整|变化|新规|新政/,
-  /202[4-9]|今年|去年|最新|最近|刚刚/,
-  /报名|现场确认|网上确认|考试时间|考试大纲/,
-  /调剂|调剂信息|调剂系统|调剂名额/,
-  /推免|保研|夏令营|预推免/,
-  /院校排名|学科评估|双一流|985|211/,
-  /学费|奖学金|助学金|住宿/,
-  /就业|毕业去向|薪资|年薪/,
+// 触发"建议人工确认最新政策"的关键词（分数线、政策、最新等）
+const POLICY_KEYWORDS = [
+  '分数线', '录取线', '复试线', '国家线', '自划线', '单科线',
+  '招生简章', '招生目录', '招生计划', '招生人数',
+  '政策', '改革', '调整', '变化', '新规', '新政',
+  '报名', '现场确认', '网上确认', '考试时间', '考试大纲',
+  '调剂', '调剂信息', '调剂系统', '调剂名额',
+  '推免', '保研', '夏令营', '预推免',
+  '学费', '奖学金', '助学金', '住宿',
+  '2026', '2027', '今年', '去年', '最新', '最近', '刚刚'
 ];
 
-// ── 内部工具：判断是否需要联网搜索 ──
+// ── 内部工具：判断问题是否涉及最新政策/分数线 ──
 
-function needsRealtimeSearch(question) {
-  const q = question || '';
-  return REALTIME_KEYWORDS.some((pattern) => pattern.test(q));
-}
-
-// ── 内部工具：可插拔联网搜索 ──
-
-/**
- * 联网搜索（可插拔实现）
- * 如配置了 BING_API_KEY 或 SERP_API_KEY 则调用，否则返回空数组
- * @param {string} query
- * @returns {Promise<Array<{title:string, snippet:string, url:string}>>}
- */
-async function searchWeb(query) {
-  const bingKey = process.env.BING_API_KEY || config.bingApiKey || '';
-  const serpKey = process.env.SERP_API_KEY || config.serpApiKey || '';
-
-  // Bing Search API
-  if (bingKey) {
-    try {
-      const https = require('https');
-      const encodedQuery = encodeURIComponent(query);
-      const url = `https://api.bing.microsoft.com/v7.0/search?q=${encodedQuery}&count=5&mkt=zh-CN`;
-
-      const result = await new Promise((resolve, reject) => {
-        https.get(url, { headers: { 'Ocp-Apim-Subscription-Key': bingKey } }, (res) => {
-          const chunks = [];
-          res.on('data', (c) => chunks.push(c));
-          res.on('end', () => {
-            try {
-              const data = JSON.parse(Buffer.concat(chunks).toString());
-              const items = (data.webPages?.value || []).map((item) => ({
-                title: item.name || '',
-                snippet: item.snippet || '',
-                url: item.url || ''
-              }));
-              resolve(items);
-            } catch (e) {
-              reject(e);
-            }
-          });
-          res.on('error', reject);
-        }).on('error', reject);
-      });
-
-      console.log(`[answerBot] Bing 搜索返回 ${result.length} 条结果`);
-      return result;
-    } catch (err) {
-      console.error('[answerBot] Bing 搜索失败:', err.message);
-      return [];
-    }
-  }
-
-  // SerpAPI (Google)
-  if (serpKey) {
-    try {
-      const https = require('https');
-      const encodedQuery = encodeURIComponent(query);
-      const url = `https://serpapi.com/search?engine=google&q=${encodedQuery}&api_key=${serpKey}&hl=zh-CN&num=5`;
-
-      const result = await new Promise((resolve, reject) => {
-        https.get(url, (res) => {
-          const chunks = [];
-          res.on('data', (c) => chunks.push(c));
-          res.on('end', () => {
-            try {
-              const data = JSON.parse(Buffer.concat(chunks).toString());
-              const items = (data.organic_results || []).map((item) => ({
-                title: item.title || '',
-                snippet: item.snippet || '',
-                url: item.link || ''
-              }));
-              resolve(items);
-            } catch (e) {
-              reject(e);
-            }
-          });
-          res.on('error', reject);
-        }).on('error', reject);
-      });
-
-      console.log(`[answerBot] SerpAPI 搜索返回 ${result.length} 条结果`);
-      return result;
-    } catch (err) {
-      console.error('[answerBot] SerpAPI 搜索失败:', err.message);
-      return [];
-    }
-  }
-
-  // 无搜索配置，返回空
-  console.log('[answerBot] 未配置搜索 API，跳过联网搜索');
-  return [];
+function isPolicyQuestion(question) {
+  const q = (question || '').toLowerCase();
+  return POLICY_KEYWORDS.some((kw) => q.includes(kw.toLowerCase()));
 }
 
 // ── 内部工具：处理附件 ──
 
 /**
- * 处理附件（语音、图片、文档）
+ * 处理附件（图片、文档）
  * @param {Array<string>} attachments - 文件路径数组
  * @returns {Promise<{text:string, notes:Array<string>}>}
  */
@@ -173,17 +88,9 @@ async function processAttachments(attachments) {
 
     const ext = path.extname(filePath).toLowerCase();
 
-    // 语音文件
-    if (['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.amr', '.wma'].includes(ext)) {
-      notes.push(`[语音] ${path.basename(filePath)} — 语音转文字待接入`);
-      // TODO: 接入语音识别服务（如讯飞、百度语音）
-      // extractedText += await speechToText(filePath);
-      continue;
-    }
-
     // 图片文件
     if (['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'].includes(ext)) {
-      notes.push(`[图片] ${path.basename(filePath)} — 图片 OCR 解析待接入`);
+      notes.push(`[图片] ${path.basename(filePath)} — 图片问题已收到，建议补充文字描述`);
       // TODO: 接入 OCR 服务（如百度 OCR、腾讯云 OCR）
       // extractedText += await ocrImage(filePath);
       continue;
@@ -198,11 +105,17 @@ async function processAttachments(attachments) {
           extractedText += `\n[文档 ${path.basename(filePath)} 内容]:\n${text.trim()}\n`;
           notes.push(`[文档] ${path.basename(filePath)} — 已提取 ${text.length} 字`);
         } else {
-          notes.push(`[文档] ${path.basename(filePath)} — 未能提取文本`);
+          notes.push(`[文档] ${path.basename(filePath)} — 未能提取文本（PDF/Word 解析库未安装或文件格式不支持）`);
         }
       } catch (e) {
         notes.push(`[文档] ${path.basename(filePath)} — 提取失败: ${e.message}`);
       }
+      continue;
+    }
+
+    // 语音文件
+    if (['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.amr', '.wma'].includes(ext)) {
+      notes.push(`[语音] ${path.basename(filePath)} — 语音转文字待接入`);
       continue;
     }
 
@@ -231,30 +144,55 @@ function buildUserContent(question, attachmentText, attachmentNotes) {
 // ── 内部工具：知识库检索（第一层） ──
 
 /**
- * 第一层：知识库 RAG 检索
+ * 第一层：知识库关键词检索
+ * 在 knowledge_chunks 中按关键词/LIKE 匹配，找到最相关片段。
+ * 若相似度足够高（按关键词命中数判断），直接返回答案。
  * @param {string} question
  * @param {number} baseId - 知识库 ID（如未提供，使用默认知识库）
  * @returns {Promise<{hit:boolean, answer:string, sources:Array<Object>}>}
  */
 async function layer1KnowledgeBase(question, baseId = null) {
-  // 如未指定知识库，尝试使用默认知识库（id=1）
   const targetBaseId = baseId || 1;
 
   try {
-    const results = await searchByVector(targetBaseId, question, RAG_TOP_K);
+    const results = await searchChunks(targetBaseId, question, RAG_TOP_K);
 
     if (!results || results.length === 0) {
       return { hit: false, answer: '', sources: [] };
     }
 
-    // 检查最高分是否达到阈值
-    const topScore = results[0].score || 0;
-    if (topScore < RAG_SCORE_THRESHOLD) {
-      console.log(`[answerBot] 知识库最高分 ${topScore} 低于阈值 ${RAG_SCORE_THRESHOLD}，视为未命中`);
+    // 计算关键词命中数：将问题分词，统计每个 chunk 命中多少关键词
+    const queryTokens = question
+      .toLowerCase()
+      .replace(/[^一-龥a-z0-9]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 2);
+
+    let maxHits = 0;
+    for (const r of results) {
+      const contentLower = (r.content || '').toLowerCase();
+      const titleLower = (r.documentTitle || '').toLowerCase();
+      const keywordsLower = (r.keywords || '').toLowerCase();
+      let hits = 0;
+      for (const token of queryTokens) {
+        if (contentLower.includes(token) || titleLower.includes(token) || keywordsLower.includes(token)) {
+          hits++;
+        }
+      }
+      // 标题匹配额外加权
+      if (titleLower.includes(question.toLowerCase().substring(0, 10))) {
+        hits += 2;
+      }
+      maxHits = Math.max(maxHits, hits);
+    }
+
+    // 如果最高命中数低于阈值，视为未命中
+    if (maxHits < RAG_KEYWORD_HIT_THRESHOLD) {
+      console.log(`[answerBot] 知识库最高关键词命中数 ${maxHits} 低于阈值 ${RAG_KEYWORD_HIT_THRESHOLD}，视为未命中`);
       return { hit: false, answer: '', sources: results.slice(0, 3) };
     }
 
-    // 构建带来源的预设答案
+    // 构建来源信息
     const sources = results.map((r) => ({
       documentTitle: r.documentTitle || '未知文档',
       chunkIndex: r.chunkIndex,
@@ -296,20 +234,15 @@ ${contextText}
 
 /**
  * 第二层：AI 生成回答
+ * 未命中知识库时调用大模型 API 生成回答。
  * @param {string} question
  * @param {Array<{role:string, content:string}>} historyMessages
- * @param {string} [searchContext] - 联网搜索上下文（第三层结果）
  * @returns {Promise<string>}
  */
-async function layer2AIGenerate(question, historyMessages = [], searchContext = '') {
-  const messages = [];
-
-  if (searchContext) {
-    messages.push({ role: 'system', content: SYSTEM_PROMPT_WITH_SEARCH });
-    messages.push({ role: 'system', content: `搜索信息：\n${searchContext}` });
-  } else {
-    messages.push({ role: 'system', content: SYSTEM_PROMPT_ANSWER });
-  }
+async function layer2AIGenerate(question, historyMessages = []) {
+  const messages = [
+    { role: 'system', content: SYSTEM_PROMPT_ANSWER }
+  ];
 
   // 添加上下文历史（限制条数）
   if (historyMessages && historyMessages.length > 0) {
@@ -324,44 +257,49 @@ async function layer2AIGenerate(question, historyMessages = [], searchContext = 
     return answer;
   } catch (err) {
     console.error('[answerBot] AI 生成失败:', err.message);
+    // 如果 AI 未配置，返回占位提示（不引入新依赖）
+    if (err.message && err.message.includes('未配置')) {
+      return '【正在接入大模型】\n\n目前 AI 解答服务正在配置中，您的提问已记录，配置完成后将自动为您提供智能解答。如有紧急问题，请回复「人工」联系老师。';
+    }
     throw new Error('AI 生成回答失败，请稍后重试');
   }
 }
 
-// ── 内部工具：联网搜索（第三层） ──
+// ── 内部工具：政策确认/转人工（第三层） ──
 
 /**
- * 第三层：联网搜索获取最新信息
+ * 第三层：涉及最新政策/分数线时，返回提示并触发转人工
  * @param {string} question
- * @returns {Promise<{hasResult:boolean, context:string, disclaimer:boolean}>}
+ * @param {number} userId
+ * @param {string} source
+ * @returns {Promise<{isPolicy:boolean, answer:string}>}
  */
-async function layer3WebSearch(question) {
-  const searchResults = await searchWeb(question);
-
-  if (!searchResults || searchResults.length === 0) {
-    return { hasResult: false, context: '', disclaimer: true };
+async function layer3PolicyCheck(question, userId, source = 'wecom') {
+  if (!isPolicyQuestion(question)) {
+    return { isPolicy: false, answer: '' };
   }
 
-  const context = searchResults
-    .map((r, i) => `[结果${i + 1}] ${r.title}\n${r.snippet}\n来源：${r.url}`)
-    .join('\n\n');
+  const policyReply = '【建议老师人工确认最新政策】\n\n您的问题涉及最新政策或分数线信息，这类信息可能随时变化。为确保回答准确，已为您转接人工客服，老师将尽快为您确认最新政策并回复。';
 
-  return {
-    hasResult: true,
-    context,
-    disclaimer: false
-  };
+  // 触发转人工
+  try {
+    startHandoff(db, userId, source, null, question);
+    await notifyHumanAgents(db, userId, question, source);
+  } catch (err) {
+    console.error('[answerBot] 转人工失败:', err.message);
+  }
+
+  return { isPolicy: true, answer: policyReply };
 }
 
 // ── 内部工具：发送回复 ──
 
-async function sendReply(userId, content, source, groupId) {
+async function sendReply(userId, content, source) {
   const bot = getBotByCode(BOT_CODE);
   const botName = bot?.name || '解答专家';
   const fullContent = `${botName}：\n${content}`;
 
   if (source === 'wecom') {
-    // 企业微信应用消息
     const payload = {
       touser: userId,
       msgtype: 'text',
@@ -369,14 +307,9 @@ async function sendReply(userId, content, source, groupId) {
     };
     await sendAppMessage(payload);
   } else if (source === 'webhook') {
-    // 企业微信群机器人 Webhook
-    const payload = {
-      msgtype: 'text',
-      text: { content: fullContent }
-    };
-    await sendWebhookMessage(payload);
+    // 企业微信群机器人 Webhook —— 通过调用方处理
+    console.log(`[answerBot] Webhook 消息（用户 ${userId}）: ${content.slice(0, 100)}...`);
   } else if (source === 'miniapp') {
-    // 小程序端：此处仅记录，实际发送由调用方处理
     console.log(`[answerBot] 小程序消息（用户 ${userId}）: ${content.slice(0, 100)}...`);
   } else {
     console.log(`[answerBot] 未知来源 ${source}，仅记录不发送`);
@@ -400,54 +333,70 @@ function recordConversation(userId, prompt, response, context = '') {
   }
 }
 
-// ── 主入口：处理用户问题 ──
+// ── 主入口：处理用户消息 ──
 
 /**
- * 处理用户问题（三层应答）
- * @param {Object} params
- * @param {string} params.userId        - 用户唯一标识
- * @param {string} params.question      - 用户问题文本
- * @param {string} [params.source='wecom'] - 消息来源：wecom | webhook | miniapp
- * @param {string} [params.groupId=null]   - 群组 ID（如有）
- * @param {Object} [params.context={}]     - 扩展上下文（如历史对话、用户信息等）
- * @param {Array<string>} [params.attachments=[]] - 附件文件路径数组
+ * 处理用户消息（三层应答）
+ * @param {string} userId        - 用户唯一标识
+ * @param {string} message       - 用户消息文本
+ * @param {Array<string>} [attachments=[]] - 附件文件路径数组
+ * @param {string} [source='wecom'] - 消息来源：wecom | webhook | miniapp
+ * @param {Object} [context={}]     - 扩展上下文（如历史对话、用户信息等）
  * @returns {Promise<{success:boolean, answer:string, layer:string, sources:Array, disclaimer:string}>}
  */
-async function handleQuestion({
-  userId,
-  question,
-  source = 'wecom',
-  groupId = null,
-  context = {},
-  attachments = []
-}) {
+async function handleMessage(userId, message, attachments = [], source = 'wecom', context = {}) {
   if (!userId) {
     throw new Error('userId 为必填项');
   }
-  if (!question && (!attachments || attachments.length === 0)) {
-    throw new Error('question 和 attachments 不能同时为空');
+  if (!message && (!attachments || attachments.length === 0)) {
+    throw new Error('message 和 attachments 不能同时为空');
   }
 
-  console.log(`[answerBot] 收到问题 | 用户: ${userId} | 来源: ${source} | 问题: ${question?.slice(0, 50)}...`);
+  console.log(`[answerBot] 收到消息 | 用户: ${userId} | 来源: ${source} | 消息: ${message?.slice(0, 50)}...`);
 
-  // 若处于人工接管状态，不自动回复，提示已转人工
-  if (isInHandoff(null, userId)) {
+  // 1. 检查是否触发人工
+  if (isHandoffRequest(message)) {
+    console.log('[answerBot] 用户触发人工，执行转人工...');
+    try {
+      startHandoff(db, userId, source, null, message);
+      await notifyHumanAgents(db, userId, message, source);
+    } catch (err) {
+      console.error('[answerBot] 转人工失败:', err.message);
+    }
+
+    const handoffReply = '已为您转接人工客服，老师将尽快回复您的问题。';
+    await sendReply(userId, handoffReply, source);
+    recordConversation(userId, message, handoffReply, JSON.stringify({ layer: 'handoff', source }));
+
     return {
       success: true,
-      answer: '当前会话已由人工客服接管，机器人暂不自动回复，请等待老师回复。',
+      answer: handoffReply,
       layer: 'handoff',
       sources: [],
       disclaimer: ''
     };
   }
 
-  // 1. 处理附件
+  // 2. 若处于人工接管状态，不自动回复
+  if (isInHandoff(db, userId)) {
+    const handoffReply = '当前会话已由人工客服接管，机器人暂不自动回复，请等待老师回复。';
+    recordConversation(userId, message, handoffReply, JSON.stringify({ layer: 'handoff_active', source }));
+    return {
+      success: true,
+      answer: handoffReply,
+      layer: 'handoff_active',
+      sources: [],
+      disclaimer: ''
+    };
+  }
+
+  // 3. 处理附件
   const { text: attachmentText, notes: attachmentNotes } = await processAttachments(attachments);
 
-  // 2. 构建完整用户输入
-  const userContent = buildUserContent(question, attachmentText, attachmentNotes);
+  // 4. 构建完整用户输入
+  const userContent = buildUserContent(message, attachmentText, attachmentNotes);
 
-  // 3. 提取历史上下文
+  // 5. 提取历史上下文
   const historyMessages = context.historyMessages || [];
   const baseId = context.baseId || null;
 
@@ -456,7 +405,7 @@ async function handleQuestion({
   let sources = [];
   let disclaimer = '';
 
-  // ========== 第一层：知识库 RAG ==========
+  // ========== 第一层：知识库检索 ==========
   console.log('[answerBot] 尝试第一层：知识库检索...');
   const kbResult = await layer1KnowledgeBase(userContent, baseId);
 
@@ -466,64 +415,46 @@ async function handleQuestion({
     sources = kbResult.sources;
     console.log(`[answerBot] 第一层命中，来源: ${sources.map((s) => s.documentTitle).join(', ')}`);
   } else {
-    // ========== 第二层/第三层：AI 生成 + 联网搜索 ==========
-    console.log('[answerBot] 第一层未命中，进入第二层/第三层...');
+    // ========== 第二层：AI 生成 ==========
+    console.log('[answerBot] 第一层未命中，进入第二层：AI 生成...');
 
-    // 判断是否需要联网搜索
-    const needSearch = needsRealtimeSearch(question);
-    let searchContext = '';
-    let hasSearchResult = false;
-
-    if (needSearch) {
-      console.log('[answerBot] 问题涉及实时信息，尝试第三层：联网搜索...');
-      const searchResult = await layer3WebSearch(question);
-      if (searchResult.hasResult) {
-        searchContext = searchResult.context;
-        hasSearchResult = true;
-        console.log(`[answerBot] 联网搜索成功，获取 ${searchResult.context.length} 字上下文`);
-      } else {
-        console.log('[answerBot] 联网搜索未返回结果或配置缺失');
-      }
-    }
-
-    // 调用 AI 生成
     try {
-      finalAnswer = await layer2AIGenerate(userContent, historyMessages, searchContext);
-      usedLayer = hasSearchResult ? 'ai_with_search' : 'ai';
-
-      // 如果触发了搜索但未获取到结果，添加免责声明
-      if (needSearch && !hasSearchResult) {
-        disclaimer = '【提示】该问题可能涉及最新政策或实时信息，当前未能获取联网数据，以上回答基于已有知识生成，信息可能不是最新的。建议您查阅官方渠道确认。';
-      }
+      finalAnswer = await layer2AIGenerate(userContent, historyMessages);
+      usedLayer = 'ai';
     } catch (err) {
       console.error('[answerBot] AI 生成失败:', err.message);
       finalAnswer = '抱歉，当前无法生成回答，请稍后重试。';
       usedLayer = 'error';
     }
+
+    // ========== 第三层：政策/分数线检查 ==========
+    if (usedLayer !== 'error' && isPolicyQuestion(message)) {
+      console.log('[answerBot] 问题涉及最新政策/分数线，进入第三层：建议人工确认...');
+      const policyResult = await layer3PolicyCheck(message, userId, source);
+      if (policyResult.isPolicy) {
+        // 将 AI 回答与政策提示结合
+        finalAnswer = finalAnswer + '\n\n---\n' + policyResult.answer;
+        usedLayer = 'ai_policy_handoff';
+      }
+    }
   }
 
-  // 4. 拼接附件处理备注（如有）
+  // 6. 拼接附件处理备注（如有）
   let replyContent = finalAnswer;
   if (attachmentNotes && attachmentNotes.length > 0) {
-    const pendingNotes = attachmentNotes.filter((n) => n.includes('待接入'));
+    const pendingNotes = attachmentNotes.filter((n) => n.includes('待接入') || n.includes('建议补充') || n.includes('未能提取'));
     if (pendingNotes.length > 0) {
       replyContent += `\n\n---\n📎 附件处理：\n${pendingNotes.join('\n')}`;
     }
   }
 
-  // 5. 添加免责声明
-  if (disclaimer) {
-    replyContent += `\n\n${disclaimer}`;
-  }
+  // 7. 发送回复
+  await sendReply(userId, replyContent, source);
 
-  // 6. 发送回复
-  await sendReply(userId, replyContent, source, groupId);
-
-  // 7. 记录对话
+  // 8. 记录对话到 ai_conversations（type='answer'）
   const logContext = JSON.stringify({
     layer: usedLayer,
     source,
-    groupId,
     hasAttachments: attachments.length > 0,
     attachmentNotes,
     sources: sources.map((s) => s.documentTitle)
@@ -544,7 +475,6 @@ async function handleQuestion({
 // ── 导出 ──
 
 module.exports = {
-  handleQuestion,
-  searchWeb,        // 导出以便测试和外部调用
-  processAttachments // 导出以便测试
+  handleMessage,
+  processAttachments
 };

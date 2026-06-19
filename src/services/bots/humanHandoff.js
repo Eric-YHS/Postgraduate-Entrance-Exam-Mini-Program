@@ -342,6 +342,45 @@ function getHandoffHistory(db, userId, limit = 20) {
   `).all(userId, Math.min(Math.max(limit, 1), 500));
 }
 
+// ── 便捷封装函数（供机器人调用）──
+
+/**
+ * 将用户转接给人工客服
+ * @param {number} userId - 用户 ID
+ * @param {string} [reason=''] - 转人工原因
+ * @returns {Object} { success: boolean, sessionId?: number, message: string }
+ */
+function handoffToHuman(userId, reason = '') {
+  return startHandoff(globalDb, userId, 'wecom', null, reason);
+}
+
+/**
+ * 释放用户会话，恢复机器人自动回复
+ * @param {number} userId - 用户 ID
+ * @returns {Object} { success: boolean, message: string }
+ */
+function releaseToBot(userId) {
+  return endHandoff(globalDb, userId);
+}
+
+/**
+ * 检查用户是否已转接人工客服
+ * @param {number} userId - 用户 ID
+ * @returns {boolean}
+ */
+function isHandedOff(userId) {
+  return isInHandoff(globalDb, userId);
+}
+
+/**
+ * 列出当前人工客服待处理队列（所有活跃的人工接管会话）
+ * @param {Object} [filters={}] - 筛选条件
+ * @returns {Array<Object>}
+ */
+function listHandoffQueue(filters = {}) {
+  return listActiveHandoffs(globalDb, filters);
+}
+
 module.exports = {
   isHandoffRequest,
   startHandoff,
@@ -350,5 +389,9 @@ module.exports = {
   getActiveHandoff,
   listActiveHandoffs,
   notifyHumanAgents,
-  getHandoffHistory
+  getHandoffHistory,
+  handoffToHuman,
+  releaseToBot,
+  isHandedOff,
+  listHandoffQueue
 };

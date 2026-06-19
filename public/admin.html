@@ -187,6 +187,15 @@
               </div>
               <input type="hidden" id="category-id" />
             </div>
+            <!-- B-14: 商品资料低库存阈值设置 -->
+            <div id="product-stock-filter" class="hidden" style="margin-bottom:16px;padding:12px;background:#f8fafc;border-radius:12px;border:1px solid var(--border);">
+              <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                <label style="font-size:13px;">低库存阈值：</label>
+                <input class="input" id="low-stock-threshold-input" type="number" value="10" min="0" style="padding:6px 10px;font-size:13px;width:80px;" />
+                <button class="button" id="apply-low-stock-btn" type="button" style="font-size:12px;padding:6px 14px;">应用</button>
+                <span class="muted" style="font-size:12px;">库存低于此值的商品将标红显示</span>
+              </div>
+            </div>
             <div id="content-list"></div>
           </section>
 
@@ -221,7 +230,101 @@
           <!-- 4. 题库管理 -->
           <section class="admin-section" id="section-questions">
             <h2>题库管理</h2>
+            <div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 12px; border: 1px solid var(--border);">
+              <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end;">
+                <div>
+                  <label style="font-size: 12px; color: var(--subtle);">科目</label>
+                  <select id="question-filter-subject" class="input" style="padding: 6px 10px; font-size: 13px;">
+                    <option value="">全部</option>
+                    <option value="数学">数学</option>
+                    <option value="英语">英语</option>
+                    <option value="政治">政治</option>
+                    <option value="专业课">专业课</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px; color: var(--subtle);">题型</label>
+                  <select id="question-filter-type" class="input" style="padding: 6px 10px; font-size: 13px;">
+                    <option value="">全部</option>
+                    <option value="choice">单选题</option>
+                    <option value="multiple">多选题</option>
+                    <option value="word">词汇题</option>
+                    <option value="formula">公式题</option>
+                    <option value="fill">填空题</option>
+                    <option value="essay">主观题</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px; color: var(--subtle);">教材</label>
+                  <input id="question-filter-textbook" class="input" placeholder="教材名称" style="padding: 6px 10px; font-size: 13px; width: 120px;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; color: var(--subtle);">年份</label>
+                  <input id="question-filter-year" class="input" placeholder="如 2024" style="padding: 6px 10px; font-size: 13px; width: 80px;" />
+                </div>
+                <div>
+                  <label style="font-size: 12px; color: var(--subtle);">难度</label>
+                  <select id="question-filter-difficulty" class="input" style="padding: 6px 10px; font-size: 13px;">
+                    <option value="">全部</option>
+                    <option value="easy">简单</option>
+                    <option value="medium">中等</option>
+                    <option value="hard">困难</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="font-size: 12px; color: var(--subtle);">付费</label>
+                  <select id="question-filter-paid" class="input" style="padding: 6px 10px; font-size: 13px;">
+                    <option value="">全部</option>
+                    <option value="1">仅付费</option>
+                    <option value="0">仅免费</option>
+                  </select>
+                </div>
+                <div>
+                  <button class="button" id="apply-question-filter" type="button" style="font-size: 12px; padding: 6px 14px;">筛选</button>
+                  <button class="ghost-button" id="reset-question-filter" type="button" style="font-size: 12px; padding: 6px 14px;">重置</button>
+                </div>
+              </div>
+            </div>
             <div id="questions-list"></div>
+
+            <!-- 题目编辑 Modal -->
+            <div id="question-edit-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 id="question-edit-title" style="margin: 0;">编辑题目</h3>
+                  <button class="ghost-button" id="close-question-edit" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="question-edit-body" style="padding: 24px;">
+                  <div style="display: grid; gap: 16px;">
+                    <label style="display: grid; gap: 6px;">
+                      <span>标题</span>
+                      <input id="qe-title" class="input" type="text" placeholder="题目标题" />
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                      <span>解析</span>
+                      <textarea id="qe-analysis" class="input" rows="3" placeholder="题目解析"></textarea>
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                      <span>正确答案</span>
+                      <input id="qe-correct" class="input" type="text" placeholder="如 A、B、C" />
+                    </label>
+                    <label style="display: grid; gap: 6px;">
+                      <span>标签（用逗号分隔）</span>
+                      <input id="qe-tags" class="input" type="text" placeholder="如 高数,极限,真题" />
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                      <input id="qe-paid" type="checkbox" />
+                      <span>仅付费用户可见</span>
+                    </label>
+                    <input type="hidden" id="qe-id" />
+                  </div>
+                </div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-question-edit" type="button">取消</button>
+                  <button class="button" id="save-question-edit" type="button">保存</button>
+                </div>
+              </div>
+            </div>
           </section>
 
           <!-- 5. 知识库 / 语料库 -->

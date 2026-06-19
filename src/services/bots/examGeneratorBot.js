@@ -7,13 +7,15 @@ const dayjs = require('dayjs');
 const ai = require('../ai');
 const { logConversation } = require('../botManager');
 const { safeJsonParse } = require('../taskService');
+const { sendAppMessage } = require('../wecom');
+const { db } = require('../../db');
 
 // ── 常量 ──
 
 const DEFAULT_QUESTION_COUNT = 15;          // 默认试卷题目数量
 const MIN_QUESTION_COUNT = 10;              // 最少题目数量
 const MAX_QUESTION_COUNT = 20;              // 最多题目数量
-const EXAM_DUE_DAYS = 14;                   // 试卷有效期（半月）
+const EXAM_DUE_DAYS = 3;                    // 试卷有效期（生成后 3 天）
 const OBJECTIVE_TYPES = ['single_choice', 'multiple_choice', 'true_false', '判断'];
 const SUBJECTIVE_TYPES = ['fill_blank', 'short_answer', 'essay', '填空', '简答', '论述'];
 
@@ -89,7 +91,7 @@ function generateExamId() {
  * @returns {Object} { weakSubjects, weakTypes, wrongQuestions, totalWrong }
  */
 function analyzeWeakPoints(db, studentId) {
-  // 查询学生错题记录及题目信息
+  // 查询学生错题记录及题目信息（包含 tags 字段）
   const wrongRecords = db.prepare(`
     SELECT
       pr.question_id,
@@ -110,9 +112,10 @@ function analyzeWeakPoints(db, studentId) {
     return { weakSubjects: [], weakTypes: [], wrongQuestions: [], totalWrong: 0 };
   }
 
-  // 统计薄弱科目和题型
+  // 统计薄弱科目、题型和标签
   const subjectStats = {};
   const typeStats = {};
+  const tagStats = {};
   const wrongQuestionIds = [];
 
   for (const record of wrongRecords) {
@@ -123,9 +126,15 @@ function analyzeWeakPoints(db, studentId) {
 
     const qType = record.question_type || '未分类';
     typeStats[qType] = (typeStats[qType] || 0) + 1;
+
+    // 统计薄弱知识点标签
+    const tags = record.tag ? record.tag.split(/[,，;；]/).map(t => t.trim()).filter(Boolean) : [];
+    for (const tag of tags) {
+      tagStats[tag] = (tagStats[tag] || 0) + 1;
+    }
   }
 
-  // 按错误频次排序，取前 3 个薄弱科目和题型
+  // 按错误频次排序，取前 3 个薄弱科目、题型和标签
   const weakSubjects = Object.entries(subjectStats)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 3)
@@ -136,9 +145,15 @@ function analyzeWeakPoints(db, studentId) {
     .slice(0, 3)
     .map(([type]) => type);
 
+  const weakTags = Object.entries(tagStats)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([tag]) => tag);
+
   return {
     weakSubjects,
     weakTypes,
+    weakTags,
     wrongQuestions: wrongQuestionIds,
     totalWrong: wrongRecords.length
   };
@@ -193,9 +208,38 @@ function pickSimilarQuestions(db, studentId, weakPoints, targetCount) {
     }
   }
 
-  // 策略 2：如果数量不足，从同科目补充
+  // 策略 2：如果数量不足，从薄弱标签相关题目补充
   const remainingCount = targetCount - questions.length;
-  if (remainingCount > 0 && weakPoints.weakSubjects.length) {
+  if (remainingCount > 0 && weakPoints.weakTags && weakPoints.weakTags.length) {
+    const tagConditions = weakPoints.weakTags.map(() => "tag LIKE ?").join(' OR ');
+    const usedPlaceholders = usedIds.size ? [...usedIds].map(() => '?').join(',') : '';
+
+    let sql = `
+      SELECT * FROM questions
+      WHERE (${tagConditions})
+      ${usedPlaceholders ? `AND id NOT IN (${usedPlaceholders})` : ''}
+      ORDER BY RANDOM()
+      LIMIT ?
+    `;
+
+    const params = [
+      ...weakPoints.weakTags.map(tag => `%${tag}%`),
+      ...(usedPlaceholders ? [...usedIds] : []),
+      remainingCount
+    ];
+
+    const tagQuestions = db.prepare(sql).all(...params);
+    for (const q of tagQuestions) {
+      if (!usedIds.has(q.id)) {
+        questions.push(q);
+        usedIds.add(q.id);
+      }
+    }
+  }
+
+  // 策略 3：如果还不够，从同科目补充
+  const stillRemaining = targetCount - questions.length;
+  if (stillRemaining > 0 && weakPoints.weakSubjects.length) {
     const subjectPlaceholders = weakPoints.weakSubjects.map(() => '?').join(',');
     const usedPlaceholders = usedIds.size ? [...usedIds].map(() => '?').join(',') : '';
 
@@ -210,7 +254,7 @@ function pickSimilarQuestions(db, studentId, weakPoints, targetCount) {
     const params = [
       ...weakPoints.weakSubjects,
       ...(usedPlaceholders ? [...usedIds] : []),
-      remainingCount
+      stillRemaining
     ];
 
     const extra = db.prepare(sql).all(...params);
@@ -222,9 +266,9 @@ function pickSimilarQuestions(db, studentId, weakPoints, targetCount) {
     }
   }
 
-  // 策略 3：如果还不够，随机抽取任何题目
-  const stillRemaining = targetCount - questions.length;
-  if (stillRemaining > 0) {
+  // 策略 4：如果还不够，随机抽取任何题目（优先未做过的）
+  const finalRemaining = targetCount - questions.length;
+  if (finalRemaining > 0) {
     const usedPlaceholders = usedIds.size ? [...usedIds].map(() => '?').join(',') : '';
 
     let sql = `
@@ -236,7 +280,7 @@ function pickSimilarQuestions(db, studentId, weakPoints, targetCount) {
 
     const params = [
       ...(usedPlaceholders ? [...usedIds] : []),
-      stillRemaining
+      finalRemaining
     ];
 
     const fallback = db.prepare(sql).all(...params);
@@ -324,7 +368,7 @@ async function generateAIQuestions(weakPoints, count) {
 }
 
 /**
- * 为学生生成半月自测试卷
+ * 为学生生成自测试卷（内部实现）
  * @param {Object} db - better-sqlite3 数据库实例
  * @param {number} studentId - 学生 ID
  * @returns {Promise<Object>} exam 对象 { id, title, questionIds, generatedAt, dueAt, status }
@@ -381,9 +425,11 @@ async function generateExam(db, studentId) {
   const questionIds = allQuestions.map((q) => q.id);
   const questionIdsJson = JSON.stringify(questionIds);
 
-  // 确定试卷标题
-  const weakSubjectStr = weakPoints.weakSubjects.slice(0, 2).join('、') || '综合';
-  const title = `${student.display_name}的${weakSubjectStr}半月自测（${now.format('MM月DD日')}）`;
+  // 确定试卷标题：第 N 次自测
+  const examCount = db.prepare(
+    "SELECT COUNT(*) as count FROM ai_exams WHERE student_id = ?"
+  ).get(studentId).count;
+  const title = `第 ${examCount + 1} 次自测`;
 
   // 存入 ai_exams 表
   const insert = db.prepare(`
@@ -394,7 +440,7 @@ async function generateExam(db, studentId) {
   const result = insert.run(
     studentId,
     title,
-    weakSubjectStr,
+    weakPoints.weakSubjects.slice(0, 2).join('、') || '综合',
     questionIdsJson,
     generatedAt,
     dueAt,
@@ -403,13 +449,13 @@ async function generateExam(db, studentId) {
 
   const examId = result.lastInsertRowid;
 
-  // 记录 AI 对话日志
+  // 记录 AI 对话日志（type='exam_generator'）
   try {
     logConversation({
       userId: studentId,
       botCode: 'exam_generator',
-      type: 'generate',
-      prompt: `生成半月自测试卷：薄弱科目=${weakSubjectStr}, 题目数=${allQuestions.length}`,
+      type: 'exam_generator',
+      prompt: `生成自测试卷：薄弱科目=${weakPoints.weakSubjects.join('、')}, 题目数=${allQuestions.length}`,
       response: JSON.stringify({ examId, questionCount: allQuestions.length, aiGenerated: aiQuestions.length }),
       context: JSON.stringify({ weakPoints, questionIds })
     });
@@ -428,10 +474,257 @@ async function generateExam(db, studentId) {
   };
 }
 
+/**
+ * 为学生生成自测试卷（对外接口）
+ * @param {number} studentId - 学生 ID
+ * @returns {Promise<Object>} exam 对象
+ */
+async function generateExamForStudent(studentId) {
+  if (!studentId) {
+    throw new Error('studentId 为必填参数');
+  }
+  return generateExam(db, studentId);
+}
+
+// ── 核心功能：通知学生 ──
+
+/**
+ * 通知学生有新的自测试卷
+ * @param {number} studentId - 学生 ID
+ * @param {number} examId - 试卷 ID
+ * @returns {Promise<Object>} 发送结果
+ */
+async function notifyStudent(studentId, examId) {
+  if (!studentId || !examId) {
+    throw new Error('studentId 和 examId 为必填参数');
+  }
+
+  // 查询试卷信息
+  const exam = db.prepare('SELECT * FROM ai_exams WHERE id = ? AND student_id = ?').get(examId, studentId);
+  if (!exam) {
+    throw new Error(`试卷 id=${examId} 不存在或不属于该学生`);
+  }
+
+  // 查询学生信息
+  const student = db.prepare('SELECT id, display_name, wecom_userid FROM users WHERE id = ?').get(studentId);
+  if (!student) {
+    throw new Error(`学生 id=${studentId} 不存在`);
+  }
+
+  // 构建自测链接
+  const examLink = `/ai-exam/${examId}`;
+  const dueDate = exam.due_at ? dayjs(exam.due_at).format('MM月DD日') : '尽快';
+
+  const messageContent = `【自测提醒】${student.display_name}，你的新试卷「${exam.title}」已生成！
+
+请在 ${dueDate} 前完成，检验近期学习成果。
+
+点击开始答题：${examLink}`;
+
+  // 发送企业微信应用消息
+  let wecomResult = null;
+  try {
+    wecomResult = await sendAppMessage({
+      touser: student.wecom_userid || '',
+      msgtype: 'text',
+      text: { content: messageContent }
+    });
+  } catch (err) {
+    console.warn(`[examGenerator] 发送企微消息失败 studentId=${studentId}:`, err.message);
+  }
+
+  // 同时记录站内通知
+  try {
+    const now = dayjs().toISOString();
+    db.prepare(`
+      INSERT INTO notifications (student_id, type, title, body, task_id, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(
+      studentId,
+      'exam_reminder',
+      `新试卷：${exam.title}`,
+      messageContent,
+      examId,
+      now
+    );
+  } catch (err) {
+    console.warn(`[examGenerator] 记录站内通知失败 studentId=${studentId}:`, err.message);
+  }
+
+  // 记录对话日志
+  try {
+    logConversation({
+      userId: studentId,
+      botCode: 'exam_generator',
+      type: 'exam_generator',
+      prompt: `通知学生自测试卷：${exam.title}`,
+      response: JSON.stringify({ examId, notified: true, wecomResult: wecomResult ? 'success' : 'skipped' }),
+      context: JSON.stringify({ examId, dueAt: exam.due_at, link: examLink })
+    });
+  } catch (logErr) {
+    console.warn('[examGenerator] 记录对话日志失败:', logErr.message);
+  }
+
+  return {
+    success: true,
+    examId,
+    studentId,
+    title: exam.title,
+    link: examLink,
+    wecomSent: wecomResult && wecomResult.errcode === 0
+  };
+}
+
 // ── 核心功能：自动批改 ──
 
 /**
- * 自动批改客观题，AI 辅助批改主观题
+ * 自动批改客观题，主观题返回待老师批改提示
+ * @param {number} examId - 考试 ID
+ * @param {Object} answers - { questionId: selectedAnswer }
+ * @returns {Promise<Object>} { score, total, correctCount, details, subjectivePending }
+ */
+async function gradeExam(examId, answers) {
+  if (!examId || !answers || typeof answers !== 'object') {
+    throw new Error('examId, answers 为必填参数');
+  }
+
+  // 查询试卷信息
+  const exam = db.prepare('SELECT * FROM ai_exams WHERE id = ?').get(examId);
+  if (!exam) {
+    throw new Error(`试卷 id=${examId} 不存在`);
+  }
+
+  const studentId = exam.student_id;
+  const questionIds = safeJsonParse(exam.question_ids, []);
+  if (!questionIds.length) {
+    throw new Error('试卷题目列表为空');
+  }
+
+  // 查询题目详情
+  const placeholders = questionIds.map(() => '?').join(',');
+  const questions = db.prepare(`SELECT * FROM questions WHERE id IN (${placeholders})`).all(...questionIds);
+
+  // 构建题目映射
+  const questionMap = new Map();
+  for (const q of questions) {
+    questionMap.set(q.id, q);
+  }
+
+  let totalScore = 0;
+  let maxTotalScore = 0;
+  let correctCount = 0;
+  const details = [];
+  let subjectivePending = false;
+
+  for (const questionId of questionIds) {
+    const selectedAnswer = answers[questionId] || answers[String(questionId)];
+    const question = questionMap.get(Number(questionId)) || questionMap.get(questionId);
+
+    if (!question) {
+      // AI 生成的题目，无法自动批改
+      details.push({
+        questionId,
+        selectedAnswer: selectedAnswer || '',
+        correctAnswer: null,
+        isCorrect: null,
+        score: 0,
+        maxScore: 5,
+        isObjective: false,
+        aiGraded: false,
+        feedback: 'AI 生成题目，无法自动批改'
+      });
+      maxTotalScore += 5;
+      continue;
+    }
+
+    const qType = question.question_type || 'single_choice';
+    const isObj = isObjective(qType);
+    const maxScore = 5;
+    maxTotalScore += maxScore;
+
+    if (isObj) {
+      // 客观题自动批改
+      const correct = compareAnswers(selectedAnswer, question.correct_answer);
+      const score = correct ? maxScore : 0;
+      totalScore += score;
+      if (correct) correctCount += 1;
+
+      details.push({
+        questionId: Number(questionId),
+        selectedAnswer: selectedAnswer || '',
+        correctAnswer: question.correct_answer,
+        isCorrect: correct,
+        score,
+        maxScore,
+        isObjective: true,
+        aiGraded: false,
+        feedback: correct ? '回答正确' : `正确答案：${question.correct_answer}`
+      });
+    } else {
+      // 主观题：标记为待老师批改
+      subjectivePending = true;
+      details.push({
+        questionId: Number(questionId),
+        selectedAnswer: selectedAnswer || '',
+        correctAnswer: question.correct_answer,
+        isCorrect: null,
+        score: 0,
+        maxScore,
+        isObjective: false,
+        aiGraded: false,
+        feedback: '主观题待老师批改'
+      });
+    }
+  }
+
+  // 保存提交记录（主观题未批改时 score 为客观题得分）
+  const submittedAt = dayjs().toISOString();
+  const startedAt = submittedAt;
+
+  db.prepare(`
+    INSERT OR REPLACE INTO ai_exam_submissions
+    (exam_id, student_id, answers, score, submitted_at, started_at)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(
+    examId,
+    studentId,
+    JSON.stringify(answers),
+    totalScore,
+    submittedAt,
+    startedAt
+  );
+
+  // 如果有主观题待批改，不更新试卷状态为 completed
+  const newStatus = subjectivePending ? 'pending' : 'completed';
+  if (!subjectivePending) {
+    db.prepare("UPDATE ai_exams SET status = 'completed' WHERE id = ?").run(examId);
+  }
+
+  // 记录对话日志
+  try {
+    logConversation({
+      userId: studentId,
+      botCode: 'exam_generator',
+      type: 'exam_generator',
+      prompt: `提交自测试卷答案：examId=${examId}, 题目数=${questionIds.length}`,
+      response: JSON.stringify({ score: totalScore, maxTotalScore, correctCount, subjectivePending }),
+      context: JSON.stringify({ examId, answers, details: details.map(d => ({ questionId: d.questionId, isCorrect: d.isCorrect, score: d.score })) })
+    });
+  } catch (logErr) {
+    console.warn('[examGenerator] 记录对话日志失败:', logErr.message);
+  }
+
+  return {
+    score: totalScore,
+    total: maxTotalScore,
+    correctCount,
+    details,
+    subjectivePending
+  };
+}
+
+/**
+ * 自动批改客观题，AI 辅助批改主观题（完整版，保留向后兼容）
  * @param {Object} db
  * @param {number} examId - 考试 ID
  * @param {number} studentId - 学生 ID
@@ -740,7 +1033,7 @@ function remindOverdueExams(db, daysOverdue = 3) {
       logConversation({
         userId: exam.studentId,
         botCode: 'exam_generator',
-        type: 'generate',
+        type: 'exam_generator',
         prompt: '逾期提醒',
         response: `提醒学生完成试卷：${exam.title}`,
         context: JSON.stringify({ examId: exam.examId, dueAt: exam.dueAt })
@@ -760,6 +1053,9 @@ function remindOverdueExams(db, daysOverdue = 3) {
 
 module.exports = {
   generateExam,
+  generateExamForStudent,
+  notifyStudent,
+  gradeExam,
   gradeSubmission,
   generateExamForAllPaidStudents,
   remindOverdueExams

@@ -289,6 +289,33 @@ module.exports = function registerBotRoutes(app, shared) {
       response.status(500).json({ error: '获取人工客服历史失败。' });
     }
   });
+
+  // ── 非管理员人工接管路由（供后续客服系统/外部调用使用）──
+
+  // 人工接管指定用户（无需管理员权限，供客服系统调用）
+  app.post('/api/bots/handoff/:userId', (request, response) => {
+    try {
+      const userId = Number(request.params.userId);
+      const { reason = '人工接管' } = request.body;
+      const result = startHandoff(db, userId, 'api', null, reason);
+      response.json(result);
+    } catch (error) {
+      console.error('人工接管失败:', error);
+      response.status(500).json({ error: '人工接管失败。' });
+    }
+  });
+
+  // 释放用户会话（无需管理员权限，供客服系统调用）
+  app.post('/api/bots/handoff/:userId/release', (request, response) => {
+    try {
+      const userId = Number(request.params.userId);
+      const result = endHandoff(db, userId);
+      response.json(result);
+    } catch (error) {
+      console.error('释放会话失败:', error);
+      response.status(500).json({ error: '释放会话失败。' });
+    }
+  });
 };
 
 function safeJsonParse(str, fallback) {
