@@ -72,6 +72,22 @@ function isPolicyQuestion(question) {
  * @param {Array<string>} attachments - 文件路径数组
  * @returns {Promise<{text:string, notes:Array<string>}>}
  */
+// ── 骨架：图片 OCR 识别（待接入第三方服务） ──
+async function ocrImage(filePath) {
+  // TODO: 接入 OCR 服务（如百度 OCR、腾讯云 OCR、Tesseract.js）
+  // 配置后可调用对应 API 提取图片中的文字
+  console.log('[answerBot] ocrImage 未配置，文件:', filePath);
+  return null;
+}
+
+// ── 骨架：语音转文字（待接入第三方服务） ──
+async function transcribeAudio(filePath) {
+  // TODO: 接入语音识别 API（如百度语音、腾讯云 ASR、Whisper API）
+  // 配置后可调用对应 API 将语音转为文本
+  console.log('[answerBot] transcribeAudio 未配置，文件:', filePath);
+  return null;
+}
+
 async function processAttachments(attachments) {
   const notes = [];
   let extractedText = '';
@@ -90,9 +106,17 @@ async function processAttachments(attachments) {
 
     // 图片文件
     if (['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.svg'].includes(ext)) {
-      notes.push(`[图片] ${path.basename(filePath)} — 图片问题已收到，建议补充文字描述`);
-      // TODO: 接入 OCR 服务（如百度 OCR、腾讯云 OCR）
-      // extractedText += await ocrImage(filePath);
+      try {
+        const ocrText = await ocrImage(filePath);
+        if (ocrText) {
+          extractedText += `\n[图片OCR内容]: ${ocrText}\n`;
+          notes.push(`[图片] ${path.basename(filePath)} — OCR 识别成功`);
+        } else {
+          notes.push(`[图片] ${path.basename(filePath)} — OCR 服务未配置，建议补充文字描述`);
+        }
+      } catch (e) {
+        notes.push(`[图片] ${path.basename(filePath)} — OCR 识别失败: ${e.message}，建议补充文字描述`);
+      }
       continue;
     }
 
@@ -115,7 +139,17 @@ async function processAttachments(attachments) {
 
     // 语音文件
     if (['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.amr', '.wma'].includes(ext)) {
-      notes.push(`[语音] ${path.basename(filePath)} — 语音转文字待接入`);
+      try {
+        const speechResult = await transcribeAudio(filePath);
+        if (speechResult) {
+          extractedText += `\n[语音转文字]: ${speechResult}\n`;
+          notes.push(`[语音] ${path.basename(filePath)} — 已转为文字 (${speechResult.length} 字)`);
+        } else {
+          notes.push(`[语音] ${path.basename(filePath)} — 语音转文字服务未配置，建议补充文字描述`);
+        }
+      } catch (e) {
+        notes.push(`[语音] ${path.basename(filePath)} — 语音转文字失败: ${e.message}，建议补充文字描述`);
+      }
       continue;
     }
 
@@ -268,20 +302,126 @@ async function layer2AIGenerate(question, historyMessages = []) {
 // ── 内部工具：政策确认/转人工（第三层） ──
 
 /**
- * 第三层：涉及最新政策/分数线时，返回提示并触发转人工
+ * 联网搜索（从 schoolSelectorBot 移植，Bing/SerpAPI 双引擎）
+ * @param {string} query
+ * @returns {Promise<Array<{title:string, snippet:string, url:string}>>}
+ */
+async function searchWeb(query) {
+  const bingKey = process.env.BING_API_KEY || config.bingApiKey || '';
+  const serpKey = process.env.SERP_API_KEY || config.serpApiKey || '';
+
+  if (bingKey) {
+    try {
+      const https = require('https');
+      const encodedQuery = encodeURIComponent(query);
+      const result = await new Promise((resolve, reject) => {
+        https.get(
+          `https://api.bing.microsoft.com/v7.0/search?q=${encodedQuery}&count=5&mkt=zh-CN`,
+          { headers: { 'Ocp-Apim-Subscription-Key': bingKey } },
+          (res) => {
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(Buffer.concat(chunks).toString());
+                resolve((data.webPages?.value || []).map((item) => ({
+                  title: item.name || '',
+                  snippet: item.snippet || '',
+                  url: item.url || ''
+                })));
+              } catch (e) { reject(e); }
+            });
+            res.on('error', reject);
+          }
+        ).on('error', reject);
+      });
+      console.log(`[answerBot] Bing 搜索返回 ${result.length} 条结果`);
+      return result;
+    } catch (err) {
+      console.error('[answerBot] Bing 搜索失败:', err.message);
+    }
+  }
+
+  if (serpKey) {
+    try {
+      const https = require('https');
+      const encodedQuery = encodeURIComponent(query);
+      const result = await new Promise((resolve, reject) => {
+        https.get(
+          `https://serpapi.com/search?engine=google&q=${encodedQuery}&api_key=${serpKey}&hl=zh-CN&num=5`,
+          (res) => {
+            const chunks = [];
+            res.on('data', (c) => chunks.push(c));
+            res.on('end', () => {
+              try {
+                const data = JSON.parse(Buffer.concat(chunks).toString());
+                resolve((data.organic_results || []).map((item) => ({
+                  title: item.title || '',
+                  snippet: item.snippet || '',
+                  url: item.link || ''
+                })));
+              } catch (e) { reject(e); }
+            });
+            res.on('error', reject);
+          }
+        ).on('error', reject);
+      });
+      console.log(`[answerBot] SerpAPI 搜索返回 ${result.length} 条结果`);
+      return result;
+    } catch (err) {
+      console.error('[answerBot] SerpAPI 搜索失败:', err.message);
+    }
+  }
+
+  console.log('[answerBot] 未配置搜索 API (BING_API_KEY / SERP_API_KEY)，跳过联网搜索');
+  return [];
+}
+
+/**
+ * 第三层：涉及最新政策/分数线时，尝试联网搜索；搜索不可用时转人工
  * @param {string} question
  * @param {number} userId
  * @param {string} source
- * @returns {Promise<{isPolicy:boolean, answer:string}>}
+ * @returns {Promise<{isPolicy:boolean, answer:string, sources:Array}>}
  */
-async function layer3PolicyCheck(question, userId, source = 'wecom') {
+async function layer3WebSearch(question, userId, source = 'wecom') {
   if (!isPolicyQuestion(question)) {
-    return { isPolicy: false, answer: '' };
+    return { isPolicy: false, answer: '', sources: [] };
   }
 
-  const policyReply = '【建议老师人工确认最新政策】\n\n您的问题涉及最新政策或分数线信息，这类信息可能随时变化。为确保回答准确，已为您转接人工客服，老师将尽快为您确认最新政策并回复。';
+  console.log('[answerBot] 检测到政策/分数线问题，尝试联网搜索...');
 
-  // 触发转人工
+  try {
+    const searchResults = await searchWeb(question);
+    if (searchResults.length > 0) {
+      const context = searchResults.map((r, i) =>
+        `[搜索结果${i + 1}] 标题: ${r.title}\n内容: ${r.snippet}\n来源: ${r.url}`
+      ).join('\n\n');
+
+      const prompt = `基于以下联网搜索的最新信息，回答用户问题。请注意：
+1. 优先使用搜索结果中的最新数据
+2. 如搜索结果信息不充分，请告知用户
+3. 在回答末尾标注信息来源
+
+搜索结果：
+${context}
+
+用户问题：${question}`;
+
+      const answer = await quickAsk(prompt, SYSTEM_PROMPT_ANSWER, { maxTokens: 2000, temperature: 0.3 });
+
+      return {
+        isPolicy: true,
+        answer: answer + '\n\n---\n*信息来源于联网搜索，仅供参考，请以官方最新公告为准。*',
+        sources: searchResults.map((r) => ({ documentTitle: r.title, url: r.url }))
+      };
+    }
+  } catch (err) {
+    console.error('[answerBot] 联网搜索失败:', err.message);
+  }
+
+  // 搜索不可用：转人工客服
+  const policyReply = '【联网搜索不可用，已为您转接人工客服】\n\n您的问题涉及最新政策或分数线信息，已转接人工客服确认，老师将尽快回复。';
   try {
     startHandoff(db, userId, source, null, question);
     await notifyHumanAgents(db, userId, question, source);
@@ -289,7 +429,7 @@ async function layer3PolicyCheck(question, userId, source = 'wecom') {
     console.error('[answerBot] 转人工失败:', err.message);
   }
 
-  return { isPolicy: true, answer: policyReply };
+  return { isPolicy: true, answer: policyReply, sources: [] };
 }
 
 // ── 内部工具：发送回复 ──
@@ -427,14 +567,17 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
       usedLayer = 'error';
     }
 
-    // ========== 第三层：政策/分数线检查 ==========
+    // ========== 第三层：政策/分数线 → 联网搜索 ==========
     if (usedLayer !== 'error' && isPolicyQuestion(message)) {
-      console.log('[answerBot] 问题涉及最新政策/分数线，进入第三层：建议人工确认...');
-      const policyResult = await layer3PolicyCheck(message, userId, source);
-      if (policyResult.isPolicy) {
-        // 将 AI 回答与政策提示结合
+      console.log('[answerBot] 问题涉及最新政策/分数线，进入第三层：联网搜索...');
+      const policyResult = await layer3WebSearch(message, userId, source);
+      if (policyResult.isPolicy && policyResult.answer) {
+        // 将 AI 回答与政策搜索结论结合
         finalAnswer = finalAnswer + '\n\n---\n' + policyResult.answer;
-        usedLayer = 'ai_policy_handoff';
+        usedLayer = 'ai_web_search';
+        if (policyResult.sources && policyResult.sources.length) {
+          sources = policyResult.sources;
+        }
       }
     }
   }
@@ -472,9 +615,26 @@ async function handleMessage(userId, message, attachments = [], source = 'wecom'
   };
 }
 
+/**
+ * 包装器：兼容 wecom.js 的调用格式
+ * wecom.js 以单个对象参数调用：handleQuestion({ userId, question, source, groupId, attachments })
+ * 内部转换为 handleMessage 的多参数形式
+ */
+async function handleQuestion({ userId, question, source = 'wecom', groupId = null, attachments = [] }) {
+  const result = await handleMessage(userId, question, attachments, source, { groupId });
+  return {
+    success: result.success !== false,
+    answer: result.answer,
+    layer: result.layer,
+    sources: result.sources,
+    disclaimer: result.disclaimer
+  };
+}
+
 // ── 导出 ──
 
 module.exports = {
   handleMessage,
+  handleQuestion,
   processAttachments
 };

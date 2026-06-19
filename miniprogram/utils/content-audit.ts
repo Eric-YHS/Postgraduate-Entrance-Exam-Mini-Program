@@ -1,4 +1,5 @@
 import type { AuditStatus } from '../types/forum';
+import { post } from './request';
 
 interface TrieNode {
   children: Record<string, TrieNode>;
@@ -63,7 +64,7 @@ export function auditText(text: string): { passed: boolean; hitWords: string[]; 
   };
 }
 
-/** 异步云端审核占位（后续接入微信 security.msgSecCheck 或后端审核） */
+/** 异步云端审核：先本地 Trie 匹配，再调用后端 sensitive_words 表审核 */
 export async function cloudAuditText(
   text: string
 ): Promise<{ passed: boolean; hitWords: string[]; status: AuditStatus }> {
@@ -71,6 +72,16 @@ export async function cloudAuditText(
   const local = auditText(text);
   if (!local.passed) return local;
 
-  // TODO: 接入 wx.serviceMarket? 或后端 /api/content/audit
-  return { passed: true, hitWords: [], status: 'passed' };
+  // 调用后端 /api/content/audit
+  try {
+    const result = await post<{ passed: boolean; hitWords: string[]; status: AuditStatus }>(
+      '/api/content/audit',
+      { text }
+    );
+    if (result) return result;
+  } catch (err) {
+    console.warn('[cloudAudit] 云端审核请求失败，回退到本地结果:', err);
+  }
+
+  return local;
 }

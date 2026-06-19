@@ -1061,6 +1061,16 @@ module.exports = function registerAdminRoutes(app, shared) {
     const completedCourses = db.prepare('SELECT COUNT(DISTINCT course_id) AS cnt FROM course_progress WHERE progress >= 100').get().cnt;
     const courseCompletionRate = totalCourses > 0 ? Math.round((completedCourses / totalCourses) * 100) : 0;
 
+    // B-07: 平均学习时长（当日有学习记录的用户人均学习分钟数）
+    const avgStudyMinutesRow = db.prepare(`
+      SELECT COALESCE(AVG(duration), 0) AS avg_min FROM (
+        SELECT SUM(progress_seconds) / 60.0 AS duration
+        FROM course_progress WHERE DATE(updated_at) = ?
+        GROUP BY student_id
+      )
+    `).get(today);
+    const avgStudyMinutes = Math.round(avgStudyMinutesRow?.avg_min || 0);
+
     const lowStockThreshold = Number(getSetting('low_stock_threshold', '10'));
     const lowStockCount = db.prepare('SELECT COUNT(*) AS cnt FROM products WHERE stock <= ? AND status = ?').get(lowStockThreshold, 'active').cnt;
 
@@ -1105,8 +1115,18 @@ module.exports = function registerAdminRoutes(app, shared) {
       totalQuestions,
       questionAccuracy,
       courseCompletionRate,
+      avgStudyMinutes,
       lowStockCount,
-      robotData: '等待 C 线接入',
+      robotData: {
+        totalConversations: db.prepare("SELECT COUNT(*) AS cnt FROM ai_conversations WHERE type = 'answer' OR type = 'tutor'").get().cnt,
+        todayConversations: db.prepare("SELECT COUNT(*) AS cnt FROM ai_conversations WHERE (type = 'answer' OR type = 'tutor') AND DATE(created_at) = ?").get(today).cnt,
+        knowledgeHitRate: (() => {
+          const total = db.prepare("SELECT COUNT(*) AS cnt FROM ai_conversations WHERE type = 'answer'").get().cnt;
+          if (total === 0) return 0;
+          const kbHits = db.prepare("SELECT COUNT(*) AS cnt FROM ai_conversations WHERE type = 'answer' AND context LIKE '%knowledge_base%'").get().cnt;
+          return Math.round((kbHits / total) * 100);
+        })()
+      },
       trend7: buildTrend(7),
       trend30: buildTrend(30)
     });

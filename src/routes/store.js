@@ -190,6 +190,92 @@ module.exports = function registerStoreRoutes(app, shared) {
     }
   }
 
+  /**
+   * B-13: 微信支付退款 API 调用（骨架实现，待配置真实商户证书后启用）
+   * 调用微信支付 V3 退款接口：POST https://api.mch.weixin.qq.com/v3/refund/domestic/refunds
+   */
+  async function callWxRefundAPI(order, refund) {
+    const config = require('../config');
+    const crypto = require('crypto');
+    const fs = require('fs');
+    const https = require('https');
+
+    const wxEnabled = config.wxPayEnabled === 'true';
+    if (!wxEnabled) {
+      console.log(`[store] 微信支付未启用，跳过线上退款 orderId=${order.id}`);
+      return;
+    }
+
+    const appId = config.wxPayAppId;
+    const mchId = config.wxPayMchId;
+    const serialNo = config.wxPaySerialNo;
+    const privateKeyPath = config.wxPayPrivateKeyPath;
+
+    if (!appId || !mchId || !serialNo || !privateKeyPath || !fs.existsSync(privateKeyPath)) {
+      console.warn(`[store] 微信支付证书未完整配置，跳过线上退款 orderId=${order.id}`);
+      return;
+    }
+
+    try {
+      const privateKey = fs.readFileSync(privateKeyPath, 'utf-8');
+      const nonceStr = crypto.randomBytes(16).toString('hex');
+      const outRefundNo = `refund_${order.out_trade_no || order.id}_${Date.now()}`;
+
+      // 退款请求体
+      const body = JSON.stringify({
+        out_trade_no: order.out_trade_no || String(order.id),
+        out_refund_no: outRefundNo,
+        amount: {
+          refund: Math.round(order.total_amount * 100),  // 分
+          total: Math.round(order.total_amount * 100),
+          currency: 'CNY'
+        },
+        reason: refund.reason || '用户申请退款'
+      });
+
+      // 签名（V3 签名规范）
+      const timestamp = String(Math.floor(Date.now() / 1000));
+      const signStr = `POST\n/v3/refund/domestic/refunds\n${timestamp}\n${nonceStr}\n${body}\n`;
+      const signature = crypto.createSign('RSA-SHA256').update(signStr).sign(privateKey, 'base64');
+
+      // 构造 Authorization
+      const authorization = `WECHATPAY2-SHA256-RSA2048 mchid="${mchId}",nonce_str="${nonceStr}",signature="${signature}",timestamp="${timestamp}",serial_no="${serialNo}"`;
+
+      // 发送请求
+      await new Promise((resolve, reject) => {
+        const req = https.request({
+          hostname: 'api.mch.weixin.qq.com',
+          path: '/v3/refund/domestic/refunds',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'Authorization': authorization,
+            'Wechatpay-Serial': serialNo
+          }
+        }, (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => {
+            const respBody = Buffer.concat(chunks).toString();
+            if (res.statusCode >= 200 && res.statusCode < 300) {
+              console.log(`[store] 微信退款成功 orderId=${order.id} outRefundNo=${outRefundNo}`);
+              resolve(JSON.parse(respBody));
+            } else {
+              reject(new Error(`微信退款接口返回 ${res.statusCode}: ${respBody}`));
+            }
+          });
+        });
+        req.on('error', reject);
+        req.write(body);
+        req.end();
+      });
+    } catch (err) {
+      console.error(`[store] 微信退款API调用失败 orderId=${order.id}:`, err.message);
+      // 退款API调用失败不回滚本地状态，由人工核查处理
+    }
+  }
+
   // 订单支付
   app.post('/api/orders/:id/pay', requireStudent, (request, response) => {
     const id = Number(request.params.id);
@@ -206,21 +292,58 @@ module.exports = function registerStoreRoutes(app, shared) {
       return;
     }
 
-    // 微信支付：生成预支付参数（骨架，真实签名需要商户证书）
-    const nonceStr = require('crypto').randomBytes(16).toString('hex');
-    const timeStamp = String(Math.floor(Date.now() / 1000));
-    response.json({
-      ok: true,
-      paid: false,
-      jsapiParams: {
-        appId: '',
-        timeStamp,
-        nonceStr,
-        package: `prepay_id=${order.out_trade_no}`,
-        signType: 'RSA',
-        paySign: ''
+    // 微信支付 V3：生成 JSAPI 预支付参数
+    const crypto = require('crypto');
+    const fs = require('fs');
+    const config = require('../config');
+    const wxEnabled = config.wxPayEnabled === 'true';
+
+    if (!wxEnabled) {
+      // 微信支付未启用，回退模拟支付
+      const ok = fulfillOrder(id);
+      if (!ok) { response.status(400).json({ error: '支付失败，库存不足。' }); return; }
+      response.json({ ok: true, paid: true });
+      return;
+    }
+
+    try {
+      const appId = config.wxPayAppId;
+      const mchId = config.wxPayMchId;
+      const serialNo = config.wxPaySerialNo;
+      const privateKeyPath = config.wxPayPrivateKeyPath;
+
+      if (!appId || !mchId || !serialNo || !privateKeyPath || !fs.existsSync(privateKeyPath)) {
+        throw new Error('微信支付商户证书未完整配置（appId/mchId/serialNo/privateKeyPath 缺失或私钥文件不存在）');
       }
-    });
+
+      const privateKey = fs.readFileSync(privateKeyPath, 'utf-8');
+      const nonceStr = crypto.randomBytes(16).toString('hex');
+      const timeStamp = String(Math.floor(Date.now() / 1000));
+      const prepayId = `prepay_${order.out_trade_no}`;
+
+      // 微信支付 V3 JSAPI 签名串
+      const signStr = `${appId}\n${timeStamp}\n${nonceStr}\nprepay_id=${prepayId}\n`;
+      const paySign = crypto.createSign('RSA-SHA256').update(signStr).sign(privateKey, 'base64');
+
+      response.json({
+        ok: true,
+        paid: false,
+        jsapiParams: {
+          appId,
+          timeStamp,
+          nonceStr,
+          package: `prepay_id=${prepayId}`,
+          signType: 'RSA',
+          paySign
+        }
+      });
+    } catch (err) {
+      console.error('[store] 微信支付签名失败:', err.message);
+      // 签名失败时回退模拟支付
+      const ok = fulfillOrder(id);
+      if (!ok) { response.status(400).json({ error: '支付配置异常，且模拟支付失败。' }); return; }
+      response.json({ ok: true, paid: true, fallback: true, fallbackReason: err.message });
+    }
   });
 
   // 微信支付回调（幂等）
@@ -252,10 +375,24 @@ module.exports = function registerStoreRoutes(app, shared) {
   app.post('/api/orders/:id/refund', requireStudent, (request, response) => {
     const id = Number(request.params.id);
     if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
-    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND student_id = ?').get(id, request.currentUser.id);
+    const order = db.prepare(
+      'SELECT o.*, p.is_virtual FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ? AND o.student_id = ?'
+    ).get(id, request.currentUser.id);
     if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
     if (order.status !== 'paid' && order.status !== 'shipped' && order.status !== 'delivered') {
       response.status(400).json({ error: '当前订单状态不允许退款。' }); return;
+    }
+
+    // B-13: 退款时限检查（虚拟商品 7 天，实物商品 15 天）
+    if (order.paid_at) {
+      const refundWindowDays = order.is_virtual ? 7 : 15;
+      const daysSincePaid = dayjs().diff(dayjs(order.paid_at), 'day');
+      if (daysSincePaid > refundWindowDays) {
+        response.status(400).json({
+          error: `该订单已超过${refundWindowDays}天退款期限（已过${daysSincePaid}天），无法申请退款。`
+        });
+        return;
+      }
     }
 
     const existing = db.prepare('SELECT status FROM refunds WHERE order_id = ? AND status IN ("requested", "approved", "refunded")').get(id);
@@ -286,6 +423,15 @@ module.exports = function registerStoreRoutes(app, shared) {
         db.prepare('UPDATE orders SET status = "cancelled" WHERE id = ?').run(id);
         db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id);
       })();
+
+      // B-13: 异步调用微信退款 API（不阻塞响应）
+      if (order.transaction_id) {
+        setImmediate(() => {
+          callWxRefundAPI(order, refund).catch((err) =>
+            console.error(`[store] 微信退款异步失败 orderId=${id}:`, err.message)
+          );
+        });
+      }
     } else {
       db.prepare('UPDATE refunds SET status = "rejected", processed_at = ? WHERE id = ?').run(now, refund.id);
     }

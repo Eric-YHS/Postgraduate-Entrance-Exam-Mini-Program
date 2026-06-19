@@ -50,17 +50,78 @@ module.exports = function registerCourseRoutes(app, shared) {
     });
   });
 
-  // 课程列表
+  // 课程列表（支持分类/科目/专业过滤 + 分页）
   app.get('/api/courses', requireAuth, (request, response) => {
-    const rows = db
-      .prepare('SELECT courses.*, users.display_name AS teacher_name FROM courses LEFT JOIN users ON users.id = courses.created_by ORDER BY courses.created_at DESC LIMIT 100')
-      .all();
-    const courses = rows.map(serializeCourse);
-    if (request.currentUser.role === 'student') {
-      response.json({ courses: courses.filter((course) => canAccessContent(request.currentUser.id, { visibility: course.visibility, subjectScope: course.subjectScope, subject: course.subject })) });
-      return;
+    const { subject, major, page: rawPage, pageSize: rawPageSize } = request.query;
+    const category = request.query.category || request.query.categoryType || null; // 兼容小程序 'category' 参数
+    const categoryId = request.query.category_id ? Number(request.query.category_id) : null;
+    const page = Math.max(1, Number(rawPage) || 1);
+    const pageSize = Math.min(200, Math.max(1, Number(rawPageSize) || 10));
+
+    // 动态构建 WHERE 子句
+    const conditions = [];
+    const params = [];
+    let needCategoryJoin = false;
+
+    if (category) {
+      // category 映射到 course_categories.type (public / major)
+      needCategoryJoin = true;
+      conditions.push('cc.type = ?');
+      params.push(category);
     }
-    response.json({ courses });
+    if (categoryId) {
+      conditions.push('courses.category_id = ?');
+      params.push(categoryId);
+    }
+    if (subject) {
+      conditions.push('courses.subject = ?');
+      params.push(subject);
+    }
+    if (major) {
+      // major 是课程二级分类名（专业课方向），通过 course_categories 的 parent_id 或 name 关联
+      needCategoryJoin = true;
+      conditions.push(
+        '(cc.name = ? OR cc.parent_id IN (SELECT id FROM course_categories WHERE name = ?))'
+      );
+      params.push(major, major);
+    }
+
+    const whereClause = conditions.length > 0 ? ' WHERE ' + conditions.join(' AND ') : '';
+
+    // 基表查询：需要 JOIN 时加上 course_categories
+    const baseFrom = needCategoryJoin
+      ? 'courses LEFT JOIN course_categories cc ON cc.id = courses.category_id LEFT JOIN users ON users.id = courses.created_by'
+      : 'courses LEFT JOIN users ON users.id = courses.created_by';
+
+    // 计数
+    const countSql = `SELECT COUNT(*) AS cnt FROM ${baseFrom}${whereClause}`;
+    const total = db.prepare(countSql).get(...params).cnt;
+
+    // 分页查询
+    const offset = (page - 1) * pageSize;
+    const dataSql = `SELECT courses.*, users.display_name AS teacher_name FROM ${baseFrom}${whereClause} ORDER BY courses.created_at DESC LIMIT ? OFFSET ?`;
+    const rows = db.prepare(dataSql).all(...params, pageSize, offset);
+
+    let courses = rows.map(serializeCourse);
+    if (request.currentUser.role === 'student') {
+      courses = courses.filter((course) =>
+        canAccessContent(request.currentUser.id, {
+          visibility: course.visibility,
+          subjectScope: course.subjectScope,
+          subject: course.subject
+        })
+      );
+    }
+
+    response.json({
+      courses,
+      pagination: {
+        page,
+        pageSize,
+        total,
+        totalPages: Math.ceil(total / pageSize)
+      }
+    });
   });
 
   // 获取单条课程详情

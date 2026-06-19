@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>管理后台｜研途总控台</title>
     <link rel="stylesheet" href="/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js" crossorigin="anonymous"></script>
     <style>
       .admin-shell {
         display: grid;
@@ -148,7 +149,13 @@
                 <button class="active" data-trend="7">最近 7 天</button>
                 <button data-trend="30">最近 30 天</button>
               </div>
-              <div id="dashboard-trends"></div>
+              <div id="dashboard-trends" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px;">
+                <div class="paper-card"><h4>新增学员趋势</h4><div id="chart-new-students" style="height: 280px;"></div></div>
+                <div class="paper-card"><h4>收入趋势</h4><div id="chart-revenue" style="height: 280px;"></div></div>
+                <div class="paper-card"><h4>任务完成率趋势</h4><div id="chart-task-rate" style="height: 280px;"></div></div>
+                <div class="paper-card"><h4>做题量趋势</h4><div id="chart-questions" style="height: 280px;"></div></div>
+                <div class="paper-card"><h4>课程学习趋势</h4><div id="chart-course-views" style="height: 280px;"></div></div>
+              </div>
             </div>
           </section>
 

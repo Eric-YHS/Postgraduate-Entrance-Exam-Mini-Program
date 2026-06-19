@@ -64,6 +64,14 @@ const aiApiKey = process.env.AI_API_KEY || '';
 const aiApiUrl = process.env.AI_API_URL || '';
 const aiModel = process.env.AI_MODEL || 'deepseek-chat';
 
+// 微信支付 V3 配置
+const wxPayAppId = process.env.WX_PAY_APP_ID || process.env.WX_APP_ID || '';
+const wxPayMchId = process.env.WX_PAY_MCH_ID || '';
+const wxPayApiV3Key = process.env.WX_PAY_API_V3_KEY || '';
+const wxPayPrivateKeyPath = process.env.WX_PAY_PRIVATE_KEY_PATH || '';
+const wxPaySerialNo = process.env.WX_PAY_SERIAL_NO || '';
+const wxPayEnabled = process.env.WX_PAY_ENABLED === 'true' ? 'true' : (process.env.WX_PAY_ENABLED || 'false');
+
 // WebRTC ICE 服务器配置
 // 默认只有 STUN；生产环境应配置 TURN 服务器以保证 NAT 穿透成功率
 const turnUrl = process.env.TURN_URL || '';
@@ -102,6 +110,12 @@ module.exports = {
   uploadRootDir,
   wxAppId,
   wxAppSecret,
+  wxPayAppId,
+  wxPayMchId,
+  wxPayApiV3Key,
+  wxPayPrivateKeyPath,
+  wxPaySerialNo,
+  wxPayEnabled,
   wecomCorpId,
   wecomAgentId,
   wecomSecret,

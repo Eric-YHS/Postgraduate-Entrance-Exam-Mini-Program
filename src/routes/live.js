@@ -94,7 +94,7 @@ module.exports = function registerLiveRoutes(app, shared) {
     broadcastToLiveRoom(id, { type: 'live-ended', liveId: id });
     // 清理 WebSocket 房间内存
     liveRooms.delete(id);
-    response.json({ ok: true });
+    response.json({ ok: true, shouldStopRecording: true });
   });
 
   // A-10: 直播录制文件上传并自动生成回放记录

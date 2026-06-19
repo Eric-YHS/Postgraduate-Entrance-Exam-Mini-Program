@@ -6,7 +6,9 @@ const liveState = {
   localStream: null,
   peerConnections: new Map(),
   roomUsers: [],
-  token: null
+  token: null,
+  mediaRecorder: null,
+  recordedChunks: []
 };
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -197,6 +199,25 @@ async function startBroadcast() {
     await fetchJSON(`/api/live-sessions/${liveState.liveId}/start`, { method: 'POST' });
     document.getElementById('live-status').textContent = 'live';
 
+    // 启动 MediaRecorder 录制（A-10 直播自动转存录播）
+    if (liveState.localStream && typeof MediaRecorder !== 'undefined') {
+      try {
+        const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+          ? 'video/webm;codecs=vp9'
+          : 'video/webm';
+        liveState.mediaRecorder = new MediaRecorder(liveState.localStream, { mimeType });
+        liveState.recordedChunks = [];
+        liveState.mediaRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) liveState.recordedChunks.push(e.data);
+        };
+        liveState.mediaRecorder.onerror = (e) => console.error('[live] MediaRecorder 错误:', e);
+        liveState.mediaRecorder.start(5000); // 每5秒收集数据块
+        console.log('[live] MediaRecorder 已启动');
+      } catch (err) {
+        console.warn('[live] MediaRecorder 不可用，跳过自动录制:', err.message);
+      }
+    }
+
     for (const userId of liveState.roomUsers) {
       await ensureOfferToUser(userId);
     }
@@ -210,6 +231,36 @@ async function startBroadcast() {
 async function endLiveSession() {
   if (liveState.user.role !== 'teacher') {
     return;
+  }
+
+  // 先停止录制并准备上传（在停止推流前）
+  const recorder = liveState.mediaRecorder;
+  let pendingUpload = null;
+  if (recorder && recorder.state === 'recording') {
+    pendingUpload = new Promise((resolve) => {
+      recorder.onstop = async () => {
+        const blob = new Blob(liveState.recordedChunks, { type: 'video/webm' });
+        const formData = new FormData();
+        formData.append('file', blob, `live_${liveState.liveId}_${Date.now()}.webm`);
+        try {
+          const resp = await fetch(`/api/live-sessions/${liveState.liveId}/recording`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${liveState.token}` },
+            body: formData
+          });
+          const result = await resp.json();
+          if (result.ok) {
+            createToast('直播录制已自动保存。', 'success');
+          }
+        } catch (err) {
+          console.error('[live] 录制上传失败:', err.message);
+        }
+        resolve();
+      };
+      recorder.stop();
+    });
+    liveState.mediaRecorder = null;
+    liveState.recordedChunks = [];
   }
 
   try {
@@ -226,6 +277,12 @@ async function endLiveSession() {
       peer.close();
     });
     liveState.peerConnections.clear();
+
+    // 等待录制上传完成（最多 30 秒）
+    if (pendingUpload) {
+      await Promise.race([pendingUpload, new Promise(r => setTimeout(r, 30000))]);
+    }
+
     createToast('直播已结束。', 'success');
   } catch (error) {
     createToast(error.message, 'error');

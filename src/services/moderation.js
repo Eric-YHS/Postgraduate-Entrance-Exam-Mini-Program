@@ -20,7 +20,8 @@ function loadSensitiveWords(db) {
 }
 
 /**
- * 检测文本是否包含敏感词
+ * 检测文本是否包含敏感词（带词边界感知，避免子串误匹配）
+ * 策略：对纯中文敏感词，要求前后不是 CJK 字符，避免如"政府"误匹配"人民政府"
  * @param {object} db - better-sqlite3 实例
  * @param {string} text - 待检测文本
  * @returns {{blocked: boolean, review: boolean, matched: string[], level: 'block'|'review'|null}}
@@ -33,7 +34,7 @@ function detectSensitiveWords(db, text) {
 
   for (const { word, level } of words) {
     if (!word) continue;
-    if (input.includes(word)) {
+    if (matchWithBoundary(input, word)) {
       if (level === 'block') matchedBlock.push(word);
       else matchedReview.push(word);
     }
@@ -46,6 +47,32 @@ function detectSensitiveWords(db, text) {
     return { blocked: false, review: true, matched: matchedReview, level: 'review' };
   }
   return { blocked: false, review: false, matched: [], level: null };
+}
+
+/**
+ * 带词边界感知的匹配
+ * 对纯中文敏感词，使用正则断言确保前后不是可构成复合词的中文字符
+ * 对非纯中文敏感词，使用普通 contains 匹配
+ */
+function matchWithBoundary(text, word) {
+  if (!word) return false;
+  // 非纯中文 → 普通包含匹配
+  if (!/^[一-鿿]+$/.test(word)) {
+    return text.includes(word);
+  }
+  // 纯中文 → 词边界正则：前不能是中文、后不能是中文
+  const regex = new RegExp(
+    `(?<![一-鿿])${escapeRegex(word)}(?![一-鿿])`,
+    'gu'
+  );
+  return regex.test(text);
+}
+
+/**
+ * 转义正则特殊字符
+ */
+function escapeRegex(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 /**

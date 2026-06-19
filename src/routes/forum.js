@@ -119,6 +119,18 @@ module.exports = function registerForumRoutes(app, shared) {
       sendMentionNotifications(content, request.currentUser.id, title);
 
       response.json({ ok: true, id: topicResult.lastInsertRowid, moderationStatus });
+
+      // 自动审核：命中敏感词且进入待审核时，创建 content_reports 记录
+      if (moderationStatus === 'pending') {
+        db.prepare(
+          `INSERT INTO content_reports (content_type, content_id, reason, reported_by, status, created_at)
+           VALUES ('forum_topic', ?, ?, 0, 'pending', ?)`
+        ).run(
+          topicResult.lastInsertRowid,
+          '自动审核: 命中敏感词 ' + moderation.matched.join(', '),
+          dayjs().toISOString()
+        );
+      }
     });
   });
 
@@ -169,7 +181,7 @@ module.exports = function registerForumRoutes(app, shared) {
         }
       }
 
-      db.prepare(
+      const replyResult = db.prepare(
         `
           INSERT INTO forum_replies (topic_id, user_id, content, image_paths, attachment_paths, video_paths, links, reply_to_id, reply_to_user, moderation_status, created_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -182,6 +194,18 @@ module.exports = function registerForumRoutes(app, shared) {
         moderationStatus,
         dayjs().toISOString()
       );
+
+      // 自动审核：命中敏感词且进入待审核时，创建 content_reports 记录
+      if (moderationStatus === 'pending') {
+        db.prepare(
+          `INSERT INTO content_reports (content_type, content_id, reason, reported_by, status, created_at)
+           VALUES ('forum_reply', ?, ?, 0, 'pending', ?)`
+        ).run(
+          replyResult.lastInsertRowid,
+          '自动审核: 命中敏感词 ' + moderation.matched.join(', '),
+          dayjs().toISOString()
+        );
+      }
 
       // @提及通知
       const topicTitle = db.prepare('SELECT title FROM forum_topics WHERE id = ?').get(id);
@@ -378,5 +402,18 @@ module.exports = function registerForumRoutes(app, shared) {
       db.prepare('DELETE FROM forum_topics WHERE id = ?').run(topicId);
     })();
     response.json({ ok: true });
+  });
+
+  // 内容审核 API — 供小程序端 cloudAuditText 调用
+  app.post('/api/content/audit', requireAuth, (request, response) => {
+    const { text } = request.body;
+    if (!text) return response.status(400).json({ error: '缺少文本内容' });
+    const moderation = detectSensitiveWords(db, String(text));
+    response.json({
+      passed: !moderation.blocked && !moderation.review,
+      hitWords: moderation.matched,
+      status: moderation.blocked ? 'rejected' : (moderation.review ? 'pending' : 'passed'),
+      level: moderation.level
+    });
   });
 };

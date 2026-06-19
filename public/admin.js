@@ -451,6 +451,9 @@ function renderDashboardStats() {
   if (d.courseCompletionRate !== undefined) {
     cards.push({ label: '课程完成率', value: d.courseCompletionRate + '%' });
   }
+  if (d.avgStudyMinutes !== undefined) {
+    cards.push({ label: '今日人均学习时长', value: d.avgStudyMinutes + ' 分钟' });
+  }
   if (d.totalRevenue !== undefined) {
     cards.push({ label: '累计收入', value: '¥' + d.totalRevenue });
   }
@@ -459,6 +462,11 @@ function renderDashboardStats() {
   }
   if (d.conversionRate !== undefined) {
     cards.push({ label: '付费转化率', value: d.conversionRate + '%' });
+  }
+  if (d.robotData && typeof d.robotData === 'object') {
+    cards.push({ label: 'AI对话总量', value: d.robotData.totalConversations || 0 });
+    cards.push({ label: '今日AI对话', value: d.robotData.todayConversations || 0 });
+    cards.push({ label: '知识库命中率', value: (d.robotData.knowledgeHitRate || 0) + '%' });
   }
 
   container.innerHTML = cards.map((c) => `
@@ -470,47 +478,46 @@ function renderDashboardStats() {
 }
 
 function renderDashboardTrends(days) {
-  const container = document.getElementById('dashboard-trends');
   const d = adminState.dashboard || {};
   const key = days === 30 ? 'trend30' : 'trend7';
   const trends = d[key] || {};
-
-  const renderTrend = (title, labels, values) => {
-    if (!values || !values.length) return `<div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
-      <h4>${escapeHtml(title)}</h4>
-      <p class="muted">暂无数据</p>
-    </div>`;
-    const max = Math.max(...values, 1);
-    return `
-      <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
-        <h4>${escapeHtml(title)}</h4>
-        <div style="display: grid; gap: 8px; margin-top: 12px;">
-          ${labels.map((label, i) => {
-            const val = values[i] || 0;
-            const pct = Math.round((val / max) * 100);
-            return `
-              <div style="display: flex; align-items: center; gap: 12px;">
-                <span style="width: 70px; font-size: 12px; color: var(--muted);">${escapeHtml(label)}</span>
-                <div style="flex: 1; background: var(--surface); height: 16px; border-radius: 8px; overflow: hidden;">
-                  <div style="width: ${pct}%; background: var(--brand); height: 100%;"></div>
-                </div>
-                <span style="width: 40px; text-align: right; font-size: 12px;">${val}</span>
-              </div>
-            `;
-          }).join('')}
-        </div>
-      </div>
-    `;
-  };
-
   const labels = trends.labels || [];
-  container.innerHTML = `
-    ${renderTrend('新增学员趋势', labels, trends.newStudents)}
-    ${renderTrend('收入趋势', labels, trends.revenue)}
-    ${renderTrend('任务完成率趋势', labels, trends.taskCompletionRate)}
-    ${renderTrend('做题量趋势', labels, trends.questionCount)}
-    ${renderTrend('课程学习趋势', labels, trends.courseViews)}
-  `;
+
+  const chartConfigs = [
+    { id: 'chart-new-students', name: '新增学员', data: trends.newStudents },
+    { id: 'chart-revenue', name: '收入 (元)', data: trends.revenue },
+    { id: 'chart-task-rate', name: '任务完成率 (%)', data: trends.taskCompletionRate },
+    { id: 'chart-questions', name: '做题量', data: trends.questionCount },
+    { id: 'chart-course-views', name: '课程学习', data: trends.courseViews }
+  ];
+
+  chartConfigs.forEach(function(cfg) {
+    var dom = document.getElementById(cfg.id);
+    if (!dom) return;
+    if (typeof echarts === 'undefined') {
+      dom.innerHTML = '<p class="muted" style="padding:16px;">ECharts 未加载</p>';
+      return;
+    }
+    // 销毁旧图表实例（避免重复初始化）
+    var existingInstance = echarts.getInstanceByDom(dom);
+    if (existingInstance) existingInstance.dispose();
+
+    var dataArr = cfg.data || [];
+    var chart = echarts.init(dom);
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      grid: { left: 45, right: 20, top: 20, bottom: 30 },
+      xAxis: { type: 'category', data: labels, axisLabel: { fontSize: 10, rotate: labels.length > 14 ? 45 : 0 } },
+      yAxis: { type: 'value', minInterval: 1 },
+      series: [{
+        data: dataArr,
+        type: 'line',
+        smooth: true,
+        areaStyle: { opacity: 0.15 },
+        lineStyle: { width: 2 }
+      }]
+    });
+  });
 }
 
 async function approveApplication(id) {
