@@ -330,20 +330,75 @@
           <!-- 5. 知识库 / 语料库 -->
           <section class="admin-section" id="section-knowledge">
             <h2>知识库 / 语料库</h2>
-            <div class="placeholder-panel">
-              <div class="placeholder-mark">🧠</div>
-              <p>由 C 线接入</p>
-              <p class="muted">AI 知识库、RAG 语料、自动审核语料等。</p>
+            <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <input id="kb-search" class="input" placeholder="搜索知识库标题" style="flex: 1; min-width: 200px;" />
+              <button class="button" id="add-kb-btn" type="button">新增知识库</button>
+            </div>
+            <div id="knowledge-list"></div>
+
+            <!-- 知识库编辑 Modal -->
+            <div id="kb-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 id="kb-modal-title" style="margin: 0;">知识库</h3>
+                  <button class="ghost-button" id="close-kb-modal" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="kb-modal-body" style="padding: 24px;"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-kb-btn" type="button">取消</button>
+                  <button class="button" id="save-kb-btn" type="button">保存</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 知识库详情 Modal -->
+            <div id="kb-detail-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 id="kb-detail-title" style="margin: 0;">知识库详情</h3>
+                  <button class="ghost-button" id="close-kb-detail" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="kb-detail-body" style="padding: 24px;"></div>
+              </div>
+            </div>
+
+            <!-- 知识库文档上传 Modal -->
+            <div id="kb-doc-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 id="kb-doc-modal-title" style="margin: 0;">上传文档</h3>
+                  <button class="ghost-button" id="close-kb-doc-modal" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="kb-doc-modal-body" style="padding: 24px;"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-kb-doc-btn" type="button">取消</button>
+                  <button class="button" id="save-kb-doc-btn" type="button">保存</button>
+                </div>
+              </div>
             </div>
           </section>
 
           <!-- 6. 消息模板管理 -->
           <section class="admin-section" id="section-messages">
             <h2>消息模板管理</h2>
-            <div class="placeholder-panel">
-              <div class="placeholder-mark">✉️</div>
-              <p>由 C 线接入</p>
-              <p class="muted">微信订阅消息模板、督学机器人推送模板。</p>
+            <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <input id="mt-search" class="input" placeholder="搜索模板编码或名称" style="flex: 1; min-width: 200px;" />
+              <button class="button" id="add-mt-btn" type="button">新增模板</button>
+            </div>
+            <div id="messages-list"></div>
+
+            <div id="mt-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 id="mt-modal-title" style="margin: 0;">消息模板</h3>
+                  <button class="ghost-button" id="close-mt-modal" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="mt-modal-body" style="padding: 24px;"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-mt-btn" type="button">取消</button>
+                  <button class="button" id="save-mt-btn" type="button">保存</button>
+                </div>
+              </div>
             </div>
           </section>
 
@@ -364,21 +419,53 @@
           <!-- 8. 机器人管理 -->
           <section class="admin-section" id="section-robots">
             <h2>机器人管理</h2>
-            <div class="placeholder-panel">
-              <div class="placeholder-mark">🤖</div>
-              <p>由 C 线接入</p>
-              <p class="muted">五大机器人、企业微信机器人、督学机器人配置。</p>
+            <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+              <input id="bot-search" class="input" placeholder="搜索机器人编码或名称" style="flex: 1; min-width: 200px;" />
+              <button class="button" id="add-bot-btn" type="button">新增机器人</button>
+            </div>
+            <div id="robots-list"></div>
+
+            <div id="bot-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 id="bot-modal-title" style="margin: 0;">机器人</h3>
+                  <button class="ghost-button" id="close-bot-modal" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="bot-modal-body" style="padding: 24px;"></div>
+                <div style="display: flex; justify-content: flex-end; gap: 12px; padding: 16px 24px; border-top: 1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-bot-btn" type="button">取消</button>
+                  <button class="button" id="save-bot-btn" type="button">保存</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="bot-conversations-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
+              <div style="background: var(--bg); border-radius: 16px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
+                  <h3 style="margin: 0;">对话记录</h3>
+                  <button class="ghost-button" id="close-bot-conversations" type="button" style="font-size: 18px;">&times;</button>
+                </div>
+                <div id="bot-conversations-body" style="padding: 24px;"></div>
+              </div>
             </div>
           </section>
 
           <!-- 9. 创业板块 -->
           <section class="admin-section" id="section-entrepreneurship">
             <h2>创业板块</h2>
-            <div class="placeholder-panel">
-              <div class="placeholder-mark">🚀</div>
-              <p>由 C 线接入</p>
-              <p class="muted">创业宣传、裂变统计、合伙人管理。</p>
+            <div class="sub-nav" id="promoter-tabs">
+              <button class="active" data-promoter-status="">全部</button>
+              <button data-promoter-status="pending">待审核</button>
+              <button data-promoter-status="approved">已通过</button>
+              <button data-promoter-status="rejected">已驳回</button>
             </div>
+            <div id="promoter-list"></div>
+          </section>
+
+          <!-- 退款审核 -->
+          <section class="admin-section" id="section-refunds">
+            <h2>退款审核</h2>
+            <div id="refunds-list"></div>
           </section>
 
           <!-- 10. 系统设置 -->

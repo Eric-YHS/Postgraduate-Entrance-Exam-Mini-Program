@@ -21,7 +21,7 @@ Page({
         items: [
           { icon: '🛒', name: '我的订单', path: '' },
           { icon: '💬', name: '在线答疑', path: '' },
-          { icon: '🎯', name: '创业宣传', path: '' },
+          { icon: '🎯', name: '创业宣传', path: '/pages/promoter/apply/apply' },
         ],
       },
       {
@@ -55,7 +55,11 @@ Page({
   },
 
   onMenuTap(e: WechatMiniprogram.BaseEvent) {
-    const { name } = e.currentTarget.dataset;
+    const { name, path } = e.currentTarget.dataset;
+    if (path) {
+      wx.navigateTo({ url: path });
+      return;
+    }
     wx.showToast({
       title: `${name} 开发中`,
       icon: 'none',

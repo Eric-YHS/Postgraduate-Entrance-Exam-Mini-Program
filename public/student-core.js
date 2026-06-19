@@ -151,6 +151,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   bindCartEvents();
   bindAddressEvents();
   bindProductReviewEvents();
+  bindRefundEvents();
   bindStatsTabs();
   bindCourseTabs();
   bindFlashcardGoal();

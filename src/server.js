@@ -1595,6 +1595,7 @@ require('./routes/forum')(app, shared);
 require('./routes/store')(app, shared);
 require('./routes/live')(app, shared);
 require('./routes/search')(app, shared);
+require('./routes/upload')(app, shared);
 require('./routes/knowledgeBase')(app, shared);
 require('./routes/messageTemplates')(app, shared);
 require('./routes/bots')(app, shared);

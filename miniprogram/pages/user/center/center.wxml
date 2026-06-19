@@ -45,6 +45,7 @@
       class="menu-item {{ menuIndex === item.items.length - 1 ? '' : 'menu-item--border' }}"
       bindtap="onMenuTap"
       data-name="{{ menu.name }}"
+      data-path="{{ menu.path }}"
     >
       <view class="menu-icon">{{ menu.icon }}</view>
       <view class="menu-name">{{ menu.name }}</view>

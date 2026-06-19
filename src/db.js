@@ -560,10 +560,10 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS promoter_applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
-      real_name TEXT NOT NULL,
-      phone TEXT NOT NULL,
-      wechat_id TEXT DEFAULT '',
-      motivation TEXT DEFAULT '',
+      name TEXT NOT NULL,
+      contact TEXT NOT NULL,
+      platform TEXT DEFAULT '',
+      follower_count INTEGER DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
       reviewed_by INTEGER DEFAULT NULL,
       reviewed_at TEXT DEFAULT NULL,
@@ -642,6 +642,45 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE users ADD COLUMN wecom_userid TEXT DEFAULT \'\''); } catch (_) {}
   try { db.exec('ALTER TABLE users ADD COLUMN promoter_status TEXT DEFAULT \'\''); } catch (_) {}
   try { db.exec('ALTER TABLE users ADD COLUMN promoter_code TEXT DEFAULT \'\''); } catch (_) {}
+
+  // 兼容旧版 promoter_applications 表字段（real_name/phone/wechat_id/motivation -> name/contact/platform/follower_count）
+  try {
+    const oldCol = db.prepare("SELECT 1 FROM pragma_table_info('promoter_applications') WHERE name = 'real_name'").get();
+    if (oldCol) {
+      db.exec(`
+        CREATE TABLE promoter_applications_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          contact TEXT NOT NULL,
+          platform TEXT DEFAULT '',
+          follower_count INTEGER DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+          reviewed_by INTEGER DEFAULT NULL,
+          reviewed_at TEXT DEFAULT NULL,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (user_id) REFERENCES users(id),
+          FOREIGN KEY (reviewed_by) REFERENCES users(id)
+        );
+        INSERT INTO promoter_applications_new
+          (id, user_id, name, contact, platform, follower_count, status, reviewed_by, reviewed_at, created_at)
+        SELECT
+          id, user_id,
+          COALESCE(real_name, ''),
+          COALESCE(phone, ''),
+          COALESCE(wechat_id, ''),
+          CASE WHEN motivation GLOB '*[0-9]*' THEN CAST(REPLACE(motivation, '[^0-9]', '') AS INTEGER) ELSE 0 END,
+          status, reviewed_by, reviewed_at, created_at
+        FROM promoter_applications;
+        DROP TABLE promoter_applications;
+        ALTER TABLE promoter_applications_new RENAME TO promoter_applications;
+        CREATE INDEX idx_promoter_applications_user ON promoter_applications(user_id);
+        CREATE INDEX idx_promoter_applications_status ON promoter_applications(status);
+      `);
+    }
+  } catch (error) {
+    console.error('promoter_applications 字段迁移失败:', error.message);
+  }
 }
 
 function seedUsers() {
@@ -2034,6 +2073,31 @@ function migrate() {
     insertCat.run('金融', 'major', 7, now);
     insertCat.run('法律', 'major', 8, now);
   }
+
+  // 商品评价图片字段
+  const productReviewCols = db.prepare('PRAGMA table_info(product_reviews)').all();
+  if (!productReviewCols.some((c) => c.name === 'image_paths')) {
+    db.exec(`ALTER TABLE product_reviews ADD COLUMN image_paths TEXT DEFAULT '[]'`);
+  }
+
+  // 课程评价点赞字段与点赞记录表
+  const courseReviewCols = db.prepare('PRAGMA table_info(course_reviews)').all();
+  if (!courseReviewCols.some((c) => c.name === 'likes')) {
+    db.exec('ALTER TABLE course_reviews ADD COLUMN likes INTEGER DEFAULT 0');
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS course_review_likes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      review_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (review_id) REFERENCES course_reviews(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      UNIQUE(review_id, user_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_course_review_likes_review ON course_review_likes(review_id);
+  `);
 }
 
 function initialize() {

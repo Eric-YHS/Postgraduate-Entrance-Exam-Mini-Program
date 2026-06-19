@@ -496,14 +496,70 @@ module.exports = function registerCourseRoutes(app, shared) {
   app.get('/api/courses/:id/reviews', requireAuth, (request, response) => {
     const id = Number(request.params.id);
     if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const currentUserId = request.currentUser.id;
     const reviews = db.prepare(
       `SELECT course_reviews.*, users.display_name AS student_name
        FROM course_reviews
        LEFT JOIN users ON users.id = course_reviews.student_id
        WHERE course_reviews.item_id = ? ORDER BY course_reviews.created_at DESC`
     ).all(id);
-    const myReview = db.prepare('SELECT * FROM course_reviews WHERE item_id = ? AND student_id = ?').get(id, request.currentUser.id);
-    response.json({ reviews, myReview });
+    const reviewIds = reviews.map((r) => r.id);
+    const likedSet = new Set();
+    if (reviewIds.length) {
+      const placeholders = reviewIds.map(() => '?').join(',');
+      const likedRows = db.prepare(
+        `SELECT review_id FROM course_review_likes WHERE review_id IN (${placeholders}) AND user_id = ?`
+      ).all(...reviewIds, currentUserId);
+      likedRows.forEach((row) => likedSet.add(row.review_id));
+    }
+    const myReview = db.prepare('SELECT * FROM course_reviews WHERE item_id = ? AND student_id = ?').get(id, currentUserId);
+    const reviewList = reviews.map((r) => ({
+      ...r,
+      liked: likedSet.has(r.id),
+    }));
+    response.json({ reviews: reviewList, myReview });
+  });
+
+  app.post('/api/courses/:id/reviews', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const rating = Number(request.body.rating);
+    if (!rating || rating < 1 || rating > 5) { response.status(400).json({ error: '评分须为1-5。' }); return; }
+    const content = sanitizeText(request.body.content || '');
+    const now = dayjs().toISOString();
+
+    db.prepare(
+      `INSERT INTO course_reviews (item_id, student_id, rating, content, likes, created_at)
+       VALUES (?, ?, ?, ?, 0, ?)
+       ON CONFLICT(item_id, student_id)
+       DO UPDATE SET rating = excluded.rating, content = excluded.content, created_at = excluded.created_at`
+    ).run(id, request.currentUser.id, rating, content, now);
+
+    response.json({ ok: true });
+  });
+
+  // 课程评价点赞/取消点赞
+  app.post('/api/course-reviews/:id/like', requireAuth, (request, response) => {
+    const reviewId = Number(request.params.id);
+    if (!Number.isInteger(reviewId) || reviewId <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const userId = request.currentUser.id;
+    const liked = db.prepare('SELECT id FROM course_review_likes WHERE review_id = ? AND user_id = ?').get(reviewId, userId);
+    const now = dayjs().toISOString();
+
+    try {
+      if (liked) {
+        db.prepare('DELETE FROM course_review_likes WHERE review_id = ? AND user_id = ?').run(reviewId, userId);
+        db.prepare('UPDATE course_reviews SET likes = CASE WHEN likes > 0 THEN likes - 1 ELSE 0 END WHERE id = ?').run(reviewId);
+        response.json({ ok: true, liked: false });
+      } else {
+        db.prepare('INSERT OR IGNORE INTO course_review_likes (review_id, user_id, created_at) VALUES (?, ?, ?)').run(reviewId, userId, now);
+        db.prepare('UPDATE course_reviews SET likes = likes + 1 WHERE id = ?').run(reviewId);
+        response.json({ ok: true, liked: true });
+      }
+    } catch (error) {
+      console.error('课程评价点赞失败:', error);
+      response.status(500).json({ error: '操作失败，请稍后重试。' });
+    }
   });
 
   // 课程分类

@@ -347,14 +347,35 @@ function bindStudentCloud() {
             document.getElementById('review-content').value = result.myReview.content || '';
           }
           reviewsList.innerHTML = result.reviews.length ? result.reviews.map((r) => `
-            <div class="reply-item" style="padding:8px 0;">
+            <div class="reply-item review-item" style="padding:8px 0;" data-review-id="${r.id}">
               <div>
                 <strong style="font-size:13px;">${escapeHtml(r.studentName || '同学')}</strong>
                 <span class="badge" style="font-size:10px;margin-left:6px;">${'&#9733;'.repeat(r.rating)}</span>
                 <p style="font-size:13px;margin-top:4px;">${escapeHtml(r.content || '未写评价')}</p>
               </div>
+              <button class="ghost-button like-review-btn" data-review-id="${r.id}" data-liked="${r.liked ? '1' : ''}" type="button" style="font-size:12px;padding:4px 8px;margin-top:6px;">
+                ${r.liked ? '&#10084;' : '&#9825;'} ${r.likes || 0}
+              </button>
             </div>
           `).join('') : '<p class="muted" style="font-size:12px;">暂无评价。</p>';
+
+          // 绑定点赞事件
+          reviewsList.querySelectorAll('.like-review-btn').forEach((btn) => {
+            btn.addEventListener('click', async () => {
+              const reviewId = btn.dataset.reviewId;
+              try {
+                const res = await fetchJSON('/api/course-reviews/' + reviewId + '/like', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                });
+                btn.dataset.liked = res.liked ? '1' : '';
+                const currentLikes = Number(btn.textContent?.trim().split(' ')[1] || 0);
+                btn.innerHTML = `${res.liked ? '&#10084;' : '&#9825;'} ${res.liked ? currentLikes + 1 : Math.max(0, currentLikes - 1)}`;
+              } catch (err) {
+                createToast(err.message, 'error');
+              }
+            });
+          });
         } catch (_) {}
       };
       loadReviews();

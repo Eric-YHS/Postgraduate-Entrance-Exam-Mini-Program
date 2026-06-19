@@ -97,6 +97,7 @@ function renderStore() {
               </div>
               <div style="margin-top:8px;display:flex;gap:8px;">
                 ${order.status === 'delivered' ? `<button class="button" data-action="confirm-order" data-id="${order.id}" type="button" style="font-size:12px;padding:6px 14px;">确认收货</button>` : ''}
+                ${['paid', 'shipped', 'delivered'].includes(order.status) ? `<button class="ghost-button" data-action="refund-order" data-id="${order.id}" type="button" style="font-size:12px;padding:6px 14px;color: var(--danger);">申请退款</button>` : ''}
                 ${order.status === 'confirmed' && order.productId ? `<button class="ghost-button" data-action="review-product" data-product-id="${order.productId}" data-title="${escapeHtml(order.productTitle)}" type="button" style="font-size:12px;padding:6px 14px;">评价商品</button>` : ''}
               </div>
             </article>
@@ -318,6 +319,31 @@ function bindAddressEvents() {
   });
 }
 
+function bindRefundEvents() {
+  document.getElementById('student-orders-list').addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-action="refund-order"]');
+    if (!btn) return;
+    const orderId = Number(btn.dataset.id);
+    const reason = prompt('请输入退款原因：', '个人原因申请退款');
+    if (!reason) return;
+    try {
+      setButtonLoading(btn, true);
+      await fetchJSON(`/api/orders/${orderId}/refund`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason })
+      });
+      createToast('退款申请已提交。', 'success');
+      await refreshStudentData();
+      renderStore();
+    } catch (error) {
+      createToast(error.message, 'error');
+    } finally {
+      setButtonLoading(btn, false);
+    }
+  });
+}
+
 // ── 商品评价 ──
 
 function bindProductReviewEvents() {
@@ -330,7 +356,7 @@ function bindProductReviewEvents() {
     const overlay = document.createElement('div');
     overlay.className = 'celebration-overlay';
     overlay.innerHTML = `
-      <div class="celebration-card" style="max-width:400px;">
+      <div class="celebration-card" style="max-width:420px;">
         <h3 style="margin-bottom:12px;">评价商品：${escapeHtml(productTitle)}</h3>
         <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
           <label style="font-size:13px;">评分：</label>
@@ -339,6 +365,11 @@ function bindProductReviewEvents() {
           </select>
         </div>
         <textarea class="textarea" id="product-review-content" placeholder="写下你的评价..." style="min-height:60px;"></textarea>
+        <div style="margin-top:10px;">
+          <label style="font-size:13px;">评价图片（最多 4 张）：</label>
+          <input type="file" id="product-review-image-input" accept="image/*" multiple style="font-size:12px;margin-top:6px;" />
+          <div id="product-review-image-preview" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"></div>
+        </div>
         <div style="display:flex;gap:8px;margin-top:12px;">
           <button class="button" id="submit-product-review" data-product-id="${productId}" type="button">提交评价</button>
           <button class="ghost-button" onclick="this.closest('.celebration-overlay').remove()" type="button">取消</button>
@@ -348,6 +379,32 @@ function bindProductReviewEvents() {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
     document.body.appendChild(overlay);
 
+    const imagePaths = [];
+    const previewContainer = document.getElementById('product-review-image-preview');
+    const fileInput = document.getElementById('product-review-image-input');
+
+    fileInput.addEventListener('change', async () => {
+      const files = Array.from(fileInput.files || []);
+      if (imagePaths.length + files.length > 4) {
+        createToast('最多上传 4 张图片', 'error');
+        fileInput.value = '';
+        return;
+      }
+      for (const file of files) {
+        try {
+          const url = await uploadReviewImage(file);
+          imagePaths.push(url);
+          const thumb = document.createElement('div');
+          thumb.style.cssText = 'width:64px;height:64px;border-radius:6px;overflow:hidden;background:#f0f0f0;position:relative;';
+          thumb.innerHTML = `<img src="${escapeHtml(url)}" style="width:100%;height:100%;object-fit:cover;" />`;
+          previewContainer.appendChild(thumb);
+        } catch (err) {
+          createToast(err.message || '图片上传失败', 'error');
+        }
+      }
+      fileInput.value = '';
+    });
+
     document.getElementById('submit-product-review').addEventListener('click', async () => {
       const rating = Number(document.getElementById('product-review-rating').value);
       const content = document.getElementById('product-review-content').value.trim();
@@ -355,7 +412,7 @@ function bindProductReviewEvents() {
         await fetchJSON('/api/products/' + productId + '/reviews', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rating, content })
+          body: JSON.stringify({ rating, content, imagePaths })
         });
         createToast('评价已提交。', 'success');
         overlay.remove();
@@ -364,6 +421,16 @@ function bindProductReviewEvents() {
       }
     });
   });
+}
+
+async function uploadReviewImage(file) {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await fetchJSON('/api/upload', {
+    method: 'POST',
+    body: formData,
+  });
+  return res.url || res.data?.url;
 }
 
 // ── 商城推荐 & 拼团 ──

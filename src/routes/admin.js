@@ -1111,4 +1111,40 @@ module.exports = function registerAdminRoutes(app, shared) {
       trend30: buildTrend(30)
     });
   });
+
+  // 退款审核：列出退款申请
+  app.get('/api/admin/refunds', requireRole(['admin', 'customer_service']), (request, response) => {
+    const { status } = request.query;
+    let sql = `SELECT
+        refunds.id,
+        refunds.order_id AS order_id,
+        refunds.student_id AS student_id,
+        refunds.reason,
+        refunds.amount,
+        refunds.status,
+        refunds.created_at,
+        orders.status AS order_status,
+        users.display_name AS student_display_name
+      FROM refunds
+      LEFT JOIN orders ON orders.id = refunds.order_id
+      LEFT JOIN users ON users.id = refunds.student_id`;
+    const params = [];
+    if (status && ['requested', 'approved', 'rejected', 'refunded'].includes(status)) {
+      sql += ' WHERE refunds.status = ?';
+      params.push(status);
+    }
+    sql += ' ORDER BY refunds.created_at DESC';
+    const refunds = db.prepare(sql).all(...params).map((row) => ({
+      id: row.id,
+      orderId: row.order_id,
+      studentId: row.student_id,
+      studentDisplayName: row.student_display_name || '',
+      reason: row.reason,
+      amount: row.amount,
+      status: row.status,
+      orderStatus: row.order_status,
+      createdAt: row.created_at
+    }));
+    response.json({ refunds });
+  });
 };

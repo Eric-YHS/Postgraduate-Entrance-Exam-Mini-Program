@@ -161,6 +161,11 @@ function renderQuestionCard(question, showWrong) {
   }
 
   // Build feedback section based on display mode
+  const askAiButton = feedback ? `
+    <div style="margin-top: 12px;">
+      <button class="ghost-button" data-action="ask-ai" data-question-id="${question.id}" data-question-stem="${escapeHtml(question.stem || '')}" type="button" style="font-size: 12px; padding: 4px 10px;">🤖 问 AI</button>
+    </div>
+  ` : '';
   let feedbackHtml = '';
   if (feedback) {
     if (displayMode === 'word') {
@@ -177,6 +182,7 @@ function renderQuestionCard(question, showWrong) {
             ${exampleSentence ? `<div style="font-size:14px;color:#64748b;margin-top:8px;font-style:italic;">"${escapeHtml(exampleSentence)}"</div>` : ''}
           </div>
           <p style="margin-top:12px;">${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
+          ${askAiButton}
         </div>
       `;
     } else if (displayMode === 'formula') {
@@ -186,6 +192,7 @@ function renderQuestionCard(question, showWrong) {
           <strong>${feedback.isCorrect ? '回答正确' : `回答错误，正确答案 ${feedback.correctAnswer}`}</strong>
           <p>${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
           ${feedback.analysisVideoPath || feedback.analysisVideoUrl ? `<video class="video-frame" controls src="${escapeHtml(feedback.analysisVideoPath || feedback.analysisVideoUrl)}"></video>` : ''}
+          ${askAiButton}
         </div>
       `;
     } else {
@@ -195,6 +202,7 @@ function renderQuestionCard(question, showWrong) {
           <strong>${feedback.isCorrect ? '回答正确' : `回答错误，正确答案 ${feedback.correctAnswer}`}</strong>
           <p>${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
           ${feedback.analysisVideoPath || feedback.analysisVideoUrl ? `<video class="video-frame" controls src="${escapeHtml(feedback.analysisVideoPath || feedback.analysisVideoUrl)}"></video>` : ''}
+          ${askAiButton}
         </div>
       `;
     }
@@ -420,6 +428,57 @@ function bindAutoPaper() {
     }
   });
 }
+
+function bindAskAI() {
+  document.getElementById('student-questions').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action="ask-ai"]');
+    if (!btn) return;
+    const qId = btn.dataset.questionId;
+    const questionStem = btn.dataset.questionStem || '';
+    const card = btn.closest('.question-card');
+    if (!card) return;
+    let container = card.querySelector('.ai-explanation');
+    if (!container) {
+      container = document.createElement('div');
+      container.className = 'ai-explanation';
+      container.style.cssText = 'margin-top:12px;padding:14px;background:#f8fafc;border-radius:8px;border-left:3px solid #3b82f6;';
+      card.appendChild(container);
+    }
+    if (container.dataset.loaded === 'true' && container.dataset.questionId === qId) {
+      container.classList.toggle('hidden');
+      return;
+    }
+    container.innerHTML = '<div class="muted">AI 正在思考…</div>';
+    container.classList.remove('hidden');
+    container.dataset.questionId = qId;
+    try {
+      const res = await fetchJSON('/api/ai/explain-question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: questionStem })
+      });
+      const explanation = res.explanation || (res.data && res.data.explanation) || '暂无讲解';
+      const title = document.createElement('div');
+      title.style.cssText = 'font-weight:600;margin-bottom:6px;';
+      title.textContent = 'AI 讲解';
+      const body = document.createElement('div');
+      body.style.cssText = 'line-height:1.6;white-space:pre-wrap;';
+      body.textContent = explanation;
+      container.innerHTML = '';
+      container.appendChild(title);
+      container.appendChild(body);
+      container.dataset.loaded = 'true';
+    } catch (err) {
+      container.innerHTML = '';
+      const errDiv = document.createElement('div');
+      errDiv.className = 'muted';
+      errDiv.style.color = '#ef4444';
+      errDiv.textContent = err.message;
+      container.appendChild(errDiv);
+    }
+  });
+}
+bindAskAI();
 
 // ── 错题本：已掌握 ──
 function bindWrongBookActions() {

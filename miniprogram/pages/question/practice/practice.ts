@@ -1,4 +1,5 @@
 import { getQuestions, submitAnswer } from '../../../services/question.service';
+import { post } from '../../../utils/request';
 import type { Question, QuestionSubject, DisplayMode, QuestionOption } from '../../../types/question';
 import { SUBJECT_MAP } from '../../../constants/index';
 
@@ -23,6 +24,7 @@ Page({
     selectedOption: '',
     hasAnswered: false,
     isCorrect: false,
+    aiExplanation: '',
     loading: false,
     error: false,
     progress: 0,
@@ -132,6 +134,7 @@ Page({
         selectedOption: '',
         hasAnswered: false,
         isCorrect: false,
+        aiExplanation: '',
       });
     } catch (err) {
       console.error('[Practice] 加载题目失败', err);
@@ -155,10 +158,29 @@ Page({
       this.setData({
         hasAnswered: true,
         isCorrect: result.isCorrect,
+        aiExplanation: '',
       });
     } catch (err) {
       console.error('[Practice] 提交答案失败', err);
       wx.showToast({ title: '提交失败', icon: 'none' });
+    }
+  },
+
+  async onAskAI() {
+    const { currentQuestion, aiExplanation } = this.data;
+    if (!currentQuestion || aiExplanation) return;
+
+    wx.showLoading({ title: 'AI 思考中', mask: true });
+    try {
+      const data = await post<{ explanation: string }>('/api/ai/explain-question', {
+        question: currentQuestion.stem || '',
+      });
+      this.setData({ aiExplanation: data.explanation || '暂无讲解' });
+    } catch (err) {
+      console.error('[Practice] AI 讲解失败', err);
+      wx.showToast({ title: 'AI 讲解失败', icon: 'none' });
+    } finally {
+      wx.hideLoading();
     }
   },
 
@@ -178,6 +200,7 @@ Page({
       selectedOption: '',
       hasAnswered: false,
       isCorrect: false,
+      aiExplanation: '',
       progress: Math.round(((nextIndex + 1) / questions.length) * 100),
     });
   },

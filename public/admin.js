@@ -6,7 +6,16 @@ const adminState = {
   stats: {},
   currentMenu: 'dashboard',
   currentSettingsTab: 'settings-general',
-  _userPage: 1
+  _userPage: 1,
+  knowledgeBases: [],
+  currentKnowledgeBase: null,
+  messageTemplates: [],
+  currentMessageTemplate: null,
+  bots: [],
+  currentBot: null,
+  promoterApplications: [],
+  promoterFilter: { status: '' },
+  refunds: []
 };
 
 const MENU_CONFIG = [
@@ -19,6 +28,7 @@ const MENU_CONFIG = [
   { id: 'forum', label: '论坛管理', icon: '💬', roles: ['admin', 'teacher', 'customer_service'] },
   { id: 'robots', label: '机器人管理', icon: '🤖', roles: ['admin'] },
   { id: 'entrepreneurship', label: '创业板块', icon: '🚀', roles: ['admin'] },
+  { id: 'refunds', label: '退款审核', icon: '💰', roles: ['admin', 'customer_service'] },
   { id: 'settings', label: '系统设置', icon: '⚙️', roles: ['admin'] }
 ];
 
@@ -133,6 +143,46 @@ document.addEventListener('DOMContentLoaded', async () => {
       renderUsers();
     } else if (action === 'delete-user') {
       deleteUser(Number(btn.dataset.userId), btn.dataset.userName);
+    } else if (action === 'kb-edit') {
+      openKnowledgeBaseModal(id);
+    } else if (action === 'kb-delete') {
+      deleteKnowledgeBase(id);
+    } else if (action === 'kb-view') {
+      openKnowledgeBaseDetail(id);
+    } else if (action === 'kb-add-doc') {
+      openKnowledgeBaseDocModal(Number(btn.dataset.baseId));
+    } else if (action === 'kb-del-doc') {
+      deleteKnowledgeBaseDoc(Number(btn.dataset.baseId), Number(btn.dataset.docId));
+    } else if (action === 'kb-process-doc') {
+      processKnowledgeBaseDoc(Number(btn.dataset.baseId), Number(btn.dataset.docId), btn);
+    } else if (action === 'mt-edit') {
+      openMessageTemplateModal(id);
+    } else if (action === 'mt-delete') {
+      deleteMessageTemplate(id);
+    } else if (action === 'mt-toggle') {
+      toggleMessageTemplate(id, btn.dataset.active === 'true');
+    } else if (action === 'mt-preview') {
+      previewMessageTemplate(btn.dataset.code);
+    } else if (action === 'bot-edit') {
+      openBotModal(id);
+    } else if (action === 'bot-delete') {
+      deleteBot(id);
+    } else if (action === 'bot-toggle') {
+      toggleBot(id, btn.dataset.active === 'true');
+    } else if (action === 'bot-view-conversations') {
+      viewBotConversations(btn.dataset.code);
+    } else if (action === 'bot-add-group') {
+      addBotToGroup(id);
+    } else if (action === 'bot-remove-group') {
+      removeBotFromGroup(id, Number(btn.dataset.groupId));
+    } else if (action === 'promoter-approve') {
+      approvePromoter(id);
+    } else if (action === 'promoter-reject') {
+      rejectPromoter(id);
+    } else if (action === 'refund-approve') {
+      handleRefund(id, 'approved');
+    } else if (action === 'refund-reject') {
+      handleRefund(id, 'rejected');
     }
   });
 
@@ -1169,6 +1219,11 @@ switchMenu = function(menuId) {
   if (menuId === 'content') loadContent();
   if (menuId === 'questions') loadQuestions();
   if (menuId === 'forum') loadForum();
+  if (menuId === 'knowledge') loadKnowledgeBases();
+  if (menuId === 'messages') loadMessageTemplates();
+  if (menuId === 'robots') loadBots();
+  if (menuId === 'entrepreneurship') loadPromoterApplications();
+  if (menuId === 'refunds') loadRefunds();
 };
 
 // 初始化
@@ -1405,3 +1460,620 @@ document.addEventListener('click', (e) => {
 document.getElementById('student-detail-modal').addEventListener('click', (e) => {
   if (e.target.id === 'student-detail-modal') closeStudentDetail();
 });
+
+// ===== 知识库 / 语料库管理 =====
+
+async function loadKnowledgeBases() {
+  try {
+    const data = await fetchJSON('/api/admin/knowledge-bases');
+    adminState.knowledgeBases = data.bases || [];
+    renderKnowledgeBases();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderKnowledgeBases() {
+  const container = document.getElementById('knowledge-list');
+  const items = adminState.knowledgeBases;
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无知识库，点击右上角按钮创建。</p>';
+    return;
+  }
+  container.innerHTML = items.map((kb) => `
+    <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h4 style="margin: 0 0 6px;">${escapeHtml(kb.title)}</h4>
+          <p class="muted" style="margin: 0 0 6px; font-size: 13px;">${escapeHtml(kb.description || '无描述')}</p>
+          <p class="muted" style="margin: 0; font-size: 12px;">分类：${escapeHtml(kb.category || '-')} · 文档数：${kb.documentCount || 0} · 创建时间：${formatDateTime(kb.createdAt)}</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="ghost-button" data-action="kb-view" data-id="${kb.id}" type="button">查看</button>
+          <button class="ghost-button" data-action="kb-edit" data-id="${kb.id}" type="button">编辑</button>
+          <button class="ghost-button" data-action="kb-delete" data-id="${kb.id}" type="button" style="color: var(--danger);">删除</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openKnowledgeBaseModal(id) {
+  const kb = id ? adminState.knowledgeBases.find((b) => b.id === id) : null;
+  const modal = document.getElementById('kb-modal');
+  const body = document.getElementById('kb-modal-body');
+  document.getElementById('kb-modal-title').textContent = kb ? '编辑知识库' : '新增知识库';
+  body.innerHTML = `
+    <div style="display: grid; gap: 16px;">
+      <input type="hidden" id="kb-id" value="${kb ? kb.id : ''}" />
+      <label>标题<input id="kb-title" class="input" type="text" value="${escapeHtml(kb ? kb.title : '')}" placeholder="如：考研政策库" /></label>
+      <label>分类<input id="kb-category" class="input" type="text" value="${escapeHtml(kb ? kb.category || '' : '')}" placeholder="如：政策、院校、FAQ" /></label>
+      <label>描述<textarea id="kb-description" class="input" rows="3" placeholder="知识库用途描述">${escapeHtml(kb ? kb.description || '' : '')}</textarea></label>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+async function saveKnowledgeBase() {
+  const id = document.getElementById('kb-id').value;
+  const title = document.getElementById('kb-title').value.trim();
+  const category = document.getElementById('kb-category').value.trim();
+  const description = document.getElementById('kb-description').value.trim();
+  if (!title) return createToast('请输入知识库标题。', 'error');
+  try {
+    const body = JSON.stringify({ title, category, description });
+    if (id) {
+      await fetchJSON(`/api/admin/knowledge-bases/${id}`, { method: 'PUT', body });
+    } else {
+      await fetchJSON('/api/admin/knowledge-bases', { method: 'POST', body });
+    }
+    createToast('保存成功。', 'success');
+    closeKnowledgeBaseModal();
+    loadKnowledgeBases();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function closeKnowledgeBaseModal() {
+  document.getElementById('kb-modal').style.display = 'none';
+}
+
+async function deleteKnowledgeBase(id) {
+  if (!await confirmDialog({ title: '确认删除', message: '删除知识库会同时删除其下所有文档和语料，是否继续？', danger: true })) return;
+  try {
+    await fetchJSON(`/api/admin/knowledge-bases/${id}`, { method: 'DELETE' });
+    createToast('已删除。', 'success');
+    loadKnowledgeBases();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function openKnowledgeBaseDetail(id) {
+  const modal = document.getElementById('kb-detail-modal');
+  const body = document.getElementById('kb-detail-body');
+  const title = document.getElementById('kb-detail-title');
+  modal.style.display = 'flex';
+  body.innerHTML = '<p class="muted">加载中...</p>';
+  try {
+    const data = await fetchJSON(`/api/admin/knowledge-bases/${id}`);
+    adminState.currentKnowledgeBase = data.base;
+    title.textContent = `${escapeHtml(data.base.title)} - 文档列表`;
+    const docs = data.documents || [];
+    body.innerHTML = `
+      <div style="margin-bottom: 16px;">
+        <button class="button" data-action="kb-add-doc" data-base-id="${id}" type="button">上传文档</button>
+      </div>
+      ${docs.length ? docs.map((doc) => `
+        <div class="paper-card" style="padding: 12px; margin-bottom: 10px;">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+            <div>
+              <p style="margin: 0 0 4px; font-weight: 500;">${escapeHtml(doc.title)}</p>
+              <p class="muted" style="margin: 0; font-size: 12px;">${escapeHtml(doc.fileType)} · ${(doc.fileSize / 1024).toFixed(1)} KB · 分块：${doc.chunkCount || 0} · ${formatDateTime(doc.createdAt)}</p>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button class="ghost-button" data-action="kb-process-doc" data-base-id="${id}" data-doc-id="${doc.id}" type="button">处理</button>
+              <button class="ghost-button" data-action="kb-del-doc" data-base-id="${id}" data-doc-id="${doc.id}" type="button" style="color: var(--danger);">删除</button>
+            </div>
+          </div>
+        </div>
+      `).join('') : '<p class="muted">暂无文档。</p>'}
+    `;
+  } catch (error) {
+    body.innerHTML = `<p class="muted">加载失败：${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function closeKnowledgeBaseDetail() {
+  document.getElementById('kb-detail-modal').style.display = 'none';
+}
+
+function openKnowledgeBaseDocModal(baseId) {
+  const modal = document.getElementById('kb-doc-modal');
+  const body = document.getElementById('kb-doc-modal-body');
+  document.getElementById('kb-doc-modal-title').textContent = '上传文档';
+  body.innerHTML = `
+    <input type="hidden" id="kb-doc-base-id" value="${baseId}" />
+    <div style="display: grid; gap: 16px;">
+      <label>文档标题<input id="kb-doc-title" class="input" type="text" placeholder="如：2025年招生简章" /></label>
+      <label>文件路径/URL<input id="kb-doc-path" class="input" type="text" placeholder="已上传文件的访问路径" /></label>
+      <label>文件类型
+        <select id="kb-doc-type" class="input">
+          <option value="pdf">PDF</option>
+          <option value="docx">Word</option>
+          <option value="txt">TXT</option>
+          <option value="markdown">Markdown</option>
+        </select>
+      </label>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+async function saveKnowledgeBaseDoc() {
+  const baseId = Number(document.getElementById('kb-doc-base-id').value);
+  const title = document.getElementById('kb-doc-title').value.trim();
+  const filePath = document.getElementById('kb-doc-path').value.trim();
+  const fileType = document.getElementById('kb-doc-type').value;
+  if (!title || !filePath) return createToast('请填写标题和文件路径。', 'error');
+  try {
+    await fetchJSON(`/api/admin/knowledge-bases/${baseId}/documents`, {
+      method: 'POST',
+      body: JSON.stringify({ title, filePath, fileType })
+    });
+    createToast('文档已添加。', 'success');
+    closeKnowledgeBaseDocModal();
+    openKnowledgeBaseDetail(baseId);
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function closeKnowledgeBaseDocModal() {
+  document.getElementById('kb-doc-modal').style.display = 'none';
+}
+
+async function deleteKnowledgeBaseDoc(baseId, docId) {
+  if (!await confirmDialog({ title: '确认删除', message: '是否删除该文档？', danger: true })) return;
+  try {
+    await fetchJSON(`/api/admin/knowledge-bases/${baseId}/documents/${docId}`, { method: 'DELETE' });
+    createToast('已删除。', 'success');
+    openKnowledgeBaseDetail(baseId);
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function processKnowledgeBaseDoc(baseId, docId, btn) {
+  setButtonLoading(btn, true);
+  try {
+    const res = await fetchJSON(`/api/admin/knowledge-bases/${baseId}/documents/${docId}/process`, { method: 'POST' });
+    createToast(`处理完成，生成 ${res.chunkCount || 0} 个语料片段。`, 'success');
+    openKnowledgeBaseDetail(baseId);
+  } catch (error) {
+    createToast(error.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+document.getElementById('kb-modal').addEventListener('click', (e) => { if (e.target.id === 'kb-modal') closeKnowledgeBaseModal(); });
+document.getElementById('close-kb-modal').addEventListener('click', closeKnowledgeBaseModal);
+document.getElementById('kb-detail-modal').addEventListener('click', (e) => { if (e.target.id === 'kb-detail-modal') closeKnowledgeBaseDetail(); });
+document.getElementById('close-kb-detail').addEventListener('click', closeKnowledgeBaseDetail);
+document.getElementById('kb-doc-modal').addEventListener('click', (e) => { if (e.target.id === 'kb-doc-modal') closeKnowledgeBaseDocModal(); });
+document.getElementById('close-kb-doc-modal').addEventListener('click', closeKnowledgeBaseDocModal);
+document.getElementById('save-kb-btn').addEventListener('click', saveKnowledgeBase);
+document.getElementById('cancel-kb-btn').addEventListener('click', closeKnowledgeBaseModal);
+document.getElementById('save-kb-doc-btn').addEventListener('click', saveKnowledgeBaseDoc);
+document.getElementById('cancel-kb-doc-btn').addEventListener('click', closeKnowledgeBaseDocModal);
+document.getElementById('add-kb-btn').addEventListener('click', () => openKnowledgeBaseModal());
+
+// ===== 消息模板管理 =====
+
+async function loadMessageTemplates() {
+  try {
+    const data = await fetchJSON('/api/admin/message-templates');
+    adminState.messageTemplates = data.templates || [];
+    renderMessageTemplates();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderMessageTemplates() {
+  const container = document.getElementById('messages-list');
+  const items = adminState.messageTemplates;
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无消息模板。</p>';
+    return;
+  }
+  container.innerHTML = items.map((t) => `
+    <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h4 style="margin: 0 0 6px;">${escapeHtml(t.name)} <code style="font-size: 12px; color: var(--muted);">${escapeHtml(t.code)}</code></h4>
+          <p class="muted" style="margin: 0 0 6px; font-size: 13px;">${escapeHtml((t.content || '').slice(0, 120))}${(t.content || '').length > 120 ? '...' : ''}</p>
+          <p class="muted" style="margin: 0; font-size: 12px;">渠道：${escapeHtml(t.channels || '-')} · 状态：${t.isActive ? '启用' : '禁用'} · 更新：${formatDateTime(t.updatedAt)}</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="ghost-button" data-action="mt-preview" data-code="${t.code}" type="button">预览</button>
+          <button class="ghost-button" data-action="mt-edit" data-id="${t.id}" type="button">编辑</button>
+          <button class="ghost-button" data-action="mt-toggle" data-id="${t.id}" data-active="${t.isActive}" type="button">${t.isActive ? '禁用' : '启用'}</button>
+          <button class="ghost-button" data-action="mt-delete" data-id="${t.id}" type="button" style="color: var(--danger);">删除</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openMessageTemplateModal(id) {
+  const t = id ? adminState.messageTemplates.find((x) => x.id === id) : null;
+  const modal = document.getElementById('mt-modal');
+  const body = document.getElementById('mt-modal-body');
+  document.getElementById('mt-modal-title').textContent = t ? '编辑消息模板' : '新增消息模板';
+  body.innerHTML = `
+    <input type="hidden" id="mt-id" value="${t ? t.id : ''}" />
+    <div style="display: grid; gap: 16px;">
+      <label>模板编码<input id="mt-code" class="input" type="text" value="${escapeHtml(t ? t.code : '')}" ${t ? 'disabled' : ''} placeholder="如：morning_plan" /></label>
+      <label>模板名称<input id="mt-name" class="input" type="text" value="${escapeHtml(t ? t.name : '')}" placeholder="如：早安计划" /></label>
+      <label>内容<textarea id="mt-content" class="input" rows="6" placeholder="支持 {name} {time} {subject} 等变量">${escapeHtml(t ? t.content : '')}</textarea></label>
+      <label>渠道<input id="mt-channels" class="input" type="text" value="${escapeHtml(t ? t.channels || '' : '')}" placeholder="如：wecom,miniapp" /></label>
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input id="mt-active" type="checkbox" ${t && t.isActive ? 'checked' : ''} /> 启用
+      </label>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+async function saveMessageTemplate() {
+  const id = document.getElementById('mt-id').value;
+  const code = document.getElementById('mt-code').value.trim();
+  const name = document.getElementById('mt-name').value.trim();
+  const content = document.getElementById('mt-content').value.trim();
+  const channels = document.getElementById('mt-channels').value.trim();
+  const isActive = document.getElementById('mt-active').checked ? 1 : 0;
+  if (!code || !name || !content) return createToast('请填写编码、名称和内容。', 'error');
+  try {
+    const body = JSON.stringify({ code, name, content, channels, isActive });
+    if (id) {
+      await fetchJSON(`/api/admin/message-templates/${id}`, { method: 'PUT', body });
+    } else {
+      await fetchJSON('/api/admin/message-templates', { method: 'POST', body });
+    }
+    createToast('保存成功。', 'success');
+    closeMessageTemplateModal();
+    loadMessageTemplates();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function closeMessageTemplateModal() {
+  document.getElementById('mt-modal').style.display = 'none';
+}
+
+async function deleteMessageTemplate(id) {
+  if (!await confirmDialog({ title: '确认删除', message: '是否删除该消息模板？', danger: true })) return;
+  try {
+    await fetchJSON(`/api/admin/message-templates/${id}`, { method: 'DELETE' });
+    createToast('已删除。', 'success');
+    loadMessageTemplates();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function toggleMessageTemplate(id, currentActive) {
+  try {
+    await fetchJSON(`/api/admin/message-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ isActive: currentActive ? 0 : 1 })
+    });
+    createToast('状态已更新。', 'success');
+    loadMessageTemplates();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function previewMessageTemplate(code) {
+  const variables = prompt('请输入预览变量 JSON（可选）：', '{"name":"张三","time":"08:00","subject":"数学"}');
+  if (variables === null) return;
+  try {
+    const data = await fetchJSON(`/api/admin/message-templates/${code}/render`, {
+      method: 'POST',
+      body: JSON.stringify({ variables: JSON.parse(variables || '{}') })
+    });
+    alert(`预览结果：\n${data.rendered || data.content || '无内容'}`);
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+document.getElementById('mt-modal').addEventListener('click', (e) => { if (e.target.id === 'mt-modal') closeMessageTemplateModal(); });
+document.getElementById('close-mt-modal').addEventListener('click', closeMessageTemplateModal);
+document.getElementById('save-mt-btn').addEventListener('click', saveMessageTemplate);
+document.getElementById('cancel-mt-btn').addEventListener('click', closeMessageTemplateModal);
+document.getElementById('add-mt-btn').addEventListener('click', () => openMessageTemplateModal());
+
+// ===== 机器人管理 =====
+
+async function loadBots() {
+  try {
+    const data = await fetchJSON('/api/admin/bots');
+    adminState.bots = data.bots || [];
+    renderBots();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderBots() {
+  const container = document.getElementById('robots-list');
+  const items = adminState.bots;
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无机器人。</p>';
+    return;
+  }
+  container.innerHTML = items.map((bot) => `
+    <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h4 style="margin: 0 0 6px;">${escapeHtml(bot.name)} <code style="font-size: 12px; color: var(--muted);">${escapeHtml(bot.code)}</code></h4>
+          <p class="muted" style="margin: 0 0 6px; font-size: 13px;">类型：${escapeHtml(bot.type)} · 状态：${bot.isActive ? '启用' : '禁用'}</p>
+          <p class="muted" style="margin: 0; font-size: 12px;">创建时间：${formatDateTime(bot.createdAt)}</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <button class="ghost-button" data-action="bot-view-conversations" data-code="${bot.code}" type="button">对话记录</button>
+          <button class="ghost-button" data-action="bot-edit" data-id="${bot.id}" type="button">编辑</button>
+          <button class="ghost-button" data-action="bot-toggle" data-id="${bot.id}" data-active="${bot.isActive}" type="button">${bot.isActive ? '禁用' : '启用'}</button>
+          <button class="ghost-button" data-action="bot-delete" data-id="${bot.id}" type="button" style="color: var(--danger);">删除</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function openBotModal(id) {
+  const bot = id ? adminState.bots.find((b) => b.id === id) : null;
+  const modal = document.getElementById('bot-modal');
+  const body = document.getElementById('bot-modal-body');
+  document.getElementById('bot-modal-title').textContent = bot ? '编辑机器人' : '新增机器人';
+  const configStr = bot && bot.config ? JSON.stringify(bot.config, null, 2) : '{}';
+  body.innerHTML = `
+    <input type="hidden" id="bot-id" value="${bot ? bot.id : ''}" />
+    <div style="display: grid; gap: 16px;">
+      <label>机器人编码<input id="bot-code" class="input" type="text" value="${escapeHtml(bot ? bot.code : '')}" ${bot ? 'disabled' : ''} placeholder="如：supervisor_bot" /></label>
+      <label>名称<input id="bot-name" class="input" type="text" value="${escapeHtml(bot ? bot.name : '')}" placeholder="如：督学机器人" /></label>
+      <label>类型
+        <select id="bot-type" class="input">
+          <option value="tutor" ${bot && bot.type === 'tutor' ? 'selected' : ''}>答疑</option>
+          <option value="supervisor" ${bot && bot.type === 'supervisor' ? 'selected' : ''}>督学</option>
+          <option value="school" ${bot && bot.type === 'school' ? 'selected' : ''}>择校</option>
+          <option value="exam" ${bot && bot.type === 'exam' ? 'selected' : ''}>自测</option>
+          <option value="planner" ${bot && bot.type === 'planner' ? 'selected' : ''}>规划</option>
+          <option value="other" ${bot && bot.type === 'other' ? 'selected' : ''}>其他</option>
+        </select>
+      </label>
+      <label>配置 JSON<textarea id="bot-config" class="input" rows="8" placeholder='{"model":"deepseek-chat"}'>${escapeHtml(configStr)}</textarea></label>
+      <label style="display: flex; align-items: center; gap: 8px;">
+        <input id="bot-active" type="checkbox" ${bot && bot.isActive ? 'checked' : ''} /> 启用
+      </label>
+    </div>
+  `;
+  modal.style.display = 'flex';
+}
+
+async function saveBot() {
+  const id = document.getElementById('bot-id').value;
+  const code = document.getElementById('bot-code').value.trim();
+  const name = document.getElementById('bot-name').value.trim();
+  const type = document.getElementById('bot-type').value;
+  const isActive = document.getElementById('bot-active').checked ? 1 : 0;
+  let config;
+  try {
+    config = JSON.parse(document.getElementById('bot-config').value || '{}');
+  } catch (e) {
+    return createToast('Config JSON 格式错误，请检查。', 'error');
+  }
+  if (!code || !name) return createToast('请填写编码和名称。', 'error');
+  try {
+    const body = JSON.stringify({ code, name, type, config, isActive });
+    if (id) {
+      await fetchJSON(`/api/admin/bots/${id}`, { method: 'PUT', body });
+    } else {
+      await fetchJSON('/api/admin/bots', { method: 'POST', body });
+    }
+    createToast('保存成功。', 'success');
+    closeBotModal();
+    loadBots();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function closeBotModal() {
+  document.getElementById('bot-modal').style.display = 'none';
+}
+
+async function deleteBot(id) {
+  if (!await confirmDialog({ title: '确认删除', message: '是否删除该机器人？', danger: true })) return;
+  try {
+    await fetchJSON(`/api/admin/bots/${id}`, { method: 'DELETE' });
+    createToast('已删除。', 'success');
+    loadBots();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function toggleBot(id, currentActive) {
+  try {
+    await fetchJSON(`/api/admin/bots/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ isActive: currentActive ? 0 : 1 })
+    });
+    createToast('状态已更新。', 'success');
+    loadBots();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function viewBotConversations(code) {
+  const modal = document.getElementById('bot-conversations-modal');
+  const body = document.getElementById('bot-conversations-body');
+  modal.style.display = 'flex';
+  body.innerHTML = '<p class="muted">加载中...</p>';
+  try {
+    const data = await fetchJSON(`/api/admin/conversations?type=${encodeURIComponent(code)}&limit=50`);
+    const list = data.conversations || [];
+    body.innerHTML = list.length ? list.map((c) => `
+      <div class="paper-card" style="padding: 12px; margin-bottom: 10px;">
+        <p class="muted" style="margin: 0 0 6px; font-size: 12px;">用户 ${c.userId} · ${formatDateTime(c.createdAt)}</p>
+        <p style="margin: 0 0 6px;"><strong>问：</strong>${escapeHtml((c.prompt || '').slice(0, 200))}</p>
+        <p style="margin: 0;" class="muted"><strong>答：</strong>${escapeHtml((c.response || '').slice(0, 300))}</p>
+      </div>
+    `).join('') : '<p class="muted">暂无对话记录。</p>';
+  } catch (error) {
+    body.innerHTML = `<p class="muted">加载失败：${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function closeBotConversationsModal() {
+  document.getElementById('bot-conversations-modal').style.display = 'none';
+}
+
+document.getElementById('bot-modal').addEventListener('click', (e) => { if (e.target.id === 'bot-modal') closeBotModal(); });
+document.getElementById('close-bot-modal').addEventListener('click', closeBotModal);
+document.getElementById('bot-conversations-modal').addEventListener('click', (e) => { if (e.target.id === 'bot-conversations-modal') closeBotConversationsModal(); });
+document.getElementById('save-bot-btn').addEventListener('click', saveBot);
+document.getElementById('cancel-bot-btn').addEventListener('click', closeBotModal);
+document.getElementById('close-bot-conversations').addEventListener('click', closeBotConversationsModal);
+document.getElementById('add-bot-btn').addEventListener('click', () => openBotModal());
+
+// ===== 创业板块管理 =====
+
+async function loadPromoterApplications() {
+  try {
+    const status = adminState.promoterFilter.status;
+    const url = status ? `/api/admin/promoter-applications?status=${status}` : '/api/admin/promoter-applications';
+    const data = await fetchJSON(url);
+    adminState.promoterApplications = data.applications || [];
+    renderPromoterApplications();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderPromoterApplications() {
+  const container = document.getElementById('promoter-list');
+  const items = adminState.promoterApplications;
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无报名记录。</p>';
+    return;
+  }
+  container.innerHTML = items.map((app) => `
+    <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h4 style="margin: 0 0 6px;">${escapeHtml(app.name)} <span class="muted" style="font-size: 12px;">(${escapeHtml(app.userDisplayName || '未知用户')})</span></h4>
+          <p class="muted" style="margin: 0 0 6px; font-size: 13px;">平台：${escapeHtml(app.platform)} · 粉丝数：${app.followerCount || 0} · 联系方式：${escapeHtml(app.contact)}</p>
+          <p class="muted" style="margin: 0; font-size: 12px;">状态：<span style="font-weight: 500; color: ${app.status === 'approved' ? '#16a34a' : app.status === 'rejected' ? '#dc2626' : '#ca8a04'};">${escapeHtml(app.status)}</span> · 申请时间：${formatDateTime(app.createdAt)}</p>
+        </div>
+        ${app.status === 'pending' ? `
+        <div style="display: flex; gap: 8px;">
+          <button class="ghost-button" data-action="promoter-approve" data-id="${app.id}" type="button" style="color: #16a34a;">通过</button>
+          <button class="ghost-button" data-action="promoter-reject" data-id="${app.id}" type="button" style="color: var(--danger);">驳回</button>
+        </div>
+        ` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function approvePromoter(id) {
+  if (!await confirmDialog({ title: '确认通过', message: '是否通过该博主申请？' })) return;
+  try {
+    await fetchJSON(`/api/admin/promoter-applications/${id}/approve`, { method: 'POST' });
+    createToast('已通过。', 'success');
+    loadPromoterApplications();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function rejectPromoter(id) {
+  if (!await confirmDialog({ title: '确认驳回', message: '是否驳回该博主申请？', danger: true })) return;
+  try {
+    await fetchJSON(`/api/admin/promoter-applications/${id}/reject`, { method: 'POST' });
+    createToast('已驳回。', 'success');
+    loadPromoterApplications();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+document.getElementById('promoter-tabs').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-promoter-status]');
+  if (!btn) return;
+  document.querySelectorAll('#promoter-tabs button').forEach((b) => b.classList.remove('active'));
+  btn.classList.add('active');
+  adminState.promoterFilter.status = btn.dataset.promoterStatus;
+  loadPromoterApplications();
+});
+
+// ===== 退款审核 =====
+
+async function loadRefunds() {
+  try {
+    const data = await fetchJSON('/api/admin/refunds?status=requested');
+    adminState.refunds = data.refunds || [];
+    renderRefunds();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderRefunds() {
+  const container = document.getElementById('refunds-list');
+  const items = adminState.refunds;
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无待审核退款申请。</p>';
+    return;
+  }
+  container.innerHTML = items.map((r) => `
+    <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+        <div>
+          <h4 style="margin: 0 0 6px;">订单 #${r.orderId} · ¥${r.amount}</h4>
+          <p class="muted" style="margin: 0 0 6px; font-size: 13px;">学生：${escapeHtml(r.studentDisplayName || r.studentId)} · 原因：${escapeHtml(r.reason || '无')}</p>
+          <p class="muted" style="margin: 0; font-size: 12px;">订单状态：${escapeHtml(r.orderStatus)} · 申请时间：${formatDateTime(r.createdAt)}</p>
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <button class="ghost-button" data-action="refund-approve" data-id="${r.orderId}" type="button" style="color: #16a34a;">通过</button>
+          <button class="ghost-button" data-action="refund-reject" data-id="${r.orderId}" type="button" style="color: var(--danger);">驳回</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function handleRefund(orderId, status) {
+  const ok = await confirmDialog({
+    title: status === 'approved' ? '确认退款' : '确认驳回',
+    message: status === 'approved' ? '通过后将回库存并取消订单，是否继续？' : '驳回后学生将不能再次申请，是否继续？',
+    danger: status === 'rejected'
+  });
+  if (!ok) return;
+  try {
+    await fetchJSON(`/api/admin/orders/${orderId}/refund`, { method: 'POST', body: JSON.stringify({ status }) });
+    createToast(status === 'approved' ? '退款已通过。' : '退款已驳回。', 'success');
+    loadRefunds();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}

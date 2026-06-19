@@ -438,8 +438,12 @@ module.exports = function registerStoreRoutes(app, shared) {
        FROM product_reviews LEFT JOIN users ON users.id = product_reviews.student_id
        WHERE product_reviews.product_id = ? ORDER BY product_reviews.created_at DESC`
     ).all(id);
+    const parsedReviews = reviews.map((r) => ({
+      ...r,
+      imagePaths: safeJsonParse(r.image_paths),
+    }));
     const avgRating = reviews.length ? (reviews.reduce((s, r) => s + r.rating, 0) / reviews.length).toFixed(1) : '0.0';
-    response.json({ reviews, avgRating, totalReviews: reviews.length });
+    response.json({ reviews: parsedReviews, avgRating, totalReviews: reviews.length });
   });
 
   app.post('/api/products/:id/reviews', requireStudent, (request, response) => {
@@ -451,10 +455,15 @@ module.exports = function registerStoreRoutes(app, shared) {
       `SELECT id FROM orders WHERE product_id = ? AND student_id = ? AND status = 'confirmed'`
     ).get(id, request.currentUser.id);
     if (!order) { response.status(400).json({ error: '只有确认收货后才能评价。' }); return; }
+
+    const imagePaths = Array.isArray(request.body.imagePaths) ? request.body.imagePaths : [];
+
     db.prepare(
-      `INSERT INTO product_reviews (product_id, student_id, rating, content, created_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(product_id, student_id) DO UPDATE SET rating = excluded.rating, content = excluded.content, created_at = excluded.created_at`
-    ).run(id, request.currentUser.id, rating, stripHtml(request.body.content || ''), dayjs().toISOString());
+      `INSERT INTO product_reviews (product_id, student_id, rating, content, image_paths, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(product_id, student_id)
+       DO UPDATE SET rating = excluded.rating, content = excluded.content, image_paths = excluded.image_paths, created_at = excluded.created_at`
+    ).run(id, request.currentUser.id, rating, stripHtml(request.body.content || ''), JSON.stringify(imagePaths), dayjs().toISOString());
     response.json({ ok: true });
   });
 

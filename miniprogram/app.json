@@ -9,7 +9,8 @@
     "pages/forum/index/index",
     "pages/forum/detail/detail",
     "pages/forum/post/post",
-    "pages/user/center/center"
+    "pages/user/center/center",
+    "pages/promoter/apply/apply"
   ],
   "window": {
     "backgroundTextStyle": "dark",

@@ -116,6 +116,14 @@
           </view>
         </view>
       </view>
+
+      <view class="ai-section" wx:if="{{ !aiExplanation }}">
+        <view class="ai-btn" bindtap="onAskAI">🤖 问 AI</view>
+      </view>
+      <view class="ai-section ai-explanation" wx:if="{{ aiExplanation }}">
+        <view class="ai-title">AI 讲解</view>
+        <view class="ai-text">{{ aiExplanation }}</view>
+      </view>
     </view>
   </view>
 

@@ -1,5 +1,5 @@
-const USE_MOCK = true;
-const UPLOAD_URL = 'https://api.kaoyan.com/api/upload';
+const USE_MOCK = false;
+const UPLOAD_URL = '/api/upload';
 
 /** 上传结果 */
 export interface UploadResult {
