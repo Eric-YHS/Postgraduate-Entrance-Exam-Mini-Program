@@ -355,6 +355,186 @@ function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_task_completions_student ON task_completions(student_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_student ON notifications(student_id);
     CREATE INDEX IF NOT EXISTS idx_forum_replies_topic ON forum_replies(topic_id);
+
+    -- ===== 新功能模块表（集成 agent 统一创建） =====
+
+    -- 知识库表
+    CREATE TABLE IF NOT EXISTS knowledge_bases (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      category TEXT DEFAULT '',
+      created_by INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    );
+
+    -- 知识库文档表
+    CREATE TABLE IF NOT EXISTS knowledge_documents (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      base_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      file_path TEXT DEFAULT '',
+      file_type TEXT DEFAULT '',
+      file_size INTEGER DEFAULT 0,
+      parsed_text TEXT DEFAULT '',
+      chunk_count INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_documents_base ON knowledge_documents(base_id);
+
+    -- 知识库文本块表
+    CREATE TABLE IF NOT EXISTS knowledge_chunks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      document_id INTEGER NOT NULL,
+      base_id INTEGER NOT NULL,
+      chunk_index INTEGER NOT NULL DEFAULT 0,
+      content TEXT NOT NULL,
+      content_length INTEGER DEFAULT 0,
+      keywords TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (document_id) REFERENCES knowledge_documents(id) ON DELETE CASCADE,
+      FOREIGN KEY (base_id) REFERENCES knowledge_bases(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_base ON knowledge_chunks(base_id);
+    CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_document ON knowledge_chunks(document_id);
+
+    -- 消息模板表
+    CREATE TABLE IF NOT EXISTS message_templates (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      content TEXT NOT NULL,
+      channels TEXT NOT NULL DEFAULT '[]',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      updated_by INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (updated_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_message_templates_code ON message_templates(code);
+    CREATE INDEX IF NOT EXISTS idx_message_templates_active ON message_templates(is_active);
+
+    -- 机器人管理表
+    CREATE TABLE IF NOT EXISTS bots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      code TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      config TEXT DEFAULT '{}',
+      is_active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL
+    );
+
+    -- 机器人群组分配表
+    CREATE TABLE IF NOT EXISTS bot_group_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id INTEGER NOT NULL,
+      group_id INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+      UNIQUE(bot_id, group_id)
+    );
+
+    -- 企业微信群聊表（增强版：关联学生和订单）
+    CREATE TABLE IF NOT EXISTS wecom_groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      chat_id TEXT NOT NULL UNIQUE,
+      name TEXT DEFAULT '',
+      owner TEXT DEFAULT '',
+      student_id INTEGER DEFAULT NULL,
+      order_id INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_groups_student ON wecom_groups(student_id);
+    CREATE INDEX IF NOT EXISTS idx_wecom_groups_order ON wecom_groups(order_id);
+
+    -- 企业微信群成员表（增强版：增加 role 字段）
+    CREATE TABLE IF NOT EXISTS wecom_group_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT DEFAULT 'member' CHECK (role IN ('owner', 'admin', 'member', 'bot')),
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (group_id) REFERENCES wecom_groups(id) ON DELETE CASCADE,
+      UNIQUE(group_id, user_id)
+    );
+
+    -- 推广员申请表（与 promoter.js 路由一致）
+    CREATE TABLE IF NOT EXISTS promoter_applications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      real_name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      wechat_id TEXT DEFAULT '',
+      motivation TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'approved', 'rejected')),
+      reviewed_by INTEGER DEFAULT NULL,
+      reviewed_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (reviewed_by) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_promoter_applications_user ON promoter_applications(user_id);
+    CREATE INDEX IF NOT EXISTS idx_promoter_applications_status ON promoter_applications(status);
+
+    -- AI 自测考试表（增强版：关联学生、支持状态追踪）
+    CREATE TABLE IF NOT EXISTS ai_exams (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      subject TEXT DEFAULT '',
+      question_ids TEXT DEFAULT '[]',
+      generated_at TEXT NOT NULL,
+      due_at TEXT DEFAULT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'active', 'completed', 'expired')),
+      FOREIGN KEY (student_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ai_exams_student ON ai_exams(student_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_exams_status ON ai_exams(status);
+
+    -- AI 自测提交表
+    CREATE TABLE IF NOT EXISTS ai_exam_submissions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      exam_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      answers TEXT DEFAULT '{}',
+      score REAL DEFAULT 0,
+      submitted_at TEXT DEFAULT NULL,
+      started_at TEXT NOT NULL,
+      FOREIGN KEY (exam_id) REFERENCES ai_exams(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES users(id),
+      UNIQUE(exam_id, student_id)
+    );
+
+    -- 学习报告表（增强版：支持周报数据 JSON 和建议）
+    CREATE TABLE IF NOT EXISTS study_reports (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      week_start TEXT NOT NULL,
+      data_json TEXT NOT NULL,
+      suggestions TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_study_reports_student ON study_reports(student_id);
+    CREATE INDEX IF NOT EXISTS idx_study_reports_week ON study_reports(week_start);
+
+    -- 人工接管状态表
+    CREATE TABLE IF NOT EXISTS handoff_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended')),
+      source TEXT NOT NULL DEFAULT 'wecom',
+      group_id INTEGER DEFAULT NULL,
+      reason TEXT DEFAULT '',
+      started_at TEXT NOT NULL,
+      ended_at TEXT DEFAULT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_handoff_status_user ON handoff_status(user_id, status);
+    CREATE INDEX IF NOT EXISTS idx_handoff_status_active ON handoff_status(status, started_at);
   `);
 
   // 教师评语字段
@@ -362,6 +542,11 @@ function initializeDatabase() {
   try { db.exec('ALTER TABLE summaries ADD COLUMN commented_at TEXT DEFAULT NULL'); } catch (_) {}
   try { db.exec('ALTER TABLE tasks ADD COLUMN reminder_start TEXT DEFAULT \'\''); } catch (_) {}
   try { db.exec('ALTER TABLE tasks ADD COLUMN reminder_end TEXT DEFAULT \'\''); } catch (_) {}
+
+  // ===== Phase 3 集成：users 表新增可选字段 =====
+  try { db.exec('ALTER TABLE users ADD COLUMN wecom_userid TEXT DEFAULT \'\''); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN promoter_status TEXT DEFAULT \'\''); } catch (_) {}
+  try { db.exec('ALTER TABLE users ADD COLUMN promoter_code TEXT DEFAULT \'\''); } catch (_) {}
 }
 
 function seedUsers() {
@@ -1377,7 +1562,7 @@ function migrate() {
     CREATE TABLE IF NOT EXISTS ai_conversations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       user_id INTEGER NOT NULL,
-      type TEXT NOT NULL DEFAULT 'tutor' CHECK (type IN ('tutor', 'essay', 'plan', 'generate', 'summary')),
+      type TEXT NOT NULL DEFAULT 'tutor' CHECK (type IN ('tutor', 'essay', 'plan', 'generate', 'summary', 'advisor', 'planner')),
       context TEXT DEFAULT '',
       prompt TEXT NOT NULL,
       response TEXT NOT NULL,
@@ -1386,6 +1571,56 @@ function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_ai_conv_user ON ai_conversations(user_id, type);
   `);
+
+  // ===== Phase 3 迁移：确保 handoff_status 表存在（兼容已有表） =====
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS handoff_status (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'ended')),
+      source TEXT NOT NULL DEFAULT 'wecom',
+      group_id INTEGER DEFAULT NULL,
+      reason TEXT DEFAULT '',
+      started_at TEXT NOT NULL,
+      ended_at TEXT DEFAULT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+  `);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_handoff_status_user ON handoff_status(user_id, status)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_handoff_status_active ON handoff_status(status, started_at)');
+
+  // ===== Phase 3 迁移：兼容旧版 study_reports 表结构 =====
+  const srColumns = db.prepare('PRAGMA table_info(study_reports)').all();
+  if (srColumns.length > 0) {
+    if (!srColumns.some((c) => c.name === 'week_start')) {
+      try { db.exec('ALTER TABLE study_reports ADD COLUMN week_start TEXT DEFAULT \'\''); } catch (_) {}
+    }
+    if (!srColumns.some((c) => c.name === 'data_json')) {
+      try { db.exec('ALTER TABLE study_reports ADD COLUMN data_json TEXT DEFAULT \'\''); } catch (_) {}
+    }
+    if (!srColumns.some((c) => c.name === 'suggestions')) {
+      try { db.exec('ALTER TABLE study_reports ADD COLUMN suggestions TEXT DEFAULT \'\''); } catch (_) {}
+    }
+  }
+
+  // ===== Phase 3 迁移：兼容旧版 wecom_groups 表结构 =====
+  const wgColumns = db.prepare('PRAGMA table_info(wecom_groups)').all();
+  if (wgColumns.length > 0) {
+    if (!wgColumns.some((c) => c.name === 'student_id')) {
+      try { db.exec('ALTER TABLE wecom_groups ADD COLUMN student_id INTEGER DEFAULT NULL'); } catch (_) {}
+    }
+    if (!wgColumns.some((c) => c.name === 'order_id')) {
+      try { db.exec('ALTER TABLE wecom_groups ADD COLUMN order_id INTEGER DEFAULT NULL'); } catch (_) {}
+    }
+  }
+
+  // ===== Phase 3 迁移：兼容旧版 wecom_group_members 表结构 =====
+  const wgmColumns = db.prepare('PRAGMA table_info(wecom_group_members)').all();
+  if (wgmColumns.length > 0) {
+    if (!wgmColumns.some((c) => c.name === 'role')) {
+      try { db.exec('ALTER TABLE wecom_group_members ADD COLUMN role TEXT DEFAULT \'member\''); } catch (_) {}
+    }
+  }
 
   // 闪卡学习排行榜 (materialized from flashcard_records)
   // 无需新表，用聚合查询实现

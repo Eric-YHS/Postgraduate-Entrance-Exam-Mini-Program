@@ -6,11 +6,13 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "node src/server.js",
-    "test": "jest --forceExit","generate-secret": "node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"",
+    "test": "jest --forceExit",
+    "generate-secret": "node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"",
     "pm2:start": "pm2 start ecosystem.config.cjs --env production",
     "pm2:stop": "pm2 delete study-planner"
   },
   "dependencies": {
+    "@xenova/transformers": "^2.17.2",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.4.1",
     "dayjs": "^1.11.13",

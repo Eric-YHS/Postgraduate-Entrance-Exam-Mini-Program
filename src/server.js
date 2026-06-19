@@ -14,6 +14,8 @@ const bcrypt = require('bcryptjs');
 const config = require('./config');
 const { db } = require('./db');
 const { dispatchDailyDigest, dispatchDueTaskReminders, startScheduler } = require('./services/scheduler');
+const { ensureDefaultTemplates } = require('./services/messageTemplate');
+const { seedDefaultBots } = require('./services/botManager');
 const {
   formatWeekdaysLabel,
   getAllTasks,
@@ -49,7 +51,7 @@ if (config.trustProxy) {
 // 必须放在 express.json() 之后，此时 body 已解析
 function sanitizeControlChars(req, res, next) {
   const originalBody = req.body;
-  if (originalBody && typeof originalBody === 'object') {
+  if (originalBody && typeof originalBody === 'object' && !Buffer.isBuffer(originalBody)) {
     const sanitize = (value) => {
       if (typeof value === 'string') {
         return value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
@@ -69,6 +71,9 @@ function sanitizeControlChars(req, res, next) {
   }
   next();
 }
+
+// 企业微信回调需要原始 XML 请求体，必须在 express.json() 之前解析
+app.use('/api/wecom/callback', express.raw({ type: ['application/xml', 'text/xml'], limit: '10mb' }));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb', charset: 'utf-8' }));
@@ -154,6 +159,10 @@ app.use(express.static(publicDir, { index: false }));
 // BUG-057: CSRF 防护 — 对状态变更请求校验 Origin/Referer
 function csrfCheck(request, response, next) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(request.method)) {
+    return next();
+  }
+  // 企业微信官方回调不需要 CSRF 校验（请求来自腾讯服务器，无 Origin/Referer）
+  if (request.path === '/api/wecom/callback') {
     return next();
   }
   // 测试环境跳过 CSRF 校验，便于自动化测试
@@ -1400,6 +1409,10 @@ setInterval(() => {
 
 startScheduler(db, sendNotificationToStudent);
 
+// ── 初始化默认数据 ──
+ensureDefaultTemplates(db);
+seedDefaultBots();
+
 // ── 挂载路由 ──
 
 const shared = {
@@ -1480,6 +1493,12 @@ require('./routes/forum')(app, shared);
 require('./routes/store')(app, shared);
 require('./routes/live')(app, shared);
 require('./routes/search')(app, shared);
+require('./routes/knowledgeBase')(app, shared);
+require('./routes/messageTemplates')(app, shared);
+require('./routes/bots')(app, shared);
+require('./routes/ai')(app, shared);
+require('./routes/wecom')(app, shared);
+require('./routes/promoter')(app, shared);
 require('./routes/misc')(app, shared);
 
 // ── 启动服务器 ──

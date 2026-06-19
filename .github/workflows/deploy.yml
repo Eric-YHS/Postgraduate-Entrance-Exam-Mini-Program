@@ -63,6 +63,20 @@ jobs:
             # 恢复环境变量
             cp .env.backup .env
 
+            # 确保新增环境变量存在（默认值）
+            if ! grep -q "^HF_MIRROR=" .env; then
+              echo "HF_MIRROR=https://hf-mirror.com/" >> .env
+            fi
+            if ! grep -q "^TRANSFORMERS_CACHE=" .env; then
+              echo "TRANSFORMERS_CACHE=/app/data/.cache" >> .env
+            fi
+
+            # 确保模型缓存目录存在
+            TRANSFORMERS_CACHE=$(grep "^TRANSFORMERS_CACHE=" .env | cut -d'=' -f2-)
+            if [ -n "$TRANSFORMERS_CACHE" ]; then
+              mkdir -p "$TRANSFORMERS_CACHE"
+            fi
+
             # 安装依赖
             npm ci --omit=dev
 

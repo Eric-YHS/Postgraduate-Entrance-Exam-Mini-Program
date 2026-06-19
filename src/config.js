@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 // 自动加载 .env 文件（无需 dotenv 依赖）
 const envPath = path.join(__dirname, '..', '.env');
@@ -50,10 +51,18 @@ const trustProxy = process.env.TRUST_PROXY === 'true';
 const wxAppId = process.env.WX_APP_ID || '';
 const wxAppSecret = process.env.WX_APP_SECRET || '';
 
+// 企业微信配置
+const wecomCorpId = process.env.WECOM_CORP_ID || '';
+const wecomAgentId = process.env.WECOM_AGENT_ID || '';
+const wecomSecret = process.env.WECOM_SECRET || '';
+const wecomWebhookKey = process.env.WECOM_WEBHOOK_KEY || '';
+const wecomToken = process.env.WECOM_TOKEN || '';
+const wecomEncodingAesKey = process.env.WECOM_ENCODING_AES_KEY || '';
+
 // AI 大模型 API 配置
 const aiApiKey = process.env.AI_API_KEY || '';
 const aiApiUrl = process.env.AI_API_URL || '';
-const aiModel = process.env.AI_MODEL || 'gpt-3.5-turbo';
+const aiModel = process.env.AI_MODEL || 'deepseek-chat';
 
 // WebRTC ICE 服务器配置
 // 默认只有 STUN；生产环境应配置 TURN 服务器以保证 NAT 穿透成功率
@@ -92,5 +101,11 @@ module.exports = {
   trustProxy,
   uploadRootDir,
   wxAppId,
-  wxAppSecret
+  wxAppSecret,
+  wecomCorpId,
+  wecomAgentId,
+  wecomSecret,
+  wecomWebhookKey,
+  wecomToken,
+  wecomEncodingAesKey
 };
