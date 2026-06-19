@@ -2,6 +2,22 @@ const cron = require('node-cron');
 const dayjs = require('dayjs');
 const { getTasksForStudentOnDate, normalizeTaskRow } = require('./taskService');
 const { sendSubscribeMessage } = require('./wxPush');
+const { sendMorningPlan, sendDueReminders, sendEveningCheck, getPaidStudents } = require('./bots/supervisorBot');
+
+// Phase 3: 引入进阶智能服务机器人
+let plannerBot = null;
+let examGeneratorBot = null;
+try {
+  plannerBot = require('./bots/plannerBot');
+} catch (err) {
+  console.warn('[scheduler] plannerBot 未加载:', err.message);
+}
+
+try {
+  examGeneratorBot = require('./bots/examGeneratorBot');
+} catch (err) {
+  console.warn('[scheduler] examGeneratorBot 未加载:', err.message);
+}
 
 function createNotification(db, notifyClient, payload) {
   const now = dayjs().toISOString();
@@ -217,15 +233,32 @@ function dispatchEveningReminder(db, notifyClient) {
 }
 
 function startScheduler(db, notifyClient) {
-  // BUG-305: 整点检查日常提醒（07:00 日报、22:00 晚间提醒）
+  // BUG-305: 整点检查日常提醒（07:00 日报、08:00 督学计划、22:00 晚间提醒）
   cron.schedule('0 * * * *', () => {
     try {
       const now = dayjs();
-      if (now.format('HH:mm') === '07:00') {
+      const timeStr = now.format('HH:mm');
+      if (timeStr === '07:00') {
         dispatchDailyDigest(db, notifyClient, now);
       }
-      if (now.format('HH:mm') === '22:00') {
+      if (timeStr === '08:00') {
+        // 新增：08:00 给付费学员发送督学早安计划
+        const paidStudents = getPaidStudents(db);
+        for (const student of paidStudents) {
+          sendMorningPlan(db, student.id).catch((err) => {
+            console.error(`[scheduler] 发送早安计划失败 studentId=${student.id}:`, err.message);
+          });
+        }
+      }
+      if (timeStr === '22:00') {
         dispatchEveningReminder(db, notifyClient);
+        // 新增：22:00 给付费学员发送晚间检查
+        const paidStudents = getPaidStudents(db);
+        for (const student of paidStudents) {
+          sendEveningCheck(db, student.id).catch((err) => {
+            console.error(`[scheduler] 发送晚间检查失败 studentId=${student.id}:`, err.message);
+          });
+        }
       }
     } catch (err) {
       console.error('整点 cron 错误:', err);
@@ -234,7 +267,12 @@ function startScheduler(db, notifyClient) {
 
   cron.schedule('* * * * *', () => {
     try {
+      // 原有到点提醒逻辑（通知系统 + 微信推送）
       dispatchDueTaskReminders(db, notifyClient, dayjs());
+      // 新增：付费学员到点提醒（企业微信应用消息）
+      sendDueReminders(db, dayjs()).catch((err) => {
+        console.error('[scheduler] 发送付费学员到点提醒失败:', err.message);
+      });
     } catch (err) {
       console.error('分钟 cron 错误:', err);
     }
@@ -261,6 +299,56 @@ function startScheduler(db, notifyClient) {
       }
     } catch (err) {
       console.error('清理 AI 对话记录失败:', err);
+    }
+  });
+
+  // ===== Phase 3: 每半月生成 AI 自测试卷（1 日和 16 日凌晨）=====
+  cron.schedule('0 2 1,16 * *', () => {
+    try {
+      if (examGeneratorBot && typeof examGeneratorBot.generateExamForAllPaidStudents === 'function') {
+        examGeneratorBot.generateExamForAllPaidStudents(db).then((results) => {
+          const successCount = results.filter((r) => r.success).length;
+          console.log(`[scheduler] AI 试卷生成完成: ${successCount}/${results.length} 成功`);
+        }).catch((err) => {
+          console.error('[scheduler] AI 试卷生成失败:', err.message);
+        });
+      } else {
+        console.log('[scheduler] examGeneratorBot 不可用，跳过 AI 试卷生成');
+      }
+    } catch (err) {
+      console.error('[scheduler] AI 试卷生成 cron 错误:', err);
+    }
+  });
+
+  // ===== Phase 3: 每周一 09:00 生成学情周报 =====
+  cron.schedule('0 9 * * 1', () => {
+    try {
+      if (plannerBot && typeof plannerBot.generateReportsForAllPaidStudents === 'function') {
+        plannerBot.generateReportsForAllPaidStudents(db).then((results) => {
+          const successCount = results.filter((r) => r.success).length;
+          console.log(`[scheduler] 学情周报生成完成: ${successCount}/${results.length} 成功`);
+          // 可选：发送报告到学员企微
+          if (plannerBot.sendReportToUser) {
+            for (const r of results.filter((r) => r.success)) {
+              const reportRow = db.prepare('SELECT * FROM study_reports WHERE id = ?').get(r.reportId);
+              if (reportRow && reportRow.data_json) {
+                try {
+                  const reportData = JSON.parse(reportRow.data_json);
+                  plannerBot.sendReportToUser(db, r.studentId, reportData).catch((err) => {
+                    console.error(`[scheduler] 发送周报失败 studentId=${r.studentId}:`, err.message);
+                  });
+                } catch (_) {}
+              }
+            }
+          }
+        }).catch((err) => {
+          console.error('[scheduler] 学情周报生成失败:', err.message);
+        });
+      } else {
+        console.log('[scheduler] plannerBot 不可用，跳过学情周报生成');
+      }
+    } catch (err) {
+      console.error('[scheduler] 学情周报 cron 错误:', err);
     }
   });
 }

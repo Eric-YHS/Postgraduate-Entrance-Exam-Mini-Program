@@ -1,6 +1,14 @@
 const dayjs = require('dayjs');
 const { sanitizeText, stripHtml } = require('../utils/sanitize');
 
+// Phase 3: 引入付费群创建机器人（可选加载，失败不阻塞）
+let paidGroupBot = null;
+try {
+  paidGroupBot = require('../services/bots/paidGroupBot');
+} catch (err) {
+  console.warn('[store] paidGroupBot 未加载:', err.message);
+}
+
 module.exports = function registerStoreRoutes(app, shared) {
   const { db, requireAuth, requireStudent, requireTeacher, toPublicPath, productUpload, safeJsonParse } = shared;
 
@@ -90,7 +98,18 @@ module.exports = function registerStoreRoutes(app, shared) {
         `
       ).run(productId, request.currentUser.id, quantity, totalAmount, shippingAddress, now);
 
+      const orderId = db.prepare('SELECT last_insert_rowid() as id').get().id;
+
       commitTxn.run();
+
+      // Phase 3: 支付成功后异步创建付费专属服务群（不阻塞响应）
+      if (paidGroupBot && typeof paidGroupBot.createPaidServiceGroup === 'function') {
+        setImmediate(() => {
+          paidGroupBot.createPaidServiceGroup(db, request.currentUser.id, orderId).catch((err) => {
+            console.error(`[store] 创建付费服务群失败 orderId=${orderId}:`, err.message);
+          });
+        });
+      }
     } catch (error) {
       try { rollbackTxn.run(); } catch (_) {}
       response.status(500).json({ error: error.message || '下单失败，请稍后重试。' });
