@@ -47,20 +47,27 @@ jobs:
       - name: Setup SSH config
         run: |
           mkdir -p ~/.ssh
-          (umask 077 && printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key)
-          (umask 077 && cat > ~/.ssh/config <<'EOF'
-          Host deploy-server
-              HostName ${{ secrets.SERVER_HOST }}
-              User ${{ secrets.SERVER_USER }}
-              IdentityFile ~/.ssh/deploy_key
-              IdentitiesOnly yes
-              StrictHostKeyChecking yes
-              UserKnownHostsFile ~/.ssh/known_hosts
-              BatchMode yes
-          EOF
-          )
-          (umask 077 && printf '159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ\n' > ~/.ssh/known_hosts)
           chmod 700 ~/.ssh
+          umask 077
+          printf '%s\n' "$SERVER_SSH_KEY" > ~/.ssh/deploy_key
+          cat > ~/.ssh/config <<EOF
+          Host deploy-server
+            HostName ${{ secrets.SERVER_HOST }}
+            User ${{ secrets.SERVER_USER }}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+            UserKnownHostsFile ~/.ssh/known_hosts
+            BatchMode yes
+          EOF
+          printf '159.75.67.99 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIM35P0tSfcOjdr9wvXq9C7IkGjwrKs1gxI3RTvUkYQTJ\n' > ~/.ssh/known_hosts
+          ls -la ~/.ssh/
+          echo '--- config ---'
+          cat ~/.ssh/config
+          echo '--- key head ---'
+          head -n 1 ~/.ssh/deploy_key
+          echo '--- known_hosts ---'
+          cat ~/.ssh/known_hosts
         env:
           SERVER_SSH_KEY: ${{ secrets.SERVER_SSH_KEY }}
 
@@ -68,7 +75,8 @@ jobs:
         run: ssh deploy-server "echo 'SSH connection OK'"
 
       - name: Deploy via SSH
-        run: ssh deploy-server <<'REMOTESCRIPT'
+        run: |
+          ssh deploy-server 'bash -s' <<'REMOTESCRIPT'
           set -e
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
           BACKUP_DIR=$APP_DIR/backups
@@ -132,4 +140,4 @@ jobs:
 
           pm2 save
           echo "Deploy completed at $(date)"
-        REMOTESCRIPT
+          REMOTESCRIPT
