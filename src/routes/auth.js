@@ -7,7 +7,7 @@ const { sanitizeText } = require('../utils/sanitize');
 const MAX_CONTENT_LENGTH = 10000;
 
 module.exports = function registerAuthRoutes(app, shared) {
-  const { db, sanitizeUser, requireAuth, getUserById, getBearerToken, getUserByToken, getOrCreateAuthToken, createAuthToken, clearAuthToken, checkLoginRateLimit, checkRegisterRateLimit, fetchJson } = shared;
+  const { db, sanitizeUser, requireAuth, getUserById, getBearerToken, getUserByToken, getOrCreateAuthToken, createAuthToken, clearAuthToken, checkLoginRateLimit, checkRegisterRateLimit, fetchJson, createTrialEntitlement } = shared;
 
   app.post('/api/auth/wx-login', async (request, response) => {
     const { code } = request.body;
@@ -50,6 +50,7 @@ module.exports = function registerAuthRoutes(app, shared) {
           now
         );
         user = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+        createTrialEntitlement(result.lastInsertRowid);
       }
 
       request.session.userId = user.id;

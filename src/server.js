@@ -17,6 +17,17 @@ const { dispatchDailyDigest, dispatchDueTaskReminders, startScheduler } = requir
 const { ensureDefaultTemplates } = require('./services/messageTemplate');
 const { seedDefaultBots } = require('./services/botManager');
 const {
+  getUserEntitlement,
+  canAccessContent,
+  requireEntitlement,
+  createTrialEntitlement,
+  downgradeExpiredTrials,
+  downgradeExpiredPaid,
+  grantEntitlementFromOrder,
+  setUserEntitlement,
+  getSetting
+} = require('./services/entitlements');
+const {
   formatWeekdaysLabel,
   getAllTasks,
   getStudentsByIds,
@@ -330,6 +341,8 @@ function serializeCourse(row) {
     title: row.title,
     description: row.description,
     subject: row.subject,
+    visibility: row.visibility || 'free',
+    subjectScope: row.subject_scope || '',
     videoPath: row.video_path,
     videoUrl: row.video_url,
     teacherName: row.teacher_name,
@@ -344,6 +357,7 @@ function serializeLiveSession(row) {
     title: row.title,
     description: row.description,
     subject: row.subject,
+    visibility: row.visibility || 'free',
     status: row.status,
     teacherName: row.teacher_name,
     viewerCount: viewers,
@@ -449,6 +463,8 @@ function serializeQuestionForTeacher(row) {
     analysisText: row.analysis_text,
     analysisVideoPath: row.analysis_video_path,
     analysisVideoUrl: row.analysis_video_url,
+    isPaidOnly: row.is_paid_only || 0,
+    subjectScope: row.subject_scope || '',
     createdAt: row.created_at
   };
 }
@@ -460,6 +476,8 @@ function serializeQuestionForStudent(row, latestRecord) {
     subject: row.subject,
     stem: row.stem,
     options: safeJsonParse(row.options, []),
+    isPaidOnly: row.is_paid_only || 0,
+    subjectScope: row.subject_scope || '',
     createdAt: row.created_at,
     latestRecord: latestRecord
       ? {
@@ -481,8 +499,12 @@ function serializeProduct(row) {
     stock: row.stock,
     imagePath: row.image_path,
     category: row.category || '',
+    packageType: row.package_type || 'physical',
+    subjectScope: row.subject_scope || '',
     isVirtual: row.is_virtual || 0,
+    deliveryContent: row.delivery_content || '',
     virtualContent: row.is_virtual ? (row.virtual_content || '') : '',
+    status: row.status || 'active',
     createdAt: row.created_at
   };
 }
@@ -495,10 +517,15 @@ function serializeOrder(row) {
     quantity: row.quantity,
     totalAmount: row.total_amount,
     shippingAddress: row.shipping_address,
+    outTradeNo: row.out_trade_no || '',
+    paidAt: row.paid_at || null,
+    paymentMethod: row.payment_method || '',
+    transactionId: row.transaction_id || '',
     status: row.status,
     createdAt: row.created_at,
     productTitle: row.product_title,
-    studentName: row.student_name
+    studentName: row.student_name,
+    refundStatus: row.refund_status || 'none'
   };
 }
 
@@ -628,7 +655,8 @@ function getStudentCoreBootstrapData(user) {
     todaysTasks,
     notifications,
     summaries,
-    liveSessions
+    liveSessions,
+    entitlement: getUserEntitlement(user.id)
   };
 }
 
@@ -638,7 +666,9 @@ function getStudentModuleData(user, modules) {
     if (mod === 'courses') {
       result.courses = db
         .prepare('SELECT courses.*, users.display_name AS teacher_name FROM courses LEFT JOIN users ON users.id = courses.created_by ORDER BY courses.created_at DESC LIMIT 100')
-        .all().map(serializeCourse);
+        .all()
+        .map(serializeCourse)
+        .filter((course) => canAccessContent(user.id, { visibility: course.visibility, subjectScope: course.subjectScope, subject: course.subject }));
     } else if (mod === 'forumTopics') {
       const forumTopics = db
         .prepare('SELECT forum_topics.*, users.display_name AS author_name, users.role AS author_role FROM forum_topics LEFT JOIN users ON users.id = forum_topics.user_id ORDER BY forum_topics.created_at DESC LIMIT 50')
@@ -657,9 +687,14 @@ function getStudentModuleData(user, modules) {
          WHERE pr.student_id = ?`
       ).all(user.id, user.id);
       const recordMap = new Map(latestRecords.map((r) => [r.question_id, r]));
-      result.questions = allQuestions.map((row) => serializeQuestionForStudent(row, recordMap.get(row.id) || null));
+      result.questions = allQuestions
+        .map((row) => serializeQuestionForStudent(row, recordMap.get(row.id) || null))
+        .filter((q) => {
+          if (!q.isPaidOnly) return true;
+          return canAccessContent(user.id, { visibility: q.subjectScope ? 'subject_paid' : 'all_paid', subjectScope: q.subjectScope, subject: q.subject });
+        });
     } else if (mod === 'products') {
-      result.products = db.prepare('SELECT * FROM products ORDER BY created_at DESC LIMIT 100').all().map(serializeProduct);
+      result.products = db.prepare('SELECT * FROM products WHERE status = ? ORDER BY created_at DESC LIMIT 100').all('active').map(serializeProduct);
     } else if (mod === 'orders') {
       result.orders = db
         .prepare('SELECT orders.*, products.title AS product_title, users.display_name AS student_name FROM orders LEFT JOIN products ON products.id = orders.product_id LEFT JOIN users ON users.id = orders.student_id WHERE orders.student_id = ? ORDER BY orders.created_at DESC LIMIT 100')
@@ -675,7 +710,9 @@ function getStudentModuleData(user, modules) {
     } else if (mod === 'liveSessions') {
       result.liveSessions = db
         .prepare('SELECT live_sessions.*, users.display_name AS teacher_name FROM live_sessions LEFT JOIN users ON users.id = live_sessions.created_by ORDER BY live_sessions.created_at DESC LIMIT 50')
-        .all().map(serializeLiveSession);
+        .all()
+        .map(serializeLiveSession)
+        .filter((live) => canAccessContent(user.id, { visibility: live.visibility, subjectScope: '', subject: live.subject }));
     }
   }
   return result;
@@ -1050,6 +1087,19 @@ function requireAdmin(request, response, next) {
 
     next();
   });
+}
+
+function requireRole(roles) {
+  const allowed = Array.isArray(roles) ? roles : [roles];
+  return function checkRole(request, response, next) {
+    requireAuth(request, response, () => {
+      if (!allowed.includes(request.currentUser.role)) {
+        response.status(403).json({ error: '当前账号没有权限执行此操作。' });
+        return;
+      }
+      next();
+    });
+  };
 }
 
 // ── fetchJson 辅助函数 ──
@@ -1441,6 +1491,16 @@ const shared = {
   requireTeacher,
   requireStudent,
   requireAdmin,
+  requireRole,
+  getUserEntitlement,
+  canAccessContent,
+  requireEntitlement,
+  createTrialEntitlement,
+  downgradeExpiredTrials,
+  downgradeExpiredPaid,
+  grantEntitlementFromOrder,
+  setUserEntitlement,
+  getSetting,
   getTeacherCoreBootstrapData,
   getTeacherModuleData,
   getStudentCoreBootstrapData,

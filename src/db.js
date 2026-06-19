@@ -23,7 +23,7 @@ function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL UNIQUE,
       password TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'student')),
+      role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'customer_service', 'student')),
       display_name TEXT NOT NULL,
       class_name TEXT DEFAULT '',
       openid TEXT DEFAULT '',
@@ -49,6 +49,7 @@ function initializeDatabase() {
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       subject TEXT DEFAULT '考研规划',
+      plan_type TEXT NOT NULL DEFAULT 'common' CHECK (plan_type IN ('common', 'personal')),
       start_time TEXT NOT NULL,
       end_time TEXT NOT NULL,
       weekdays TEXT NOT NULL,
@@ -135,11 +136,57 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_entitlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL UNIQUE,
+      tier TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'trial', 'paid')),
+      trial_started_at TEXT DEFAULT NULL,
+      trial_ended_at TEXT DEFAULT NULL,
+      paid_started_at TEXT DEFAULT NULL,
+      paid_until TEXT DEFAULT NULL,
+      unlocked_subjects TEXT NOT NULL DEFAULT '[]',
+      package_type TEXT NOT NULL DEFAULT 'none' CHECK (package_type IN ('none', 'single_subject', 'all_subjects')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS entitlement_change_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      previous_tier TEXT NOT NULL,
+      new_tier TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS refunds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      reason TEXT DEFAULT '',
+      amount REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'none' CHECK (status IN ('none', 'requested', 'approved', 'rejected', 'refunded')),
+      created_at TEXT NOT NULL,
+      processed_at TEXT DEFAULT NULL,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES users(id)
+    );
+
     CREATE TABLE IF NOT EXISTS courses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       subject TEXT DEFAULT '考研规划',
+      visibility TEXT NOT NULL DEFAULT 'free' CHECK (visibility IN ('free', 'preview', 'trial_paid', 'subject_paid', 'all_paid')),
+      subject_scope TEXT DEFAULT '',
       video_path TEXT DEFAULT '',
       video_url TEXT DEFAULT '',
       created_by INTEGER NOT NULL,
@@ -166,6 +213,8 @@ function initializeDatabase() {
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       subject TEXT DEFAULT '',
+      visibility TEXT NOT NULL DEFAULT 'free' CHECK (visibility IN ('free', 'preview', 'trial_paid', 'subject_paid', 'all_paid')),
+      subject_scope TEXT DEFAULT '',
       file_path TEXT DEFAULT '',
       file_url TEXT DEFAULT '',
       file_size INTEGER DEFAULT 0,
@@ -183,6 +232,7 @@ function initializeDatabase() {
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       subject TEXT DEFAULT '考研规划',
+      visibility TEXT NOT NULL DEFAULT 'free' CHECK (visibility IN ('free', 'preview', 'trial_paid', 'subject_paid', 'all_paid')),
       status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'live', 'ended')),
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
@@ -252,6 +302,8 @@ function initializeDatabase() {
       analysis_text TEXT DEFAULT '',
       analysis_video_path TEXT DEFAULT '',
       analysis_video_url TEXT DEFAULT '',
+      is_paid_only INTEGER DEFAULT 0,
+      subject_scope TEXT DEFAULT '',
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
@@ -330,8 +382,15 @@ function initializeDatabase() {
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       price REAL NOT NULL,
+      original_price REAL DEFAULT 0,
       stock INTEGER NOT NULL DEFAULT 0,
       image_path TEXT DEFAULT '',
+      category TEXT DEFAULT '',
+      package_type TEXT NOT NULL DEFAULT 'physical' CHECK (package_type IN ('physical', 'virtual', 'single_subject', 'all_subjects', 'addon')),
+      subject_scope TEXT DEFAULT '',
+      is_virtual INTEGER DEFAULT 0,
+      delivery_content TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
       created_by INTEGER NOT NULL,
       created_at TEXT NOT NULL,
       FOREIGN KEY (created_by) REFERENCES users(id)
@@ -344,7 +403,11 @@ function initializeDatabase() {
       quantity INTEGER NOT NULL,
       total_amount REAL NOT NULL,
       shipping_address TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'paid',
+      out_trade_no TEXT DEFAULT '',
+      paid_at TEXT DEFAULT NULL,
+      payment_method TEXT DEFAULT '',
+      transaction_id TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'paid', 'shipped', 'delivered', 'confirmed', 'cancelled')),
       created_at TEXT NOT NULL,
       FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
       FOREIGN KEY (student_id) REFERENCES users(id)
@@ -787,9 +850,9 @@ function migrate() {
     db.exec('ALTER TABLE users ADD COLUMN muted_until TEXT DEFAULT NULL');
   }
 
-  // 升级 users 表 role 约束以支持 admin 角色
+  // 升级 users 表 role 约束以支持 admin、customer_service 角色
   const currentSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='users'").get();
-  if (currentSchema && !currentSchema.sql.includes("'admin'")) {
+  if (currentSchema && !currentSchema.sql.includes("'customer_service'")) {
     // 先关闭外键约束，避免 DROP TABLE 时因被引用而失败
     db.pragma('foreign_keys = OFF');
     db.exec(`
@@ -797,7 +860,7 @@ function migrate() {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT NOT NULL UNIQUE,
         password TEXT NOT NULL,
-        role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'student')),
+        role TEXT NOT NULL CHECK (role IN ('admin', 'teacher', 'customer_service', 'student')),
         display_name TEXT NOT NULL,
         class_name TEXT DEFAULT '',
         openid TEXT DEFAULT '',
@@ -872,6 +935,8 @@ function migrate() {
       title TEXT NOT NULL,
       description TEXT DEFAULT '',
       subject TEXT DEFAULT '',
+      visibility TEXT NOT NULL DEFAULT 'free' CHECK (visibility IN ('free', 'preview', 'trial_paid', 'subject_paid', 'all_paid')),
+      subject_scope TEXT DEFAULT '',
       file_path TEXT DEFAULT '',
       file_url TEXT DEFAULT '',
       file_size INTEGER DEFAULT 0,
@@ -1021,7 +1086,7 @@ function migrate() {
     db.prepare('UPDATE users SET must_change_password = 1 WHERE id = ?').run(adminUser.id);
   }
 
-  // BUG-021: orders 表添加 ON DELETE SET NULL
+  // BUG-021: orders 表添加 ON DELETE SET NULL 及支付字段
   const orderFlag = db.prepare("SELECT value FROM _migration_flags WHERE key = 'orders_on_delete'").get();
   if (!orderFlag) {
     db.pragma('foreign_keys = OFF');
@@ -1033,12 +1098,17 @@ function migrate() {
         quantity INTEGER NOT NULL,
         total_amount REAL NOT NULL,
         shipping_address TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'paid',
+        out_trade_no TEXT DEFAULT '',
+        paid_at TEXT DEFAULT NULL,
+        payment_method TEXT DEFAULT '',
+        transaction_id TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'paid', 'shipped', 'delivered', 'confirmed', 'cancelled')),
         created_at TEXT NOT NULL,
         FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
         FOREIGN KEY (student_id) REFERENCES users(id)
       );
-      INSERT OR IGNORE INTO orders_new SELECT * FROM orders;
+      INSERT OR IGNORE INTO orders_new (id, product_id, student_id, quantity, total_amount, shipping_address, status, created_at)
+      SELECT id, product_id, student_id, quantity, total_amount, shipping_address, status, created_at FROM orders;
       DROP TABLE IF EXISTS orders;
       ALTER TABLE orders_new RENAME TO orders;
     `);
@@ -1624,6 +1694,168 @@ function migrate() {
 
   // 闪卡学习排行榜 (materialized from flashcard_records)
   // 无需新表，用聚合查询实现
+
+  // ===== B 线商业化体系迁移 =====
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS user_entitlements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL UNIQUE,
+      tier TEXT NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'trial', 'paid')),
+      trial_started_at TEXT DEFAULT NULL,
+      trial_ended_at TEXT DEFAULT NULL,
+      paid_started_at TEXT DEFAULT NULL,
+      paid_until TEXT DEFAULT NULL,
+      unlocked_subjects TEXT NOT NULL DEFAULT '[]',
+      package_type TEXT NOT NULL DEFAULT 'none' CHECK (package_type IN ('none', 'single_subject', 'all_subjects')),
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS entitlement_change_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      previous_tier TEXT NOT NULL,
+      new_tier TEXT NOT NULL,
+      reason TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS refunds (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      order_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      reason TEXT DEFAULT '',
+      amount REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'none' CHECK (status IN ('none', 'requested', 'approved', 'rejected', 'refunded')),
+      created_at TEXT NOT NULL,
+      processed_at TEXT DEFAULT NULL,
+      FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES users(id)
+    );
+  `);
+
+  // orders 表重构：支持 unpaid 状态及支付字段
+  const orderColsB = db.prepare('PRAGMA table_info(orders)').all();
+  if (!orderColsB.some((c) => c.name === 'out_trade_no')) {
+    db.pragma('foreign_keys = OFF');
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS orders_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER,
+        student_id INTEGER NOT NULL,
+        quantity INTEGER NOT NULL,
+        total_amount REAL NOT NULL,
+        shipping_address TEXT NOT NULL,
+        out_trade_no TEXT DEFAULT '',
+        paid_at TEXT DEFAULT NULL,
+        payment_method TEXT DEFAULT '',
+        transaction_id TEXT DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'unpaid' CHECK (status IN ('unpaid', 'paid', 'shipped', 'delivered', 'confirmed', 'cancelled')),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL,
+        FOREIGN KEY (student_id) REFERENCES users(id)
+      );
+      INSERT OR IGNORE INTO orders_new (id, product_id, student_id, quantity, total_amount, shipping_address, status, created_at)
+      SELECT id, product_id, student_id, quantity, total_amount, shipping_address, status, created_at FROM orders;
+      DROP TABLE IF EXISTS orders;
+      ALTER TABLE orders_new RENAME TO orders;
+    `);
+    db.pragma('foreign_keys = ON');
+  }
+
+  // 商品套餐字段
+  const productColsB = db.prepare('PRAGMA table_info(products)').all();
+  if (!productColsB.some((c) => c.name === 'package_type')) {
+    db.exec('ALTER TABLE products ADD COLUMN package_type TEXT NOT NULL DEFAULT \'physical\' CHECK (package_type IN (\'physical\', \'virtual\', \'single_subject\', \'all_subjects\', \'addon\'))');
+  }
+  if (!productColsB.some((c) => c.name === 'subject_scope')) {
+    db.exec('ALTER TABLE products ADD COLUMN subject_scope TEXT DEFAULT \'\'');
+  }
+  if (!productColsB.some((c) => c.name === 'delivery_content')) {
+    db.exec('ALTER TABLE products ADD COLUMN delivery_content TEXT DEFAULT \'\'');
+  }
+  if (!productColsB.some((c) => c.name === 'status')) {
+    db.exec('ALTER TABLE products ADD COLUMN status TEXT NOT NULL DEFAULT \'active\' CHECK (status IN (\'active\', \'inactive\'))');
+  }
+
+  // 课程内容可见性字段
+  const courseColsB = db.prepare('PRAGMA table_info(courses)').all();
+  if (!courseColsB.some((c) => c.name === 'visibility')) {
+    db.exec('ALTER TABLE courses ADD COLUMN visibility TEXT NOT NULL DEFAULT \'free\' CHECK (visibility IN (\'free\', \'preview\', \'trial_paid\', \'subject_paid\', \'all_paid\'))');
+  }
+  if (!courseColsB.some((c) => c.name === 'subject_scope')) {
+    db.exec('ALTER TABLE courses ADD COLUMN subject_scope TEXT DEFAULT \'\'');
+  }
+
+  // 网盘文件可见性字段
+  const folderItemColsB = db.prepare('PRAGMA table_info(folder_items)').all();
+  if (!folderItemColsB.some((c) => c.name === 'visibility')) {
+    db.exec('ALTER TABLE folder_items ADD COLUMN visibility TEXT NOT NULL DEFAULT \'free\' CHECK (visibility IN (\'free\', \'preview\', \'trial_paid\', \'subject_paid\', \'all_paid\'))');
+  }
+  if (!folderItemColsB.some((c) => c.name === 'subject_scope')) {
+    db.exec('ALTER TABLE folder_items ADD COLUMN subject_scope TEXT DEFAULT \'\'');
+  }
+
+  // 直播可见性字段
+  const liveSessionColsB = db.prepare('PRAGMA table_info(live_sessions)').all();
+  if (!liveSessionColsB.some((c) => c.name === 'visibility')) {
+    db.exec('ALTER TABLE live_sessions ADD COLUMN visibility TEXT NOT NULL DEFAULT \'free\' CHECK (visibility IN (\'free\', \'preview\', \'trial_paid\', \'subject_paid\', \'all_paid\'))');
+  }
+
+  // 题目付费字段
+  const questionColsB = db.prepare('PRAGMA table_info(questions)').all();
+  if (!questionColsB.some((c) => c.name === 'is_paid_only')) {
+    db.exec('ALTER TABLE questions ADD COLUMN is_paid_only INTEGER DEFAULT 0');
+  }
+  if (!questionColsB.some((c) => c.name === 'subject_scope')) {
+    db.exec('ALTER TABLE questions ADD COLUMN subject_scope TEXT DEFAULT \'\'');
+  }
+
+  // 任务专属计划字段
+  const taskColsB = db.prepare('PRAGMA table_info(tasks)').all();
+  if (!taskColsB.some((c) => c.name === 'plan_type')) {
+    db.exec('ALTER TABLE tasks ADD COLUMN plan_type TEXT NOT NULL DEFAULT \'common\' CHECK (plan_type IN (\'common\', \'personal\'))');
+  }
+
+  // 初始化系统设置默认值
+  const settingCount = db.prepare('SELECT COUNT(*) AS cnt FROM system_settings').get();
+  if (!settingCount.cnt) {
+    const now = dayjs().toISOString();
+    const insertSetting = db.prepare('INSERT INTO system_settings (key, value, updated_at) VALUES (?, ?, ?)');
+    insertSetting.run('site_name', '研途总控台', now);
+    insertSetting.run('trial_days', '7', now);
+    insertSetting.run('course_preview_count', '3', now);
+    insertSetting.run('low_stock_threshold', '10', now);
+    insertSetting.run('customer_service_account', '', now);
+    insertSetting.run('wx_subscribe_template_id', '', now);
+    insertSetting.run('payment_mode', 'simulated', now);
+  }
+
+  // 为已有学生补录体验权益
+  const trialDaysSetting = db.prepare("SELECT value FROM system_settings WHERE key = 'trial_days'").get();
+  const trialDays = Number(trialDaysSetting ? trialDaysSetting.value : 7);
+  const existingStudents = db.prepare("SELECT id, created_at FROM users WHERE role = 'student'").all();
+  const insertEntitlement = db.prepare(`
+    INSERT OR IGNORE INTO user_entitlements
+    (student_id, tier, trial_started_at, trial_ended_at, package_type, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  for (const student of existingStudents) {
+    const hasEntitlement = db.prepare('SELECT id FROM user_entitlements WHERE student_id = ?').get(student.id);
+    if (!hasEntitlement) {
+      const started = student.created_at || dayjs().toISOString();
+      const ended = dayjs(started).add(trialDays, 'day').toISOString();
+      insertEntitlement.run(student.id, 'trial', started, ended, 'none', dayjs().toISOString(), dayjs().toISOString());
+    }
+  }
 }
 
 function initialize() {

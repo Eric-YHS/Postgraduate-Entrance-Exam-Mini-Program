@@ -4,7 +4,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerCourseRoutes(app, shared) {
-  const { db, requireTeacher, requireAuth, toPublicPath, uploadRootDir, courseUpload, cloudUpload, safeJsonParse, stripHtml, serializeCourse } = shared;
+  const { db, requireTeacher, requireAuth, toPublicPath, uploadRootDir, courseUpload, cloudUpload, safeJsonParse, stripHtml, serializeCourse, canAccessContent } = shared;
 
   // 创建课程
   app.post('/api/courses', requireTeacher, (request, response) => {
@@ -20,16 +20,25 @@ module.exports = function registerCourseRoutes(app, shared) {
         return;
       }
 
+      const visibility = String(request.body.visibility || 'free').trim();
+      const validVisibilities = ['free', 'preview', 'trial_paid', 'subject_paid', 'all_paid'];
+      if (!validVisibilities.includes(visibility)) {
+        response.status(400).json({ error: '无效的可见性类型。' });
+        return;
+      }
+
       const courseResult = db.prepare(
         `
           INSERT INTO courses (
-            title, description, subject, video_path, video_url, created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            title, description, subject, visibility, subject_scope, video_path, video_url, created_by, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         title,
         sanitizeText(request.body.description),
         sanitizeText(request.body.subject || '考研规划'),
+        visibility,
+        sanitizeText(request.body.subjectScope || ''),
         request.file ? toPublicPath(request.file.path) : '',
         String(request.body.videoUrl || '').trim(),
         request.currentUser.id,
@@ -38,6 +47,19 @@ module.exports = function registerCourseRoutes(app, shared) {
 
       response.json({ ok: true, id: courseResult.lastInsertRowid });
     });
+  });
+
+  // 课程列表
+  app.get('/api/courses', requireAuth, (request, response) => {
+    const rows = db
+      .prepare('SELECT courses.*, users.display_name AS teacher_name FROM courses LEFT JOIN users ON users.id = courses.created_by ORDER BY courses.created_at DESC LIMIT 100')
+      .all();
+    const courses = rows.map(serializeCourse);
+    if (request.currentUser.role === 'student') {
+      response.json({ courses: courses.filter((course) => canAccessContent(request.currentUser.id, { visibility: course.visibility, subjectScope: course.subjectScope, subject: course.subject })) });
+      return;
+    }
+    response.json({ courses });
   });
 
   // 获取单条课程详情
@@ -51,7 +73,12 @@ module.exports = function registerCourseRoutes(app, shared) {
       response.status(404).json({ error: '课程不存在。' });
       return;
     }
-    response.json(serializeCourse(course));
+    const serialized = serializeCourse(course);
+    if (request.currentUser.role === 'student' && !canAccessContent(request.currentUser.id, { visibility: serialized.visibility, subjectScope: serialized.subjectScope, subject: serialized.subject })) {
+      response.status(403).json({ error: '当前权益不足，无法访问该课程。' });
+      return;
+    }
+    response.json(serialized);
   });
 
   // 文件夹（网盘）API
@@ -73,6 +100,8 @@ module.exports = function registerCourseRoutes(app, shared) {
       title: row.title,
       description: row.description,
       subject: row.subject,
+      visibility: row.visibility || 'free',
+      subjectScope: row.subject_scope || '',
       filePath: row.file_path,
       fileUrl: row.file_url,
       fileSize: row.file_size,
@@ -121,6 +150,9 @@ module.exports = function registerCourseRoutes(app, shared) {
     if (subject) {
       children.items = children.items.filter((item) => item.subject === subject);
     }
+    if (request.currentUser.role === 'student') {
+      children.items = children.items.filter((item) => canAccessContent(request.currentUser.id, { visibility: item.visibility, subjectScope: item.subjectScope, subject: item.subject }));
+    }
     response.json({
       path: parentId ? getFolderPath(Number(parentId)) : [],
       ...children
@@ -137,6 +169,9 @@ module.exports = function registerCourseRoutes(app, shared) {
     }
 
     const children = getFolderChildren(folder.id);
+    if (request.currentUser.role === 'student') {
+      children.items = children.items.filter((item) => canAccessContent(request.currentUser.id, { visibility: item.visibility, subjectScope: item.subjectScope, subject: item.subject }));
+    }
     response.json({
       folder: serializeFolder(folder),
       path: getFolderPath(folder.id),
@@ -251,6 +286,12 @@ module.exports = function registerCourseRoutes(app, shared) {
         return;
       }
       const fileUrl = String(request.body.fileUrl || '').trim();
+      const visibility = String(request.body.visibility || 'free').trim();
+      const validVisibilities = ['free', 'preview', 'trial_paid', 'subject_paid', 'all_paid'];
+      if (!validVisibilities.includes(visibility)) {
+        response.status(400).json({ error: '无效的可见性类型。' });
+        return;
+      }
 
       if (!title) {
         response.status(400).json({ error: '文件标题不能为空。' });
@@ -264,14 +305,16 @@ module.exports = function registerCourseRoutes(app, shared) {
 
       const now = dayjs().toISOString();
       db.prepare(
-        `INSERT INTO folder_items (folder_id, item_type, title, description, subject, file_path, file_url, file_size, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT INTO folder_items (folder_id, item_type, title, description, subject, visibility, subject_scope, file_path, file_url, file_size, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         folderId,
         itemType,
         title,
         sanitizeText(request.body.description),
         sanitizeText(request.body.subject),
+        visibility,
+        sanitizeText(request.body.subjectScope || ''),
         request.file ? toPublicPath(request.file.path) : '',
         fileUrl,
         request.file ? request.file.size : 0,

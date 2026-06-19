@@ -2,7 +2,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerLiveRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, safeJsonParse, liveRooms } = shared;
+  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, broadcastToLive, safeJsonParse, liveRooms, canAccessContent } = shared;
 
   app.post('/api/live-sessions', requireTeacher, (request, response) => {
     const title = sanitizeText(request.body.title);
@@ -11,16 +11,24 @@ module.exports = function registerLiveRoutes(app, shared) {
       return;
     }
 
+    const visibility = String(request.body.visibility || 'free').trim();
+    const validVisibilities = ['free', 'preview', 'trial_paid', 'subject_paid', 'all_paid'];
+    if (!validVisibilities.includes(visibility)) {
+      response.status(400).json({ error: '无效的可见性类型。' });
+      return;
+    }
+
     const liveResult = db.prepare(
       `
         INSERT INTO live_sessions (
-          title, description, subject, status, created_by, created_at
-        ) VALUES (?, ?, ?, 'draft', ?, ?)
+          title, description, subject, visibility, status, created_by, created_at
+        ) VALUES (?, ?, ?, ?, 'draft', ?, ?)
       `
     ).run(
       title,
       sanitizeText(request.body.description),
       sanitizeText(request.body.subject || '考研规划'),
+      visibility,
       request.currentUser.id,
       dayjs().toISOString()
     );
@@ -108,6 +116,12 @@ module.exports = function registerLiveRoutes(app, shared) {
       return;
     }
 
+    const liveSession = serializeLiveSession(sessionRow);
+    if (request.currentUser.role === 'student' && !canAccessContent(request.currentUser.id, { visibility: liveSession.visibility, subjectScope: '', subject: liveSession.subject })) {
+      response.status(403).json({ error: '当前权益不足，无法进入该直播间。' });
+      return;
+    }
+
     const messages = db
       .prepare(
         `
@@ -130,7 +144,7 @@ module.exports = function registerLiveRoutes(app, shared) {
       }));
 
     response.json({
-      liveSession: serializeLiveSession(sessionRow),
+      liveSession,
       messages,
       user: sanitizeUser(request.currentUser)
     });

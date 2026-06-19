@@ -3,6 +3,7 @@ const dayjs = require('dayjs');
 const { getTasksForStudentOnDate, normalizeTaskRow } = require('./taskService');
 const { sendSubscribeMessage } = require('./wxPush');
 const { sendMorningPlan, sendDueReminders, sendEveningCheck, getPaidStudents } = require('./bots/supervisorBot');
+const { downgradeExpiredTrials, downgradeExpiredPaid } = require('./entitlements');
 
 // Phase 3: 引入进阶智能服务机器人
 let plannerBot = null;
@@ -349,6 +350,40 @@ function startScheduler(db, notifyClient) {
       }
     } catch (err) {
       console.error('[scheduler] 学情周报 cron 错误:', err);
+    }
+  });
+
+  // B 线：体验到期降级与到期前提醒
+  cron.schedule('0 9 * * *', () => {
+    try {
+      const downgraded = downgradeExpiredTrials();
+      for (const studentId of downgraded) {
+        createNotification(db, notifyClient, {
+          studentId,
+          type: '权益提醒',
+          title: '体验已到期',
+          body: '你的 7 天体验期已结束，已降级为免费用户。如需继续使用付费内容，请开通。',
+          scheduleKey: `trial_expired:${studentId}:${dayjs().format('YYYY-MM-DD')}`
+        });
+      }
+
+      const expiringTomorrow = db.prepare(`
+        SELECT student_id FROM user_entitlements
+        WHERE tier = 'trial' AND date(trial_ended_at) = date('now', '+1 day')
+      `).all();
+      for (const row of expiringTomorrow) {
+        createNotification(db, notifyClient, {
+          studentId: row.student_id,
+          type: '权益提醒',
+          title: '体验即将到期',
+          body: '你的体验期将于明天到期，请及时开通付费服务。',
+          scheduleKey: `trial_expiring:${row.student_id}:${dayjs().format('YYYY-MM-DD')}`
+        });
+      }
+
+      downgradeExpiredPaid();
+    } catch (err) {
+      console.error('权益生命周期调度失败:', err);
     }
   });
 }

@@ -10,7 +10,7 @@ try {
 }
 
 module.exports = function registerStoreRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, toPublicPath, productUpload, safeJsonParse } = shared;
+  const { db, requireAuth, requireStudent, requireTeacher, requireAdmin, toPublicPath, productUpload, safeJsonParse, getSetting, grantEntitlementFromOrder } = shared;
 
   // 创建商品
   app.post('/api/products', requireTeacher, (request, response) => {
@@ -30,10 +30,23 @@ module.exports = function registerStoreRoutes(app, shared) {
         return;
       }
 
+      const packageType = String(request.body.packageType || 'physical').trim();
+      const validPackageTypes = ['physical', 'virtual', 'single_subject', 'all_subjects', 'addon'];
+      if (!validPackageTypes.includes(packageType)) {
+        response.status(400).json({ error: '无效的商品套餐类型。' });
+        return;
+      }
+
+      const status = String(request.body.status || 'active').trim();
+      if (!['active', 'inactive'].includes(status)) {
+        response.status(400).json({ error: '无效的商品状态。' });
+        return;
+      }
+
       const productResult = db.prepare(
         `
-          INSERT INTO products (title, description, price, stock, image_path, category, created_by, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO products (title, description, price, stock, image_path, category, package_type, subject_scope, is_virtual, delivery_content, status, created_by, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         title,
@@ -42,6 +55,11 @@ module.exports = function registerStoreRoutes(app, shared) {
         stock,
         request.file ? toPublicPath(request.file.path) : '',
         sanitizeText(request.body.category || ''),
+        packageType,
+        sanitizeText(request.body.subjectScope || ''),
+        request.body.isVirtual === true || request.body.isVirtual === '1' || request.body.isVirtual === 1 ? 1 : 0,
+        sanitizeText(request.body.deliveryContent || ''),
+        status,
         request.currentUser.id,
         dayjs().toISOString()
       );
@@ -50,7 +68,7 @@ module.exports = function registerStoreRoutes(app, shared) {
     });
   });
 
-  // 下单
+  // 下单（创建未支付订单）
   app.post('/api/orders', requireStudent, (request, response) => {
     const productId = Number(request.body.productId);
     const rawQuantity = request.body.quantity !== undefined ? request.body.quantity : 1;
@@ -67,56 +85,28 @@ module.exports = function registerStoreRoutes(app, shared) {
       return;
     }
 
-    // BUG-015: 使用分计算避免浮点精度问题
     const now = dayjs().toISOString();
-    const beginTxn = db.prepare('BEGIN IMMEDIATE');
-    const commitTxn = db.prepare('COMMIT');
-    const rollbackTxn = db.prepare('ROLLBACK');
-
-    try {
-      beginTxn.run();
-
-      const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
-      if (!product) {
-        rollbackTxn.run();
-        response.status(404).json({ error: '商品不存在。' });
-        return;
-      }
-
-      const totalAmount = Math.round(product.price * 100 * quantity) / 100;
-      const stockResult = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(quantity, productId, quantity);
-      if (!stockResult.changes) {
-        rollbackTxn.run();
-        response.status(400).json({ error: '库存不足。' });
-        return;
-      }
-
-      db.prepare(
-        `
-          INSERT INTO orders (product_id, student_id, quantity, total_amount, shipping_address, status, created_at)
-          VALUES (?, ?, ?, ?, ?, 'paid', ?)
-        `
-      ).run(productId, request.currentUser.id, quantity, totalAmount, shippingAddress, now);
-
-      const orderId = db.prepare('SELECT last_insert_rowid() as id').get().id;
-
-      commitTxn.run();
-
-      // Phase 3: 支付成功后异步创建付费专属服务群（不阻塞响应）
-      if (paidGroupBot && typeof paidGroupBot.createPaidServiceGroup === 'function') {
-        setImmediate(() => {
-          paidGroupBot.createPaidServiceGroup(db, request.currentUser.id, orderId).catch((err) => {
-            console.error(`[store] 创建付费服务群失败 orderId=${orderId}:`, err.message);
-          });
-        });
-      }
-    } catch (error) {
-      try { rollbackTxn.run(); } catch (_) {}
-      response.status(500).json({ error: error.message || '下单失败，请稍后重试。' });
+    const product = db.prepare('SELECT * FROM products WHERE id = ?').get(productId);
+    if (!product) {
+      response.status(404).json({ error: '商品不存在。' });
+      return;
+    }
+    if (product.status === 'inactive') {
+      response.status(400).json({ error: '该商品已下架。' });
       return;
     }
 
-    response.json({ ok: true });
+    const totalAmount = Math.round(product.price * 100 * quantity) / 100;
+    const outTradeNo = `ORDER${Date.now()}${productId}${request.currentUser.id}`;
+
+    const result = db.prepare(
+      `
+        INSERT INTO orders (product_id, student_id, quantity, total_amount, shipping_address, out_trade_no, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'unpaid', ?)
+      `
+    ).run(productId, request.currentUser.id, quantity, totalAmount, shippingAddress, outTradeNo, now);
+
+    response.json({ ok: true, id: result.lastInsertRowid, outTradeNo });
   });
 
   // 订单状态更新（教师）
@@ -124,17 +114,16 @@ module.exports = function registerStoreRoutes(app, shared) {
     const id = Number(request.params.id);
     if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
     const { status } = request.body;
-    const allowed = ['paid', 'shipped', 'delivered', 'confirmed', 'cancelled'];
+    const allowed = ['unpaid', 'paid', 'shipped', 'delivered', 'confirmed', 'cancelled'];
     if (!allowed.includes(status)) {
       response.status(400).json({ error: '无效的订单状态。' });
       return;
     }
-    // BUG-09: 取消订单时回滚库存 + BUG-14: 校验教师所有权
     const order = db.prepare('SELECT o.*, p.created_by FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ?').get(id);
     if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
     if (order.created_by !== request.currentUser.id) { response.status(403).json({ error: '无权操作此订单。' }); return; }
-    // 状态机校验
     const validTransitions = {
+      unpaid: ['paid', 'cancelled'],
       paid: ['shipped', 'cancelled'],
       shipped: ['delivered', 'cancelled'],
       delivered: ['confirmed', 'cancelled'],
@@ -144,7 +133,9 @@ module.exports = function registerStoreRoutes(app, shared) {
     if (!validTransitions[order.status] || !validTransitions[order.status].includes(status)) {
       return response.status(400).json({ error: `订单状态不能从 "${order.status}" 变更为 "${status}"。` });
     }
-    if (status === 'cancelled' && order.status !== 'cancelled') {
+    if (status === 'paid' && order.status === 'unpaid') {
+      fulfillOrder(id);
+    } else if (status === 'cancelled' && order.status !== 'cancelled') {
       db.transaction(() => {
         db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id);
         db.prepare('UPDATE orders SET status = ? WHERE id = ?').run(status, id);
@@ -163,6 +154,173 @@ module.exports = function registerStoreRoutes(app, shared) {
       .run('confirmed', id, request.currentUser.id, 'delivered');
     if (!result.changes) { response.status(400).json({ error: '订单状态不正确。' }); return; }
     response.json({ ok: true });
+  });
+
+  function fulfillOrder(orderId) {
+    const order = db.prepare('SELECT o.*, p.package_type, p.subject_scope, p.stock FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ?').get(orderId);
+    if (!order || order.status !== 'unpaid') return false;
+
+    const now = dayjs().toISOString();
+    const txn = db.transaction(() => {
+      if (order.stock < order.quantity) {
+        throw new Error('库存不足');
+      }
+      db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?').run(order.quantity, order.product_id, order.quantity);
+      db.prepare(`
+        UPDATE orders SET status = 'paid', paid_at = ?, payment_method = ?, transaction_id = ?
+        WHERE id = ? AND status = 'unpaid'
+      `).run(now, 'simulated', order.out_trade_no || '', orderId);
+      grantEntitlementFromOrder(order, { package_type: order.package_type, subject_scope: order.subject_scope });
+    });
+
+    try {
+      txn();
+      // Phase 3(C): 付费履约成功后异步创建付费专属服务群（不阻塞，失败不影响订单）
+      if (paidGroupBot && typeof paidGroupBot.createPaidServiceGroup === 'function') {
+        setImmediate(() => {
+          paidGroupBot.createPaidServiceGroup(db, order.student_id, orderId).catch((err) => {
+            console.error(`[store] 创建付费服务群失败 orderId=${orderId}:`, err.message);
+          });
+        });
+      }
+      return true;
+    } catch (error) {
+      console.error('订单履约失败:', error.message);
+      return false;
+    }
+  }
+
+  // 订单支付
+  app.post('/api/orders/:id/pay', requireStudent, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const order = db.prepare('SELECT o.*, p.title AS product_title, p.package_type, p.subject_scope FROM orders o JOIN products p ON p.id = o.product_id WHERE o.id = ? AND o.student_id = ?').get(id, request.currentUser.id);
+    if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
+    if (order.status !== 'unpaid') { response.status(400).json({ error: '订单状态不正确。' }); return; }
+
+    const paymentMode = getSetting('payment_mode', 'simulated');
+    if (paymentMode === 'simulated') {
+      const ok = fulfillOrder(id);
+      if (!ok) { response.status(400).json({ error: '支付失败，库存不足。' }); return; }
+      response.json({ ok: true, paid: true });
+      return;
+    }
+
+    // 微信支付：生成预支付参数（骨架，真实签名需要商户证书）
+    const nonceStr = require('crypto').randomBytes(16).toString('hex');
+    const timeStamp = String(Math.floor(Date.now() / 1000));
+    response.json({
+      ok: true,
+      paid: false,
+      jsapiParams: {
+        appId: '',
+        timeStamp,
+        nonceStr,
+        package: `prepay_id=${order.out_trade_no}`,
+        signType: 'RSA',
+        paySign: ''
+      }
+    });
+  });
+
+  // 微信支付回调（幂等）
+  app.post('/api/wxpay/callback', (request, response) => {
+    const { out_trade_no, transaction_id } = request.body || {};
+    if (!out_trade_no) { response.status(400).json({ error: '缺少订单号。' }); return; }
+
+    const order = db.prepare('SELECT * FROM orders WHERE out_trade_no = ?').get(out_trade_no);
+    if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
+
+    if (order.status === 'paid') {
+      response.json({ ok: true, message: '已处理' });
+      return;
+    }
+
+    if (order.status !== 'unpaid') {
+      response.status(400).json({ error: '订单状态不正确。' });
+      return;
+    }
+
+    const ok = fulfillOrder(order.id);
+    if (!ok) { response.status(400).json({ error: '履约失败' }); return; }
+
+    db.prepare('UPDATE orders SET transaction_id = ? WHERE id = ?').run(transaction_id || '', order.id);
+    response.json({ ok: true });
+  });
+
+  // 退款申请
+  app.post('/api/orders/:id/refund', requireStudent, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const order = db.prepare('SELECT * FROM orders WHERE id = ? AND student_id = ?').get(id, request.currentUser.id);
+    if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
+    if (order.status !== 'paid' && order.status !== 'shipped' && order.status !== 'delivered') {
+      response.status(400).json({ error: '当前订单状态不允许退款。' }); return;
+    }
+
+    const existing = db.prepare('SELECT status FROM refunds WHERE order_id = ? AND status IN ("requested", "approved", "refunded")').get(id);
+    if (existing) { response.status(400).json({ error: '该订单已有退款申请。' }); return; }
+
+    db.prepare('INSERT INTO refunds (order_id, student_id, reason, amount, status, created_at) VALUES (?, ?, ?, ?, "requested", ?)')
+      .run(id, request.currentUser.id, sanitizeText(request.body.reason || ''), order.total_amount, dayjs().toISOString());
+    response.json({ ok: true });
+  });
+
+  // 退款审核（管理员/教师）
+  app.post('/api/admin/orders/:id/refund', requireAdmin, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+    const { status } = request.body;
+    if (!['approved', 'rejected'].includes(status)) { response.status(400).json({ error: '无效的审核状态。' }); return; }
+
+    const refund = db.prepare('SELECT * FROM refunds WHERE order_id = ? AND status = "requested"').get(id);
+    if (!refund) { response.status(404).json({ error: '未找到待审核退款。' }); return; }
+
+    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(id);
+    if (!order) { response.status(404).json({ error: '订单不存在。' }); return; }
+
+    const now = dayjs().toISOString();
+    if (status === 'approved') {
+      db.transaction(() => {
+        db.prepare('UPDATE refunds SET status = "refunded", processed_at = ? WHERE id = ?').run(now, refund.id);
+        db.prepare('UPDATE orders SET status = "cancelled" WHERE id = ?').run(id);
+        db.prepare('UPDATE products SET stock = stock + ? WHERE id = ?').run(order.quantity, order.product_id);
+      })();
+    } else {
+      db.prepare('UPDATE refunds SET status = "rejected", processed_at = ? WHERE id = ?').run(now, refund.id);
+    }
+
+    response.json({ ok: true });
+  });
+
+  // 商城商品列表（支持搜索、分类、排序）
+  app.get('/api/products', requireAuth, (request, response) => {
+    const { search, category, sort, status } = request.query;
+    let query = 'SELECT * FROM products WHERE 1=1';
+    const params = [];
+
+    if (request.currentUser.role === 'student') {
+      query += ' AND status = ?';
+      params.push('active');
+    } else if (status) {
+      query += ' AND status = ?';
+      params.push(status);
+    }
+
+    if (category) { query += ' AND category = ?'; params.push(category); }
+    if (search) {
+      const safeSearch = String(search).replace(/[%_]/g, '\\$&');
+      query += " AND (title LIKE ? ESCAPE '\\' OR description LIKE ? ESCAPE '\\')";
+      params.push(`%${safeSearch}%`, `%${safeSearch}%`);
+    }
+
+    if (sort === 'price_asc') { query += ' ORDER BY price ASC'; }
+    else if (sort === 'price_desc') { query += ' ORDER BY price DESC'; }
+    else { query += ' ORDER BY created_at DESC'; }
+
+    query += ' LIMIT 200';
+    const products = db.prepare(query).all(...params).map(serializeProduct);
+    response.json({ products });
   });
 
   // 购物车
@@ -202,50 +360,37 @@ module.exports = function registerStoreRoutes(app, shared) {
       return;
     }
 
-    const beginTxn = db.prepare('BEGIN IMMEDIATE');
-    const commitTxn = db.prepare('COMMIT');
-    const rollbackTxn = db.prepare('ROLLBACK');
+    const address = db.prepare('SELECT * FROM address_book WHERE id = ? AND student_id = ?').get(addressId, request.currentUser.id);
+    if (!address) { response.status(400).json({ error: '请选择收货地址。' }); return; }
 
-    try {
-      beginTxn.run();
+    const cartItems = db.prepare(
+      `SELECT shopping_cart.*, products.title AS product_title, products.price, products.stock, products.status
+       FROM shopping_cart LEFT JOIN products ON products.id = shopping_cart.product_id
+       WHERE shopping_cart.student_id = ?`
+    ).all(request.currentUser.id);
+    if (!cartItems.length) { response.status(400).json({ error: '购物车为空。' }); return; }
 
-      const address = db.prepare('SELECT * FROM address_book WHERE id = ? AND student_id = ?').get(addressId, request.currentUser.id);
-      if (!address) { rollbackTxn.run(); response.status(400).json({ error: '请选择收货地址。' }); return; }
+    const now = dayjs().toISOString();
+    const insertOrder = db.prepare(
+      `INSERT INTO orders (product_id, student_id, quantity, total_amount, shipping_address, out_trade_no, status, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'unpaid', ?)`
+    );
+    const clearCart = db.prepare('DELETE FROM shopping_cart WHERE student_id = ?');
 
-      const cartItems = db.prepare(
-        `SELECT shopping_cart.*, products.title AS product_title, products.price, products.stock
-         FROM shopping_cart LEFT JOIN products ON products.id = shopping_cart.product_id
-         WHERE shopping_cart.student_id = ?`
-      ).all(request.currentUser.id);
-      if (!cartItems.length) { rollbackTxn.run(); response.status(400).json({ error: '购物车为空。' }); return; }
-
-      const insertOrder = db.prepare(
-        `INSERT INTO orders (product_id, student_id, quantity, total_amount, shipping_address, status, created_at)
-         VALUES (?, ?, ?, ?, ?, 'paid', ?)`
-      );
-      const updateStock = db.prepare('UPDATE products SET stock = stock - ? WHERE id = ? AND stock >= ?');
-      const clearCart = db.prepare('DELETE FROM shopping_cart WHERE student_id = ?');
-
-      let created = 0;
-      for (const item of cartItems) {
-        if (item.stock < item.quantity) {
-          rollbackTxn.run();
-          response.status(400).json({ error: `${item.product_title} 库存不足。` });
-          return;
-        }
-        const totalCents = Math.round(item.price * 100) * item.quantity;
-        insertOrder.run(item.product_id, request.currentUser.id, item.quantity, totalCents / 100, address.address, dayjs().toISOString());
-        updateStock.run(item.quantity, item.product_id, item.quantity);
-        created++;
+    const createdIds = [];
+    for (const item of cartItems) {
+      if (item.status === 'inactive') {
+        response.status(400).json({ error: `${item.product_title} 已下架。` });
+        return;
       }
-      clearCart.run(request.currentUser.id);
-
-      commitTxn.run();
-      response.json({ ok: true, created });
-    } catch (error) {
-      try { rollbackTxn.run(); } catch (_) {}
-      response.status(500).json({ error: error.message || '结算失败，请稍后重试。' });
+      const totalCents = Math.round(item.price * 100) * item.quantity;
+      const outTradeNo = `ORDER${Date.now()}${item.product_id}${request.currentUser.id}`;
+      const result = insertOrder.run(item.product_id, request.currentUser.id, item.quantity, totalCents / 100, address.address, outTradeNo, now);
+      createdIds.push(result.lastInsertRowid);
     }
+    clearCart.run(request.currentUser.id);
+
+    response.json({ ok: true, created: createdIds.length, orderIds: createdIds });
   });
 
   // 地址簿

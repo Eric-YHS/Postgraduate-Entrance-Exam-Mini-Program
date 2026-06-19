@@ -1,21 +1,126 @@
 const adminState = {
+  user: null,
+  settings: {},
   applications: [],
   users: [],
-  stats: {}
+  stats: {},
+  currentMenu: 'dashboard',
+  currentSettingsTab: 'settings-general',
+  _userPage: 1
 };
 
+const MENU_CONFIG = [
+  { id: 'dashboard', label: '数据看板', icon: '📊', roles: ['admin', 'teacher', 'customer_service'] },
+  { id: 'content', label: '内容管理', icon: '📦', roles: ['admin', 'teacher'] },
+  { id: 'students', label: '学员管理', icon: '👨‍🎓', roles: ['admin', 'teacher', 'customer_service'] },
+  { id: 'questions', label: '题库管理', icon: '📝', roles: ['admin', 'teacher'] },
+  { id: 'knowledge', label: '知识库/语料库', icon: '🧠', roles: ['admin'] },
+  { id: 'messages', label: '消息模板管理', icon: '✉️', roles: ['admin'] },
+  { id: 'forum', label: '论坛管理', icon: '💬', roles: ['admin', 'teacher', 'customer_service'] },
+  { id: 'robots', label: '机器人管理', icon: '🤖', roles: ['admin'] },
+  { id: 'entrepreneurship', label: '创业板块', icon: '🚀', roles: ['admin'] },
+  { id: 'settings', label: '系统设置', icon: '⚙️', roles: ['admin'] }
+];
+
+const ROLE_LABELS = {
+  admin: '管理员',
+  teacher: '教师',
+  customer_service: '客服',
+  student: '学生'
+};
+
+const ROLE_BADGE_STYLES = {
+  admin: 'background: var(--brand);',
+  teacher: 'background: #059669;',
+  customer_service: 'background: #f59e0b;',
+  student: 'background: #6366f1;'
+};
+
+function canAccessMenu(menuId) {
+  const menu = MENU_CONFIG.find((m) => m.id === menuId);
+  if (!menu) return false;
+  return menu.roles.includes(adminState.user.role);
+}
+
+function renderMenu() {
+  const container = document.getElementById('admin-menu');
+  container.innerHTML = MENU_CONFIG.filter((m) => m.roles.includes(adminState.user.role))
+    .map((m) => `
+      <li>
+        <button data-menu="${m.id}" class="${m.id === adminState.currentMenu ? 'active' : ''}">
+          <span class="menu-icon">${m.icon}</span>
+          ${escapeHtml(m.label)}
+        </button>
+      </li>
+    `).join('');
+}
+
+function switchMenu(menuId) {
+  if (!canAccessMenu(menuId)) return;
+  adminState.currentMenu = menuId;
+
+  document.querySelectorAll('.admin-section').forEach((section) => section.classList.remove('active'));
+  const target = document.getElementById(`section-${menuId}`);
+  if (target) target.classList.add('active');
+
+  document.querySelectorAll('.admin-menu button').forEach((btn) => btn.classList.toggle('active', btn.dataset.menu === menuId));
+
+  const menu = MENU_CONFIG.find((m) => m.id === menuId);
+  document.getElementById('admin-hero-title').textContent = menu ? menu.label : '管理后台';
+}
+
+function switchSettingsTab(tabId) {
+  adminState.currentSettingsTab = tabId;
+  document.querySelectorAll('#settings-tabs button').forEach((btn) => btn.classList.toggle('active', btn.dataset.settingsTab === tabId));
+  document.querySelectorAll('.settings-tab-panel').forEach((panel) => {
+    panel.style.display = panel.id === tabId ? 'block' : 'none';
+  });
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
-  const authResult = await ensureAuth('admin');
+  const authResult = await ensureAuth(['admin', 'teacher', 'customer_service']);
   if (!authResult) return;
 
+  adminState.user = authResult.user;
+  document.getElementById('admin-role-badge').textContent = ROLE_LABELS[adminState.user.role] || adminState.user.role;
+  document.getElementById('admin-role-hint').textContent = `${ROLE_LABELS[adminState.user.role]}控制台`;
+
+  renderMenu();
+  switchMenu('dashboard');
+
   document.getElementById('logout-button').addEventListener('click', logout);
-  activateTabs('.tab-button', '.panel');
-  await loadBootstrap();
 
-  document.getElementById('user-search').addEventListener('input', renderUsers);
-  document.getElementById('user-role-filter').addEventListener('change', renderUsers);
+  document.getElementById('admin-menu').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-menu]');
+    if (!btn) return;
+    switchMenu(btn.dataset.menu);
+  });
 
-  // 事件委托：审批申请
+  document.getElementById('settings-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-settings-tab]');
+    if (!btn) return;
+    switchSettingsTab(btn.dataset.settingsTab);
+  });
+
+  document.getElementById('dashboard-trend-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-trend]');
+    if (!btn) return;
+    document.querySelectorAll('#dashboard-trend-tabs button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderDashboardTrends(Number(btn.dataset.trend));
+  });
+
+  document.getElementById('save-settings-button').addEventListener('click', saveSettings);
+
+  document.getElementById('user-search').addEventListener('input', () => {
+    adminState._userPage = 1;
+    renderUsers();
+  });
+  document.getElementById('user-role-filter').addEventListener('change', () => {
+    adminState._userPage = 1;
+    renderUsers();
+  });
+
   document.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
@@ -23,16 +128,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const id = Number(btn.dataset.id);
     if (action === 'approve-app') approveApplication(id);
     else if (action === 'reject-app') rejectApplication(id);
-    // W-20: 分页事件委托
     else if (action === 'admin-page') {
       adminState._userPage = Number(btn.dataset.page);
       renderUsers();
-    }
-    // W-20: 删除用户事件委托
-    else if (action === 'delete-user') {
+    } else if (action === 'delete-user') {
       deleteUser(Number(btn.dataset.userId), btn.dataset.userName);
     }
   });
+
+  await loadBootstrap();
+  if (adminState.user.role === 'admin') {
+    await loadSettings();
+    await loadDashboard();
+  } else {
+    renderDashboardStats();
+  }
 });
 
 async function loadBootstrap() {
@@ -44,14 +154,92 @@ async function loadBootstrap() {
 
     renderApplications();
     renderUsers();
-    renderStats();
-
-    document.getElementById('admin-sidebar-stats').innerHTML = `
-      <div class="metric-card"><div class="metric-value">${data.stats.teacherCount}</div><div class="metric-label">教师</div></div>
-      <div class="metric-card"><div class="metric-value">${data.stats.studentCount}</div><div class="metric-label">学生</div></div>
-    `;
+    renderDashboardStats();
   } catch (error) {
     createToast(error.message, 'error');
+  }
+}
+
+async function loadSettings() {
+  try {
+    const data = await fetchJSON('/api/admin/settings');
+    adminState.settings = data.settings || {};
+    renderSettingsForm();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+async function loadDashboard() {
+  try {
+    const data = await fetchJSON('/api/admin/dashboard');
+    adminState.dashboard = data;
+    renderDashboardStats();
+    renderDashboardTrends(7);
+  } catch (error) {
+    // 数据看板接口失败时仍用 bootstrap 的基础统计
+    renderDashboardStats();
+  }
+}
+
+function renderSettingsForm() {
+  const container = document.getElementById('settings-form');
+  const s = adminState.settings;
+  const fields = [
+    { key: 'site_name', label: '站点名称', type: 'text' },
+    { key: 'trial_days', label: '默认体验天数', type: 'number' },
+    { key: 'course_preview_count', label: '课程试看节数', type: 'number' },
+    { key: 'low_stock_threshold', label: '低库存阈值', type: 'number' },
+    { key: 'customer_service_account', label: '客服通知账号', type: 'text' },
+    { key: 'wx_subscribe_template_id', label: '微信订阅消息模板 ID', type: 'text' },
+    { key: 'payment_mode', label: '支付开关', type: 'select', options: { simulated: '开发环境模拟支付', wechat: '正式微信支付' } }
+  ];
+
+  container.innerHTML = fields.map((f) => {
+    const value = escapeHtml(s[f.key] || '');
+    let inputHtml;
+    if (f.type === 'select') {
+      inputHtml = `
+        <select id="setting-${f.key}" class="input">
+          ${Object.entries(f.options).map(([k, label]) => `
+            <option value="${escapeHtml(k)}" ${value === k ? 'selected' : ''}>${escapeHtml(label)}</option>
+          `).join('')}
+        </select>
+      `;
+    } else {
+      inputHtml = `<input id="setting-${f.key}" class="input" type="${f.type}" value="${value}" />
+      `;
+    }
+    return `
+      <label style="display: grid; gap: 6px;">
+        <span>${escapeHtml(f.label)}</span>
+        ${inputHtml}
+      </label>
+    `;
+  }).join('');
+}
+
+async function saveSettings() {
+  const fields = ['site_name', 'trial_days', 'course_preview_count', 'low_stock_threshold', 'customer_service_account', 'wx_subscribe_template_id', 'payment_mode'];
+  const updates = {};
+  for (const key of fields) {
+    const input = document.getElementById(`setting-${key}`);
+    if (input) updates[key] = input.value;
+  }
+
+  const btn = document.getElementById('save-settings-button');
+  setButtonLoading(btn, true);
+  try {
+    await fetchJSON('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(updates)
+    });
+    adminState.settings = { ...adminState.settings, ...updates };
+    createToast('设置已保存。', 'success');
+  } catch (error) {
+    createToast(error.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
   }
 }
 
@@ -63,7 +251,7 @@ function renderApplications() {
   let html = '';
 
   if (pending.length) {
-    html += '<h3>待审核</h3>';
+    html += '<h4>待审核</h4>';
     html += '<div style="display: grid; gap: 12px;">';
     pending.forEach((app) => {
       html += `
@@ -89,7 +277,7 @@ function renderApplications() {
   }
 
   if (processed.length) {
-    html += '<h3 style="margin-top: 24px;">已处理</h3>';
+    html += '<h4 style="margin-top: 24px;">已处理</h4>';
     html += '<div style="display: grid; gap: 8px;">';
     processed.forEach((app) => {
       const statusLabel = app.status === 'approved' ? '<span style="color: var(--success);">已批准</span>' : '<span style="color: var(--danger);">已拒绝</span>';
@@ -143,8 +331,8 @@ function renderUsers() {
   html += '</tr></thead><tbody>';
 
   pageUsers.forEach((user) => {
-    const roleLabel = user.role === 'admin' ? '管理员' : user.role === 'teacher' ? '教师' : '学生';
-    const roleBadge = user.role === 'admin' ? 'background: var(--brand);' : user.role === 'teacher' ? 'background: #059669;' : 'background: #6366f1;';
+    const roleLabel = ROLE_LABELS[user.role] || user.role;
+    const roleBadge = ROLE_BADGE_STYLES[user.role] || 'background: #6b7280;';
     html += `
       <tr style="border-bottom: 1px solid var(--border);">
         <td style="padding: 8px;">${escapeHtml(user.username)}</td>
@@ -171,14 +359,73 @@ function renderUsers() {
   container.innerHTML = html;
 }
 
-function renderStats() {
-  const container = document.getElementById('stats-grid');
-  const s = adminState.stats;
+function renderDashboardStats() {
+  const container = document.getElementById('dashboard-grid');
+  const s = adminState.stats || {};
+  const d = adminState.dashboard || {};
+
+  const cards = [
+    { label: '总用户数', value: s.totalUsers || d.totalUsers || 0 },
+    { label: '教师', value: s.teacherCount || d.teacherCount || 0 },
+    { label: '学生', value: s.studentCount || d.studentCount || 0 },
+    { label: '待审核申请', value: s.pendingApplications || d.pendingApplications || 0 }
+  ];
+
+  if (d.tierDistribution) {
+    cards.push({ label: '免费用户', value: d.tierDistribution.free || 0 });
+    cards.push({ label: '体验用户', value: d.tierDistribution.trial || 0 });
+    cards.push({ label: '付费用户', value: d.tierDistribution.paid || 0 });
+  }
+
+  container.innerHTML = cards.map((c) => `
+    <div class="metric-card">
+      <div class="metric-value">${c.value}</div>
+      <div class="metric-label">${escapeHtml(c.label)}</div>
+    </div>
+  `).join('');
+}
+
+function renderDashboardTrends(days) {
+  const container = document.getElementById('dashboard-trends');
+  const d = adminState.dashboard || {};
+  const key = days === 30 ? 'trend30' : 'trend7';
+  const trends = d[key] || {};
+
+  const renderTrend = (title, labels, values) => {
+    if (!values || !values.length) return `<div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+      <h4>${escapeHtml(title)}</h4>
+      <p class="muted">暂无数据</p>
+    </div>`;
+    const max = Math.max(...values, 1);
+    return `
+      <div class="paper-card" style="padding: 16px; margin-bottom: 12px;">
+        <h4>${escapeHtml(title)}</h4>
+        <div style="display: grid; gap: 8px; margin-top: 12px;">
+          ${labels.map((label, i) => {
+            const val = values[i] || 0;
+            const pct = Math.round((val / max) * 100);
+            return `
+              <div style="display: flex; align-items: center; gap: 12px;">
+                <span style="width: 70px; font-size: 12px; color: var(--muted);">${escapeHtml(label)}</span>
+                <div style="flex: 1; background: var(--surface); height: 16px; border-radius: 8px; overflow: hidden;">
+                  <div style="width: ${pct}%; background: var(--brand); height: 100%;"></div>
+                </div>
+                <span style="width: 40px; text-align: right; font-size: 12px;">${val}</span>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  };
+
+  const labels = trends.labels || [];
   container.innerHTML = `
-    <div class="metric-card"><div class="metric-value">${s.totalUsers}</div><div class="metric-label">总用户数</div></div>
-    <div class="metric-card"><div class="metric-value">${s.teacherCount}</div><div class="metric-label">教师</div></div>
-    <div class="metric-card"><div class="metric-value">${s.studentCount}</div><div class="metric-label">学生</div></div>
-    <div class="metric-card"><div class="metric-value">${s.pendingApplications}</div><div class="metric-label">待审核申请</div></div>
+    ${renderTrend('新增学员趋势', labels, trends.newStudents)}
+    ${renderTrend('收入趋势', labels, trends.revenue)}
+    ${renderTrend('任务完成率趋势', labels, trends.taskCompletionRate)}
+    ${renderTrend('做题量趋势', labels, trends.questionCount)}
+    ${renderTrend('课程学习趋势', labels, trends.courseViews)}
   `;
 }
 
@@ -212,3 +459,355 @@ async function deleteUser(id, name) {
     createToast(error.message, 'error');
   }
 }
+
+// ===== P3/P4 运营面板数据 =====
+
+adminState.contentType = 'courses';
+adminState.forumTab = 'topics';
+adminState.students = [];
+adminState.questions = [];
+adminState.contentData = {};
+adminState.forumData = {};
+
+function initOperationsListeners() {
+  document.getElementById('content-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-content-type]');
+    if (!btn) return;
+    adminState.contentType = btn.dataset.contentType;
+    document.querySelectorAll('#content-tabs button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadContent();
+  });
+
+  document.getElementById('forum-tabs').addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-forum-tab]');
+    if (!btn) return;
+    adminState.forumTab = btn.dataset.forumTab;
+    document.querySelectorAll('#forum-tabs button').forEach((b) => b.classList.remove('active'));
+    btn.classList.add('active');
+    loadForum();
+  });
+
+  document.getElementById('student-search').addEventListener('input', () => {
+    loadStudents();
+  });
+  document.getElementById('student-tier-filter').addEventListener('change', () => {
+    loadStudents();
+  });
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-admin-action]');
+    if (!btn) return;
+    const action = btn.dataset.adminAction;
+    if (action === 'load-questions') loadQuestions();
+    if (action === 'load-students') loadStudents();
+    if (action === 'load-content') loadContent();
+    if (action === 'load-forum') loadForum();
+  });
+
+  // 内容管理操作
+  document.getElementById('content-list').addEventListener('change', async (e) => {
+    const select = e.target.closest('[data-content-update]');
+    if (!select) return;
+    const [type, id, field] = select.dataset.contentUpdate.split('|');
+    const value = select.value;
+    try {
+      await fetchJSON(`/api/admin/content/${type}/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ [field]: value })
+      });
+      createToast('已更新', 'success');
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+
+  document.getElementById('content-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-content-delete]');
+    if (!btn) return;
+    const [type, id, title] = [btn.dataset.contentDelete, btn.dataset.contentId, btn.dataset.contentTitle];
+    if (!await confirmDialog({ title: '删除内容', message: `确定删除「${title}」吗？`, confirmText: '删除', danger: true })) return;
+    try {
+      await fetchJSON(`/api/admin/content/${type}/${id}`, { method: 'DELETE' });
+      createToast('已删除', 'success');
+      loadContent();
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+
+  // 题库操作
+  document.getElementById('questions-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-question-action]');
+    if (!btn) return;
+    const action = btn.dataset.questionAction;
+    const id = Number(btn.dataset.questionId);
+    if (action === 'delete') {
+      if (!await confirmDialog({ title: '删除题目', message: '确定删除该题目吗？', confirmText: '删除', danger: true })) return;
+      try {
+        await fetchJSON(`/api/admin/questions/${id}`, { method: 'DELETE' });
+        createToast('已删除', 'success');
+        loadQuestions();
+      } catch (error) {
+        createToast(error.message, 'error');
+      }
+    }
+    if (action === 'toggle-paid') {
+      try {
+        await fetchJSON(`/api/admin/questions/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify({ isPaidOnly: btn.dataset.paid === '1' ? 0 : 1 })
+        });
+        createToast('已更新', 'success');
+        loadQuestions();
+      } catch (error) {
+        createToast(error.message, 'error');
+      }
+    }
+  });
+
+  // 论坛操作
+  document.getElementById('forum-list').addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-forum-action]');
+    if (!btn) return;
+    const action = btn.dataset.forumAction;
+    const id = Number(btn.dataset.forumId);
+    const type = btn.dataset.forumType;
+    try {
+      if (action === 'delete') {
+        if (!await confirmDialog({ title: '删除', message: '确定删除吗？', confirmText: '删除', danger: true })) return;
+        await fetchJSON(`/api/admin/forum/${type}/${id}`, { method: 'DELETE' });
+        createToast('已删除', 'success');
+      } else if (action === 'pin') {
+        await fetchJSON(`/api/admin/forum/topics/${id}/pin`, { method: 'POST', body: JSON.stringify({ pinned: btn.dataset.pinned !== '1' }) });
+        createToast('已更新', 'success');
+      } else if (action === 'feature') {
+        await fetchJSON(`/api/admin/forum/topics/${id}/featured`, { method: 'POST', body: JSON.stringify({ featured: btn.dataset.featured !== '1' }) });
+        createToast('已更新', 'success');
+      } else if (action === 'review') {
+        await fetchJSON(`/api/admin/forum/reports/${id}/review`, { method: 'POST', body: JSON.stringify({ status: btn.dataset.status }) });
+        createToast('已更新', 'success');
+      }
+      loadForum();
+    } catch (error) {
+      createToast(error.message, 'error');
+    }
+  });
+}
+
+async function loadStudents() {
+  const tier = document.getElementById('student-tier-filter').value;
+  const search = document.getElementById('student-search').value;
+  const params = new URLSearchParams();
+  if (tier) params.set('tier', tier);
+  if (search) params.set('search', search);
+  try {
+    const data = await fetchJSON(`/api/admin/students?${params.toString()}`);
+    adminState.students = data.students;
+    renderStudents();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderStudents() {
+  const container = document.getElementById('students-list');
+  if (!adminState.students.length) {
+    container.innerHTML = '<p class="muted">没有匹配的学员。</p>';
+    return;
+  }
+  let html = '<table style="width: 100%; border-collapse: collapse;">';
+  html += '<thead><tr style="border-bottom: 2px solid var(--border);">';
+  ['姓名', '班级', '权益', '体验剩余', '今日完成', '累计做题', '正确率', '最近学习', '操作'].forEach((th) => {
+    html += `<th style="text-align: left; padding: 8px;">${escapeHtml(th)}</th>`;
+  });
+  html += '</tr></thead><tbody>';
+
+  adminState.students.forEach((s) => {
+    const tierLabel = { free: '免费', trial: '体验', paid: '付费' }[s.tier] || s.tier;
+    html += `
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">${escapeHtml(s.displayName)} <span class="muted">@${escapeHtml(s.username)}</span></td>
+        <td style="padding: 8px;">${escapeHtml(s.className || '-')}</td>
+        <td style="padding: 8px;"><span class="badge" style="background: var(--brand); color: white;">${escapeHtml(tierLabel)}</span></td>
+        <td style="padding: 8px;">${s.trialDaysLeft > 0 ? s.trialDaysLeft + ' 天' : '-'}</td>
+        <td style="padding: 8px;">${s.todayCompleted}</td>
+        <td style="padding: 8px;">${s.totalQuestions}</td>
+        <td style="padding: 8px;">${s.accuracy}%</td>
+        <td style="padding: 8px; font-size: 12px;">${s.lastStudyAt ? formatDateTime(s.lastStudyAt) : '-'}</td>
+        <td style="padding: 8px;"><button class="ghost-button" style="font-size: 12px;">查看</button></td>
+      </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function loadContent() {
+  try {
+    const data = await fetchJSON(`/api/admin/content?type=${adminState.contentType}`);
+    adminState.contentData = data;
+    renderContent();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderContent() {
+  const container = document.getElementById('content-list');
+  const type = adminState.contentType;
+  const items = adminState.contentData[type === 'courses' ? 'courses' : type === 'folder_items' ? 'folderItems' : type === 'live_sessions' ? 'liveSessions' : 'products'] || [];
+
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无内容。</p>';
+    return;
+  }
+
+  const visibilityOptions = `
+    <option value="free">免费</option>
+    <option value="preview">试看</option>
+    <option value="trial_paid">体验/付费</option>
+    <option value="subject_paid">科目付费</option>
+    <option value="all_paid">全科付费</option>
+  `;
+
+  let html = '<table style="width: 100%; border-collapse: collapse;">';
+  html += '<thead><tr style="border-bottom: 2px solid var(--border);">';
+  ['标题', '科目/分类', '可见性', '操作'].forEach((th) => html += `<th style="text-align: left; padding: 8px;">${escapeHtml(th)}</th>`);
+  html += '</tr></thead><tbody>';
+
+  items.forEach((item) => {
+    html += `
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">${escapeHtml(item.title)} <span class="muted" style="font-size: 12px;">${escapeHtml(item.teacherName || item.folderName || '')}</span></td>
+        <td style="padding: 8px;">${escapeHtml(item.subject || item.category || item.itemType || '-')}</td>
+        <td style="padding: 8px;">
+          <select class="input" style="width: auto; padding: 4px 8px; font-size: 13px;" data-content-update="${type}|${item.id}|visibility">
+            ${visibilityOptions.replace(`value="${item.visibility}"`, `value="${item.visibility}" selected`)}
+          </select>
+        </td>
+        <td style="padding: 8px;">
+          <button class="ghost-button" style="font-size: 12px; color: var(--danger);" data-content-delete="${type}" data-content-id="${item.id}" data-content-title="${escapeHtml(item.title)}">删除</button>
+        </td>
+      </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function loadQuestions() {
+  try {
+    const data = await fetchJSON('/api/admin/questions');
+    adminState.questions = data.questions;
+    renderQuestions();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderQuestions() {
+  const container = document.getElementById('questions-list');
+  if (!adminState.questions.length) {
+    container.innerHTML = '<p class="muted">暂无题目。</p>';
+    return;
+  }
+  let html = '<table style="width: 100%; border-collapse: collapse;">';
+  html += '<thead><tr style="border-bottom: 2px solid var(--border);">';
+  ['标题', '科目', '题型', '付费', '操作'].forEach((th) => html += `<th style="text-align: left; padding: 8px;">${escapeHtml(th)}</th>`);
+  html += '</tr></thead><tbody>';
+
+  adminState.questions.forEach((q) => {
+    html += `
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">${escapeHtml(q.title)}</td>
+        <td style="padding: 8px;">${escapeHtml(q.subject)}</td>
+        <td style="padding: 8px;">${escapeHtml(q.questionType || '-')}</td>
+        <td style="padding: 8px;">${q.isPaidOnly ? '<span class="badge" style="background: var(--warning);">付费</span>' : '免费'}</td>
+        <td style="padding: 8px;">
+          <button class="ghost-button" style="font-size: 12px;" data-question-action="toggle-paid" data-question-id="${q.id}" data-paid="${q.isPaidOnly}">${q.isPaidOnly ? '设为免费' : '设为付费'}</button>
+          <button class="ghost-button" style="font-size: 12px; color: var(--danger); margin-left: 8px;" data-question-action="delete" data-question-id="${q.id}">删除</button>
+        </td>
+      </tr>`;
+  });
+  html += '</tbody></table>';
+  container.innerHTML = html;
+}
+
+async function loadForum() {
+  try {
+    const tab = adminState.forumTab;
+    const url = tab === 'topics' ? '/api/admin/forum/topics' : tab === 'replies' ? '/api/admin/forum/replies' : '/api/admin/forum/reports';
+    const data = await fetchJSON(url);
+    adminState.forumData[tab] = data[tab === 'topics' ? 'topics' : tab === 'replies' ? 'replies' : 'reports'];
+    renderForum();
+  } catch (error) {
+    createToast(error.message, 'error');
+  }
+}
+
+function renderForum() {
+  const container = document.getElementById('forum-list');
+  const tab = adminState.forumTab;
+  const items = adminState.forumData[tab] || [];
+
+  if (!items.length) {
+    container.innerHTML = '<p class="muted">暂无数据。</p>';
+    return;
+  }
+
+  let html = '<div style="display: grid; gap: 12px;">';
+  if (tab === 'topics') {
+    items.forEach((t) => {
+      html += `
+        <div class="paper-card" style="padding: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: start; gap: 12px;">
+            <div>
+              <strong>${escapeHtml(t.title)}</strong>
+              <p class="muted" style="margin-top: 6px;">${escapeHtml((t.content || '').slice(0, 80))}...</p>
+              <p class="muted" style="font-size: 12px; margin-top: 4px;">${escapeHtml(t.authorName || '')} · ${formatDateTime(t.createdAt)} · 👍 ${t.likeCount || 0} · 💬 ${t.replies ? t.replies.length : 0}</p>
+            </div>
+            <div style="display: flex; gap: 8px; flex-shrink: 0;">
+              <button class="ghost-button" style="font-size: 12px;" data-forum-action="pin" data-forum-type="topics" data-forum-id="${t.id}" data-pinned="${t.isPinned || 0}">${t.isPinned ? '取消置顶' : '置顶'}</button>
+              <button class="ghost-button" style="font-size: 12px;" data-forum-action="feature" data-forum-type="topics" data-forum-id="${t.id}" data-featured="${t.isFeatured || 0}">${t.isFeatured ? '取消精华' : '精华'}</button>
+              <button class="ghost-button" style="font-size: 12px; color: var(--danger);" data-forum-action="delete" data-forum-type="topics" data-forum-id="${t.id}">删除</button>
+            </div>
+          </div>
+        </div>`;
+    });
+  } else if (tab === 'replies') {
+    items.forEach((r) => {
+      html += `
+        <div class="paper-card" style="padding: 12px;">
+          <p class="muted">${escapeHtml((r.content || '').slice(0, 100))}...</p>
+          <p class="muted" style="font-size: 12px; margin-top: 4px;">${escapeHtml(r.authorName || '')} · ${formatDateTime(r.createdAt)}</p>
+          <button class="ghost-button" style="font-size: 12px; color: var(--danger); margin-top: 8px;" data-forum-action="delete" data-forum-type="replies" data-forum-id="${r.id}">删除</button>
+        </div>`;
+    });
+  } else {
+    items.forEach((r) => {
+      html += `
+        <div class="paper-card" style="padding: 12px;">
+          <p><strong>${escapeHtml(r.reason || '无原因')}</strong> · 状态：${escapeHtml(r.status)}</p>
+          <p class="muted" style="font-size: 12px;">举报人：${escapeHtml(r.reporter_name || '')} · ${formatDateTime(r.created_at)}</p>
+          <div style="display: flex; gap: 8px; margin-top: 8px;">
+            <button class="ghost-button" style="font-size: 12px;" data-forum-action="review" data-forum-type="reports" data-forum-id="${r.id}" data-status="reviewed">通过</button>
+            <button class="ghost-button" style="font-size: 12px;" data-forum-action="review" data-forum-type="reports" data-forum-id="${r.id}" data-status="dismissed">驳回</button>
+          </div>
+        </div>`;
+    });
+  }
+  html += '</div>';
+  container.innerHTML = html;
+}
+
+// 在切换菜单时按需加载运营数据
+const originalSwitchMenu = switchMenu;
+switchMenu = function(menuId) {
+  originalSwitchMenu(menuId);
+  if (menuId === 'students') loadStudents();
+  if (menuId === 'content') loadContent();
+  if (menuId === 'questions') loadQuestions();
+  if (menuId === 'forum') loadForum();
+};
+
+// 初始化
+initOperationsListeners();
