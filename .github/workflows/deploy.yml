@@ -40,7 +40,7 @@ jobs:
           fingerprint: SHA256:Y4BXMaLlA99psI96++6xZmwFH3Q6T2I6LrDILnWeZkk
           script: |
             set -e
-            APP_DIR=/home/ubuntu/study-planner
+            APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
             BACKUP_DIR=$APP_DIR/backups
             cd $APP_DIR
 
@@ -68,7 +68,7 @@ jobs:
               echo "HF_MIRROR=https://hf-mirror.com/" >> .env
             fi
             if ! grep -q "^TRANSFORMERS_CACHE=" .env; then
-              echo "TRANSFORMERS_CACHE=/app/data/.cache" >> .env
+              echo "TRANSFORMERS_CACHE=/home/ubuntu/kaoyan-xiaochengxu/.cache" >> .env
             fi
 
             # 确保模型缓存目录存在
