@@ -13,11 +13,13 @@ async function loadQuestionFilters() {
     const tagSel = document.getElementById('qf-tag');
     const textbookSel = document.getElementById('qf-textbook');
     const yearSel = document.getElementById('qf-source-year');
+    const displayModeSel = document.getElementById('qf-display-mode');
     subjectSel.innerHTML = '<option value="">全部科目</option>' + meta.subjects.map((s) => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
     typeSel.innerHTML = '<option value="">全部题型</option>' + meta.types.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
     if (textbookSel) textbookSel.innerHTML = '<option value="">全部书本</option>' + meta.textbooks.map((t) => `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`).join('');
     tagSel.innerHTML = '<option value="">全部标签</option>' + meta.tags.map((t) => `<option value="${t.id}">${escapeHtml(t.name)}</option>`).join('');
     if (yearSel) yearSel.innerHTML = '<option value="">全部年份</option>' + (meta.sourceYears || []).map((y) => `<option value="${y}">${y}</option>`).join('');
+    if (displayModeSel) displayModeSel.innerHTML = '<option value="">全部模式</option><option value="radio">普通单选</option><option value="word">英语单词</option><option value="formula">数学公式</option>';
   } catch (_) {}
 }
 
@@ -37,8 +39,22 @@ async function loadFilteredQuestions() {
   params.set('limit', '10');
   try {
     const result = await fetchJSON('/api/questions?' + params.toString());
-    renderQuestionList(result.questions, result.totalCount, result.page, result.limit, 'qtab-all');
-    renderAnswerCard(result.questions, result.totalCount, result.page, result.limit);
+    // Load distractors for questions that need them
+    const questionsWithDistractors = await Promise.all(result.questions.map(async (q) => {
+      if (q.displayMode === 'word' || q.displayMode === 'formula') {
+        if (!q.options || q.options.length < 4) {
+          try {
+            const distractors = await fetchJSON(`/api/questions/${q.id}/distractors?count=3`);
+            if (distractors.options && distractors.options.length > 0) {
+              return { ...q, options: distractors.options };
+            }
+          } catch (_) {}
+        }
+      }
+      return q;
+    }));
+    renderQuestionList(questionsWithDistractors, result.totalCount, result.page, result.limit, 'qtab-all');
+    renderAnswerCard(questionsWithDistractors, result.totalCount, result.page, result.limit);
   } catch (error) {
     createToast(error.message, 'error');
   }
@@ -81,13 +97,115 @@ function renderQuestionCard(question, showWrong) {
   if (!studentState.questionTimers[question.id] && !feedback) {
     studentState.questionTimers[question.id] = Date.now();
   }
+
+  // Determine display mode
+  const displayMode = question.displayMode || 'radio';
+
+  // Build question content based on display mode
+  let questionContent = '';
+  if (displayMode === 'word') {
+    // Word mode: show English word prominently, phonetic if available
+    const phonetic = question.phonetic || '';
+    const exampleSentence = question.exampleSentence || '';
+    questionContent = `
+      <div class="word-question" style="padding:16px;background:#f8fafc;border-radius:12px;margin-bottom:12px;">
+        <h2 style="margin:0 0 8px;font-size:28px;color:#1e293b;">${escapeHtml(question.title)}</h2>
+        ${phonetic ? `<div style="font-size:16px;color:#64748b;margin-bottom:8px;">${escapeHtml(phonetic)}</div>` : ''}
+        ${exampleSentence ? `<div style="font-size:14px;color:#475569;font-style:italic;">"${escapeHtml(exampleSentence)}"</div>` : ''}
+      </div>
+    `;
+  } else if (displayMode === 'formula') {
+    // Formula mode: show formula image or text
+    const formulaImage = question.formulaImagePath ? `<img src="${escapeHtml(question.formulaImagePath)}" style="max-width:100%;border-radius:8px;margin-bottom:12px;" />` : '';
+    questionContent = `
+      <div class="formula-question" style="padding:16px;background:#f8fafc;border-radius:12px;margin-bottom:12px;">
+        <h3 style="margin:0 0 12px;">${escapeHtml(question.title)}</h3>
+        ${formulaImage}
+        <p>${escapeHtml(question.stem)}</p>
+      </div>
+    `;
+  } else {
+    // Default radio mode
+    questionContent = `
+      <h3>${escapeHtml(question.title)}</h3>
+      <p>${escapeHtml(question.stem)}</p>
+    `;
+  }
+
+  // Build options based on display mode
+  let optionsHtml = '';
+  if (displayMode === 'word') {
+    // Word mode: options are Chinese translations
+    optionsHtml = question.options.map((opt) => `
+      <label class="checkbox-chip" style="display:block;padding:12px 16px;margin-bottom:8px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;cursor:pointer;transition:all 0.2s;">
+        <input type="radio" name="selectedAnswer" value="${escapeHtml(opt.key)}" style="margin-right:8px;" />
+        <span style="font-size:16px;">${escapeHtml(opt.text)}</span>
+      </label>
+    `).join('');
+  } else if (displayMode === 'formula') {
+    // Formula mode: standard options
+    optionsHtml = question.options.map((opt) => `
+      <label class="checkbox-chip">
+        <input type="radio" name="selectedAnswer" value="${escapeHtml(opt.key)}" />
+        <span>${escapeHtml(opt.key)}. ${escapeHtml(opt.text)}</span>
+      </label>
+    `).join('');
+  } else {
+    // Default radio mode
+    optionsHtml = question.options.map((opt) => `
+      <label class="checkbox-chip">
+        <input type="radio" name="selectedAnswer" value="${escapeHtml(opt.key)}" />
+        <span>${escapeHtml(opt.key)}. ${escapeHtml(opt.text)}</span>
+      </label>
+    `).join('');
+  }
+
+  // Build feedback section based on display mode
+  let feedbackHtml = '';
+  if (feedback) {
+    if (displayMode === 'word') {
+      // Word mode feedback: show correct Chinese translation and example
+      const correctOption = question.options.find(o => o.key === feedback.correctAnswer);
+      const correctText = correctOption ? correctOption.text : '';
+      const exampleSentence = question.exampleSentence || '';
+      feedbackHtml = `
+        <div class="reply-item" style="margin-top: 12px; padding: 16px; background: ${feedback.isCorrect ? '#f0fdf4' : '#fef2f2'}; border-radius: 8px;">
+          <strong style="font-size:16px;">${feedback.isCorrect ? '回答正确' : '回答错误'}</strong>
+          <div style="margin-top:8px;">
+            <div style="font-size:18px;font-weight:600;">${escapeHtml(question.title)}</div>
+            <div style="font-size:16px;color:#22c55e;margin-top:4px;">${escapeHtml(feedback.correctAnswer)}. ${escapeHtml(correctText)}</div>
+            ${exampleSentence ? `<div style="font-size:14px;color:#64748b;margin-top:8px;font-style:italic;">"${escapeHtml(exampleSentence)}"</div>` : ''}
+          </div>
+          <p style="margin-top:12px;">${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
+        </div>
+      `;
+    } else if (displayMode === 'formula') {
+      // Formula mode feedback
+      feedbackHtml = `
+        <div class="reply-item" style="margin-top: 12px;">
+          <strong>${feedback.isCorrect ? '回答正确' : `回答错误，正确答案 ${feedback.correctAnswer}`}</strong>
+          <p>${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
+          ${feedback.analysisVideoPath || feedback.analysisVideoUrl ? `<video class="video-frame" controls src="${escapeHtml(feedback.analysisVideoPath || feedback.analysisVideoUrl)}"></video>` : ''}
+        </div>
+      `;
+    } else {
+      // Default feedback
+      feedbackHtml = `
+        <div class="reply-item" style="margin-top: 12px;">
+          <strong>${feedback.isCorrect ? '回答正确' : `回答错误，正确答案 ${feedback.correctAnswer}`}</strong>
+          <p>${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
+          ${feedback.analysisVideoPath || feedback.analysisVideoUrl ? `<video class="video-frame" controls src="${escapeHtml(feedback.analysisVideoPath || feedback.analysisVideoUrl)}"></video>` : ''}
+        </div>
+      `;
+    }
+  }
+
   return `
-    <article class="question-card">
+    <article class="question-card" data-display-mode="${escapeHtml(displayMode)}">
       <div class="card-head">
         <div>
           <div class="badge badge-brand">${escapeHtml(question.subject)}</div>
-          <h3>${escapeHtml(question.title)}</h3>
-          <p>${escapeHtml(question.stem)}</p>
+          ${displayMode === 'radio' ? questionContent : ''}
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${showWrong && question.selectedAnswer ? `<div class="badge badge-danger">你的答案 ${escapeHtml(question.selectedAnswer)}</div>` : ''}
@@ -101,17 +219,13 @@ function renderQuestionCard(question, showWrong) {
           ${showWrong ? `<button class="ghost-button" data-action="mark-mastered" data-id="${question.id}" type="button" style="font-size:12px;padding:4px 8px;color:#10b981;">已掌握</button>` : ''}
         </div>
       </div>
+      ${displayMode !== 'radio' ? questionContent : ''}
       ${!showWrong ? `
-      ${question.formulaImagePath ? `<div class="field full-span"><img src="${escapeHtml(question.formulaImagePath)}" style="max-width:100%;border-radius:8px;" /></div>` : ''}
+      ${displayMode === 'radio' && question.formulaImagePath ? `<div class="field full-span"><img src="${escapeHtml(question.formulaImagePath)}" style="max-width:100%;border-radius:8px;" /></div>` : ''}
       <form class="form-grid answer-form" data-question-id="${question.id}">
         <div class="field full-span">
           <div class="reply-list">
-            ${question.options.map((opt) => `
-              <label class="checkbox-chip">
-                <input type="radio" name="selectedAnswer" value="${escapeHtml(opt.key)}" />
-                <span>${escapeHtml(opt.key)}. ${escapeHtml(opt.text)}</span>
-              </label>
-            `).join('')}
+            ${optionsHtml}
           </div>
         </div>
         <div class="field full-span">
@@ -119,13 +233,7 @@ function renderQuestionCard(question, showWrong) {
         </div>
       </form>
       ` : ''}
-      ${feedback ? `
-        <div class="reply-item" style="margin-top: 12px;">
-          <strong>${feedback.isCorrect ? '回答正确' : `回答错误，正确答案 ${feedback.correctAnswer}`}</strong>
-          <p>${escapeHtml(feedback.analysisText || '暂无文字解析')}</p>
-          ${feedback.analysisVideoPath || feedback.analysisVideoUrl ? `<video class="video-frame" controls src="${escapeHtml(feedback.analysisVideoPath || feedback.analysisVideoUrl)}"></video>` : ''}
-        </div>
-      ` : ''}
+      ${feedbackHtml}
     </article>
   `;
 }
@@ -350,4 +458,3 @@ bindWrongBookActions();
       } catch (err) { createToast(err.message, 'error'); }
     }
   });
-

@@ -162,7 +162,23 @@ function renderLiveSessions() {
   root.innerHTML = studentState.data.liveSessions.length
     ? studentState.data.liveSessions
         .map(
-          (session) => `
+          (session) => {
+            let actionHtml = '';
+            if (session.status === 'live') {
+              actionHtml = `<a class="button" href="/live/${session.id}" target="_blank" style="text-decoration: none;">进入直播间</a>`;
+            } else if (session.status === 'ended') {
+              if (session.recordingPath) {
+                actionHtml = `<button class="ghost-button" data-action="play-recording" data-recording-path="${escapeHtml(session.recordingPath)}" data-title="${escapeHtml(session.title)}" type="button" style="font-size:12px;padding:6px 14px;">观看回放</button>`;
+              } else {
+                actionHtml = `<span class="muted" style="font-size:12px;padding:6px 14px;display:inline-block;">暂无回放</span>`;
+              }
+            }
+            // pending / draft 显示预约按钮
+            const reserveHtml = (session.status === 'pending' || session.status === 'draft')
+              ? `<button class="ghost-button" data-action="reserve-live" data-id="${session.id}" type="button" style="font-size:12px;padding:4px 12px;">预约直播</button>`
+              : '';
+
+            return `
             <article class="paper-card">
               <div class="card-head">
                 <div>
@@ -176,11 +192,12 @@ function renderLiveSessions() {
                 </div>
               </div>
               <div class="inline-actions">
-                ${session.status === 'ended' ? `<a class="ghost-button" href="/live/${session.id}" target="_blank" style="text-decoration: none;font-size:12px;padding:6px 14px;">查看回放</a>` : `<a class="button" href="/live/${session.id}" target="_blank" style="text-decoration: none;">进入直播间</a>`}
-                ${session.status === 'pending' ? `<button class="ghost-button" data-action="reserve-live" data-id="${session.id}" type="button" style="font-size:12px;padding:4px 12px;">预约直播</button>` : ''}
+                ${actionHtml}
+                ${reserveHtml}
               </div>
             </article>
-          `
+          `;
+          }
         )
         .join('')
     : buildEmptyState('还没有直播', '老师创建直播后，这里会出现进入入口。');
@@ -371,6 +388,33 @@ function bindStudentCloud() {
     const lockedBtn = event.target.closest('[data-action="locked-content"]');
     if (lockedBtn) {
       createToast('该内容需升级权益后解锁，请联系老师或前往商城购买课程。', 'error');
+    }
+  });
+
+  // 直播回放按钮事件委托
+  document.getElementById('student-live-list').addEventListener('click', async (event) => {
+    const recordingBtn = event.target.closest('[data-action="play-recording"]');
+    if (recordingBtn) {
+      const src = recordingBtn.dataset.recordingPath;
+      const title = recordingBtn.dataset.title;
+
+      const playerRoot = document.getElementById('video-player-area');
+      playerRoot.innerHTML = `
+        <div class="paper-card" style="padding:16px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h3 style="margin:0;">${escapeHtml(title)}</h3>
+            <button class="ghost-button" id="close-recording-btn" type="button" style="font-size:12px;padding:4px 10px;">关闭播放器</button>
+          </div>
+          <video id="recording-video" controls style="width:100%;border-radius:12px;background:#000;" src="${escapeHtml(src)}"></video>
+        </div>
+      `;
+
+      document.getElementById('close-recording-btn').addEventListener('click', () => {
+        playerRoot.innerHTML = '';
+      });
+
+      document.getElementById('recording-video').scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
     }
   });
 }

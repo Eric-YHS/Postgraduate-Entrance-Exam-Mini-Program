@@ -710,7 +710,7 @@ function renderStudents() {
         <td style="padding: 8px;">${s.totalQuestions}</td>
         <td style="padding: 8px;">${s.accuracy}%</td>
         <td style="padding: 8px; font-size: 12px;">${s.lastStudyAt ? formatDateTime(s.lastStudyAt) : '-'}</td>
-        <td style="padding: 8px;"><button class="ghost-button" style="font-size: 12px;">查看</button></td>
+        <td style="padding: 8px;"><button class="ghost-button" style="font-size: 12px;" data-student-detail="${s.id}">查看</button></td>
       </tr>`;
   });
   html += '</tbody></table>';
@@ -1026,3 +1026,235 @@ switchMenu = function(menuId) {
 
 // 初始化
 initOperationsListeners();
+
+// ===== 学员详情与专属复习计划 =====
+
+async function openStudentDetail(studentId) {
+  const modal = document.getElementById('student-detail-modal');
+  const body = document.getElementById('student-detail-body');
+  const title = document.getElementById('student-detail-title');
+
+  modal.style.display = 'flex';
+  body.innerHTML = '<p class="muted">加载中...</p>';
+  title.textContent = '学员详情';
+
+  try {
+    const data = await fetchJSON(`/api/admin/students/${studentId}`);
+    title.textContent = `${escapeHtml(data.student.display_name || data.student.username)} 的详情`;
+    renderStudentDetail(body, data, studentId);
+  } catch (error) {
+    body.innerHTML = `<p class="muted">加载失败：${escapeHtml(error.message)}</p>`;
+  }
+}
+
+function closeStudentDetail() {
+  const modal = document.getElementById('student-detail-modal');
+  modal.style.display = 'none';
+  document.getElementById('student-detail-body').innerHTML = '';
+}
+
+function renderStudentDetail(container, data, studentId) {
+  const s = data.student || {};
+  const e = data.entitlement || {};
+  const ps = data.practiceStats || {};
+  const calendar = data.taskCalendar || [];
+  const wrongDistribution = ps.wrongDistribution || [];
+  const plans = data.personalPlans || [];
+  const tierLabel = { free: '免费', trial: '体验', paid: '付费' }[e.effectiveTier || e.tier] || (e.effectiveTier || e.tier || '未填写');
+  const isPaid = (e.effectiveTier || e.tier) === 'paid';
+
+  // 基本信息字段
+  const basicInfo = [
+    { label: '姓名', value: s.display_name || '未填写' },
+    { label: '用户名', value: s.username || '未填写' },
+    { label: '班级', value: s.class_name || '未填写' },
+    { label: '电话', value: s.phone || '未填写' },
+    { label: '毕业院校', value: s.graduated_school || '未填写' },
+    { label: '目标院校', value: s.target_school || '未填写' },
+    { label: '当前进度', value: s.current_progress || '未填写' },
+    { label: '权益', value: tierLabel }
+  ];
+
+  // 学习数据
+  const studyStats = [
+    { label: '累计做题数', value: ps.totalQuestions || 0 },
+    { label: '正确率', value: `${ps.accuracy || 0}%` },
+    { label: '今日完成', value: (data.taskCalendar && data.taskCalendar.find(c => c.task_date === new Date().toISOString().slice(0, 10))?.cnt) || 0 },
+    { label: '连续打卡', value: data.streakDays || '—' },
+    { label: '最近学习日期', value: s.last_study_at ? formatDateTime(s.last_study_at) : '—' }
+  ];
+
+  // 日历渲染（最近30天）
+  const today = new Date();
+  const calendarHtml = [];
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    const dayNum = d.getDate();
+    const completed = calendar.find(c => c.task_date === dateStr);
+    const isDone = completed && completed.cnt > 0;
+    calendarHtml.push(`<div style="width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 11px; ${isDone ? 'background: var(--success); color: white;' : 'background: var(--surface); color: var(--muted);'}" title="${dateStr}${isDone ? ' 已完成' : ''}">${dayNum}</div>`);
+  }
+
+  // 错题分布
+  const wrongHtml = wrongDistribution.length
+    ? `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead><tr style="border-bottom: 1px solid var(--border);"><th style="text-align: left; padding: 6px;">科目</th><th style="text-align: right; padding: 6px;">错题数</th></tr></thead>
+        <tbody>${wrongDistribution.map(w => `<tr style="border-bottom: 1px solid var(--border);"><td style="padding: 6px;">${escapeHtml(w.subject)}</td><td style="padding: 6px; text-align: right;">${w.cnt}</td></tr>`).join('')}</tbody>
+      </table>`
+    : '<p class="muted">暂无错题数据</p>';
+
+  // 专属计划列表
+  const plansHtml = plans.length
+    ? `<table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead><tr style="border-bottom: 1px solid var(--border);"><th style="text-align: left; padding: 6px;">标题</th><th style="text-align: left; padding: 6px;">科目</th><th style="text-align: left; padding: 6px;">时间</th><th style="text-align: left; padding: 6px;">状态</th></tr></thead>
+        <tbody>${plans.map(p => {
+          const start = p.startTime ? formatDateTime(p.startTime) : '—';
+          const end = p.endTime ? formatDateTime(p.endTime) : '—';
+          const status = p.status === 'completed' ? '<span style="color: var(--success);">已完成</span>' : '<span style="color: var(--brand);">进行中</span>';
+          return `<tr style="border-bottom: 1px solid var(--border);"><td style="padding: 6px;">${escapeHtml(p.title)}</td><td style="padding: 6px;">${escapeHtml(p.subject || '—')}</td><td style="padding: 6px; font-size: 12px;">${start} ~ ${end}</td><td style="padding: 6px;">${status}</td></tr>`;
+        }).join('')}</tbody>
+      </table>`
+    : '<p class="muted">暂无专属复习计划</p>';
+
+  // 上传表单（仅付费学员）
+  const planFormHtml = isPaid
+    ? `<div class="paper-card" style="padding: 16px; margin-top: 16px;">
+        <h4 style="margin: 0 0 12px;">上传专属复习计划</h4>
+        <div style="display: grid; gap: 12px;">
+          <label style="display: grid; gap: 4px;">
+            <span style="font-size: 13px;">标题</span>
+            <input class="input" id="plan-title" type="text" placeholder="计划标题" />
+          </label>
+          <label style="display: grid; gap: 4px;">
+            <span style="font-size: 13px;">科目</span>
+            <input class="input" id="plan-subject" type="text" placeholder="如：数学、英语" />
+          </label>
+          <label style="display: grid; gap: 4px;">
+            <span style="font-size: 13px;">内容</span>
+            <textarea class="input" id="plan-description" rows="3" placeholder="计划内容描述"></textarea>
+          </label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <label style="display: grid; gap: 4px;">
+              <span style="font-size: 13px;">开始日期</span>
+              <input class="input" id="plan-start" type="date" />
+            </label>
+            <label style="display: grid; gap: 4px;">
+              <span style="font-size: 13px;">结束日期</span>
+              <input class="input" id="plan-end" type="date" />
+            </label>
+          </div>
+          <div>
+            <span style="font-size: 13px; display: block; margin-bottom: 6px;">执行星期</span>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              ${['日', '一', '二', '三', '四', '五', '六'].map((day, i) => `<label style="display: flex; align-items: center; gap: 4px; font-size: 13px; cursor: pointer;"><input type="checkbox" class="plan-weekday" value="${i}" checked /> ${day}</label>`).join('')}
+            </div>
+          </div>
+          <button class="button" id="submit-plan-btn" type="button" data-student-id="${studentId}">提交计划</button>
+        </div>
+      </div>`
+    : `<div class="paper-card" style="padding: 16px; margin-top: 16px; background: var(--surface);">
+        <p class="muted" style="margin: 0;">仅付费学员可上传专属复习计划</p>
+      </div>`;
+
+  container.innerHTML = `
+    <div style="display: grid; gap: 20px;">
+      <!-- 基本信息 -->
+      <div class="paper-card" style="padding: 16px;">
+        <h4 style="margin: 0 0 12px;">基本信息</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; font-size: 13px;">
+          ${basicInfo.map(info => `<div><span style="color: var(--muted);">${escapeHtml(info.label)}：</span><strong>${escapeHtml(String(info.value))}</strong></div>`).join('')}
+        </div>
+      </div>
+
+      <!-- 学习数据 -->
+      <div class="paper-card" style="padding: 16px;">
+        <h4 style="margin: 0 0 12px;">学习数据</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+          ${studyStats.map(st => `<div class="metric-card" style="padding: 12px;"><div class="metric-value" style="font-size: 20px;">${escapeHtml(String(st.value))}</div><div class="metric-label" style="font-size: 12px;">${escapeHtml(st.label)}</div></div>`).join('')}
+        </div>
+      </div>
+
+      <!-- 任务完成日历 -->
+      <div class="paper-card" style="padding: 16px;">
+        <h4 style="margin: 0 0 12px;">近30天任务完成情况</h4>
+        <div style="display: flex; flex-wrap: wrap; gap: 4px;">
+          ${calendarHtml.join('')}
+        </div>
+        <div style="margin-top: 8px; font-size: 12px; color: var(--muted);">
+          <span style="display: inline-block; width: 12px; height: 12px; background: var(--success); border-radius: 3px; vertical-align: middle; margin-right: 4px;"></span>已完成
+          <span style="display: inline-block; width: 12px; height: 12px; background: var(--surface); border-radius: 3px; vertical-align: middle; margin-left: 12px; margin-right: 4px;"></span>未完成
+        </div>
+      </div>
+
+      <!-- 错题分布 -->
+      <div class="paper-card" style="padding: 16px;">
+        <h4 style="margin: 0 0 12px;">错题分布</h4>
+        ${wrongHtml}
+      </div>
+
+      <!-- 专属复习计划 -->
+      <div class="paper-card" style="padding: 16px;">
+        <h4 style="margin: 0 0 12px;">专属复习计划</h4>
+        ${plansHtml}
+        ${planFormHtml}
+      </div>
+    </div>
+  `;
+}
+
+async function submitStudentPlan(studentId) {
+  const title = document.getElementById('plan-title').value.trim();
+  const subject = document.getElementById('plan-subject').value.trim();
+  const description = document.getElementById('plan-description').value.trim();
+  const startTime = document.getElementById('plan-start').value;
+  const endTime = document.getElementById('plan-end').value;
+  const weekdays = Array.from(document.querySelectorAll('.plan-weekday:checked')).map(cb => Number(cb.value));
+
+  if (!title || !startTime || !endTime) {
+    createToast('请填写计划标题、开始和结束日期。', 'error');
+    return;
+  }
+  if (new Date(startTime) > new Date(endTime)) {
+    createToast('开始日期不能晚于结束日期。', 'error');
+    return;
+  }
+
+  const btn = document.getElementById('submit-plan-btn');
+  setButtonLoading(btn, true);
+  try {
+    await fetchJSON(`/api/admin/students/${studentId}/plans`, {
+      method: 'POST',
+      body: JSON.stringify({ title, subject, description, startTime, endTime, weekdays })
+    });
+    createToast('专属复习计划已创建。', 'success');
+    await openStudentDetail(studentId);
+  } catch (error) {
+    createToast(error.message, 'error');
+  } finally {
+    setButtonLoading(btn, false);
+  }
+}
+
+// 学员详情 Modal 事件监听
+document.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-student-detail]');
+  if (btn) {
+    openStudentDetail(Number(btn.dataset.studentDetail));
+    return;
+  }
+  if (e.target.closest('#close-student-detail')) {
+    closeStudentDetail();
+    return;
+  }
+  if (e.target.closest('#submit-plan-btn')) {
+    const studentId = Number(e.target.closest('#submit-plan-btn').dataset.studentId);
+    submitStudentPlan(studentId);
+  }
+});
+
+// 点击 modal 背景关闭
+document.getElementById('student-detail-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'student-detail-modal') closeStudentDetail();
+});

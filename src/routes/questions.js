@@ -923,4 +923,95 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
     response.json({ questions: results });
   });
+
+  // 干扰项自动生成接口
+  app.get('/api/questions/:id/distractors', requireAuth, (request, response) => {
+    const id = Number(request.params.id);
+    if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
+
+    const count = Math.min(Math.max(Number(request.query.count) || 3, 1), 5);
+
+    const question = db.prepare('SELECT * FROM questions WHERE id = ?').get(id);
+    if (!question) {
+      response.status(404).json({ error: '题目不存在。' });
+      return;
+    }
+
+    const subject = question.subject;
+    const correctAnswer = question.correct_answer;
+    const safeJsonParse = shared.safeJsonParse || require('../services/taskService').safeJsonParse;
+
+    // 1. 从同科目其他题目的选项中收集错误答案
+    const otherQuestions = db.prepare(
+      `SELECT options, correct_answer FROM questions WHERE id != ? AND subject = ? AND display_mode = ? LIMIT 50`
+    ).all(id, subject, question.display_mode || 'radio');
+
+    const distractorTexts = new Set();
+    for (const q of otherQuestions) {
+      const opts = safeJsonParse(q.options, []);
+      for (const opt of opts) {
+        if (opt && opt.text && opt.text.trim() && opt.key !== q.correct_answer) {
+          distractorTexts.add(opt.text.trim());
+        }
+      }
+    }
+
+    // 2. 从同科目闪卡中收集背面内容（释义/答案）作为干扰项
+    const flashcards = db.prepare(
+      `SELECT back_content FROM flashcards WHERE id != ? AND subject = ? AND back_content != '' LIMIT 30`
+    ).all(id, subject);
+
+    for (const fc of flashcards) {
+      if (fc.back_content && fc.back_content.trim()) {
+        distractorTexts.add(fc.back_content.trim());
+      }
+    }
+
+    // 3. 排除与正确答案相同的文本
+    const correctOption = safeJsonParse(question.options, []).find(o => o.key === correctAnswer);
+    const correctText = correctOption ? correctOption.text : '';
+    if (correctText) {
+      distractorTexts.delete(correctText.trim());
+    }
+
+    // 4. 随机选取 count 个干扰项
+    let distractors = Array.from(distractorTexts);
+    // 随机打乱
+    for (let i = distractors.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [distractors[i], distractors[j]] = [distractors[j], distractors[i]];
+    }
+    distractors = distractors.slice(0, count);
+
+    // 5. 如果干扰项不足，返回已有数量
+    if (distractors.length < count) {
+      console.warn(`[distractors] 题目 ${id} 的干扰项不足：需要 ${count}，实际 ${distractors.length}`);
+    }
+
+    // 6. 构建返回结构：将正确答案 + 干扰项组成 4 个选项并随机排序
+    const allOptions = [
+      { key: correctAnswer, text: correctText || '正确答案', isCorrect: true },
+      ...distractors.map((text, idx) => ({
+        key: String.fromCharCode(66 + idx), // B, C, D...
+        text,
+        isCorrect: false
+      }))
+    ];
+
+    // 重新随机排序选项
+    for (let i = allOptions.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [allOptions[i], allOptions[j]] = [allOptions[j], allOptions[i]];
+    }
+
+    // 重新分配选项 key（A, B, C, D）
+    const keys = ['A', 'B', 'C', 'D'];
+    const finalOptions = allOptions.slice(0, 4).map((opt, idx) => ({
+      key: keys[idx],
+      text: opt.text,
+      isCorrect: opt.isCorrect || false
+    }));
+
+    response.json({ options: finalOptions });
+  });
 };

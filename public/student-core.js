@@ -98,6 +98,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // 权益状态卡片点击事件委托
+  document.getElementById('entitlement-status-area').addEventListener('click', (event) => {
+    const goTasks = event.target.closest('[data-action="go-tasks"]');
+    if (goTasks) {
+      const tasksTab = document.querySelector('[data-target="student-tasks"]');
+      if (tasksTab) tasksTab.click();
+    }
+    const goStore = event.target.closest('[data-action="go-store"]');
+    if (goStore) {
+      const storeTab = document.querySelector('[data-target="student-store"]');
+      if (storeTab) storeTab.click();
+    }
+  });
+
   // 总结 CTA 按钮点击事件委托
   document.getElementById('summary-cta-area').addEventListener('click', (event) => {
     const goSummary = event.target.closest('[data-action="go-summary"]');
@@ -164,6 +178,7 @@ async function refreshStudentData() {
       studentState.data._loadedModules = savedModules;
     }
     renderStudentStats();
+    renderEntitlementStatus();
     renderNextAction();
     renderUnreadSummary();
     renderNotifications();
@@ -209,6 +224,49 @@ function renderStudentStats() {
       `
     )
     .join('');
+}
+
+function renderEntitlementStatus() {
+  const area = document.getElementById('entitlement-status-area');
+  if (!area) return;
+  const entitlement = studentState.data && studentState.data.entitlement;
+  if (!entitlement) { area.innerHTML = ''; return; }
+
+  const tier = entitlement.effectiveTier || entitlement.tier || 'free';
+  let html = '';
+
+  if (tier === 'paid') {
+    const paidUntil = entitlement.paidUntil ? formatDateTime(entitlement.paidUntil) : '';
+    html = `<div class="metric-card" style="background:#f0fdf4;border-color:#86efac;cursor:pointer;" data-action="go-tasks">
+      <span class="muted">权益状态</span>
+      <strong style="color:#166534;font-size:15px;">付费学员专属计划</strong>
+      <span class="muted" style="font-size:12px;">专属计划与督学推送已开启${paidUntil ? ' · 有效期至 ' + escapeHtml(paidUntil) : ''}</span>
+      <button class="button" type="button" style="margin-top:8px;font-size:12px;padding:4px 14px;" data-action="go-tasks">查看专属计划</button>
+    </div>`;
+  } else if (tier === 'trial') {
+    const trialEndedAt = entitlement.trialEndedAt;
+    let daysLeft = 0;
+    if (trialEndedAt) {
+      const end = new Date(trialEndedAt);
+      const now = new Date();
+      daysLeft = Math.max(0, Math.ceil((end - now) / (1000 * 60 * 60 * 24)));
+    }
+    html = `<div class="metric-card" style="background:#fff7ed;border-color:#fdba74;">
+      <span class="muted">权益状态</span>
+      <strong style="color:#9a3412;font-size:15px;">新人 7 天体验中</strong>
+      <span class="muted" style="font-size:12px;">剩余 ${daysLeft} 天 · 体验到期后将降级为免费</span>
+      <a href="/store" class="button" style="margin-top:8px;font-size:12px;padding:4px 14px;display:inline-block;text-decoration:none;" data-action="go-store">升级解锁全部课程</a>
+    </div>`;
+  } else {
+    html = `<div class="metric-card" style="background:#f8fafc;border-color:#cbd5e1;">
+      <span class="muted">权益状态</span>
+      <strong style="color:#334155;font-size:15px;">免费用户</strong>
+      <span class="muted" style="font-size:12px;">升级解锁全部课程与专属计划</span>
+      <a href="/store" class="button" style="margin-top:8px;font-size:12px;padding:4px 14px;display:inline-block;text-decoration:none;" data-action="go-store">去升级</a>
+    </div>`;
+  }
+
+  area.innerHTML = html;
 }
 
 function renderNextAction() {
