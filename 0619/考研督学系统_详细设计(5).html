@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>考研督学系统 - 详细设计方案</title>
+<style>
+  body { margin: 0; padding: 0; background: #f5f5f7; font-family: system-ui, -apple-system, sans-serif; color: #333; }
+  .container { max-width: 820px; margin: 0 auto; padding: 20px; }
+  .hero { background: linear-gradient(135deg, #1D4E89, #2E75B6); color: white; border-radius: 20px; padding: 40px; margin-bottom: 30px; text-align: center; }
+  .hero h1 { font-size: 32px; margin: 0 0 8px 0; }
+  .hero p { font-size: 16px; opacity: 0.9; margin: 0; }
+  .section { background: white; border-radius: 16px; padding: 30px; margin-bottom: 24px; box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
+  .section h2 { font-size: 22px; color: #1D4E89; margin: 0 0 8px 0; border-left: 4px solid #1D4E89; padding-left: 14px; }
+  .section h3 { font-size: 17px; color: #2E75B6; margin: 24px 0 10px 0; }
+  .section h4 { font-size: 15px; color: #444; margin: 16px 0 8px 0; }
+  .section p, .section li { font-size: 14px; line-height: 1.8; color: #555; }
+  .section ul, .section ol { padding-left: 20px; }
+  .section li { margin-bottom: 4px; }
+  .highlight { background: #EEEDFE; border-left: 3px solid #534AB7; padding: 12px 16px; border-radius: 8px; margin: 12px 0; font-size: 14px; line-height: 1.7; }
+  .highlight strong { color: #3C3489; }
+  .tag { display: inline-block; padding: 2px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; margin-right: 6px; }
+  .tag-free { background: #E1F5EE; color: #0F6E56; }
+  .tag-paid { background: #FAECE7; color: #993C1D; }
+  .tag-trial { background: #FAEEDA; color: #854F0B; }
+  .tag-bot { background: #E6F1FB; color: #185FA5; }
+  .flow-box { background: #F8F9FA; border: 1px solid #E0E0E0; border-radius: 10px; padding: 16px; margin: 12px 0; }
+  .flow-box .step { display: inline-block; background: #1D4E89; color: white; border-radius: 50%; width: 24px; height: 24px; text-align: center; line-height: 24px; font-size: 12px; font-weight: bold; margin-right: 8px; }
+  .flow-box .arrow { color: #999; margin: 0 8px; font-size: 18px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }
+  th { background: #EEEDFE; color: #3C3489; padding: 10px 14px; text-align: left; font-weight: 600; border: 1px solid #D3D1C7; }
+  td { padding: 10px 14px; border: 1px solid #D3D1C7; }
+  tr:nth-child(even) { background: #FAFAFA; }
+  @media print { body { background: white; } .section { break-inside: avoid; box-shadow: none; border: 1px solid #ddd; } .hero { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="hero">
+  <h1>考研督学系统 · 详细设计方案</h1>
+  <p>产品设计思路 · 交互逻辑 · 技术建议 · 数据流转</p>
+</div>
+
+<!-- ===== 1. 整体架构思路 ===== -->
+<div class="section">
+  <h2>一、整体设计理念</h2>
+  <p>这个系统的核心逻辑是 <strong>"三层漏斗 + 三端协同 + AI驱动"</strong>：</p>
+  <div class="highlight">
+    <strong>三层漏斗：</strong>免费学员 → 7天体验 → 付费学员，每一层都有明确的价值输出和转化节点<br>
+    <strong>三端协同：</strong>小程序（学生学习） + 后台（老师管理） + 企业微信（机器人服务），数据统一互通<br>
+    <strong>AI驱动：</strong>大模型贯穿所有机器人，预设知识库 + AI搜索双保险，减少人工成本
+  </div>
+  <p>从商业角度看，这套体系实现了完整的闭环：<strong>免费引流 → 体验转化 → 付费服务 → 口碑裂变</strong>。</p>
+</div>
+
+<!-- ===== 2. 小程序端 ===== -->
+<div class="section">
+  <h2>二、小程序端核心模块详解</h2>
+
+  <h3>2.1 直播授课</h3>
+  <p><strong>设计思路：</strong>小程序内直播是主方案，使用微信的 <code>live-pusher</code>（推流）和 <code>live-player</code>（拉流）组件。视频号作为辅助方案，适合公开引流课。</p>
+  <div class="highlight">
+    <strong>老师端流程：</strong>创建直播 → 设置标题/时间/科目 → 开播 → 共享课件/白板 → 互动（连麦/聊天） → 结束 → 自动生成回放<br>
+    <strong>学生端流程：</strong>收到开播提醒 → 进入直播间 → 观看/听讲 → 聊天互动/提问 → 结束后可看回放
+  </div>
+
+  <h3>2.2 录播课程</h3>
+  <p><strong>设计思路：</strong>双重来源设计。直播结束后系统自动切片生成回放，同时老师也可以在后台手动上传录播视频（MP4格式）。课程采用<strong>章节制</strong>，每章可独立上传视频和讲义文档。</p>
+  <p><strong>试看机制：</strong>支持设置前N节免费试看（免费学员可见），后续章节仅付费学员可见。这是转化的重要手段。</p>
+
+  <h3>2.3 课程分类</h3>
+  <p>课程分为两大维度：</p>
+  <table>
+    <tr><th>分类</th><th>说明</th><th>管理方式</th></tr>
+    <tr><td><strong>公共课</strong></td><td>政治、英语（一/二）、数学（一/二/三）</td><td>统一管理，所有学生可见</td></tr>
+    <tr><td><strong>专业课</strong></td><td>按专业方向划分（如计算机、金融、法律等）</td><td>后台可增删专业方向目录，学生按方向查看</td></tr>
+  </table>
+
+  <h3>2.4 题库系统 — 三种刷题模式</h3>
+  <p><strong>核心交互逻辑：</strong>每科采用最适合的刷题形式：</p>
+
+  <h4>政治刷题（选择题）：</h4>
+  <div class="flow-box">
+    显示题目 + A/B/C/D选项 → 学生选择答案 → 出示正确答案 + <strong>详细讲解</strong> → 自动记录对错<br>
+    <span style="font-size:12px;color:#999;">讲解内容来自老师预设的知识库或后台维护的真题解析</span>
+  </div>
+
+  <h4>英语背单词：</h4>
+  <div class="flow-box">
+    显示英文单词 + 音标 → 显示4个中文意思选项（1正确+3干扰） → 学生选择 → 出示正确答案 → 加入生词本/已掌握词库
+  </div>
+
+  <h4>数学公式匹配：</h4>
+  <div class="flow-box">
+    显示公式左边（如 sin²x + cos²x） → 显示4个右边选项 → 学生选择匹配 → 出示正确答案
+  </div>
+  <p><strong>数据价值：</strong>每次刷题都会记录学生的对错，这些数据会同步给<strong>全程规划老师</strong>和<strong>错题本</strong>，形成学习画像。</p>
+
+  <h3>2.5 错题本</h3>
+  <p>自动收集学生在刷题和自测中做错的题目，按科目分类展示。学生可以：按科目筛选查看、反复练习错题、标记"已掌握"移出错题本。</p>
+  <div class="highlight"><strong>设计价值：</strong>错题本是学生端的核心学习工具，也是全程规划老师判断"哪些还不会"的重要数据来源。</div>
+
+  <h3>2.6 论坛社区 + AI审核</h3>
+  <p>学生可以在论坛发帖求助（如"这道高数题怎么解"），老师可以发帖答疑或发布重要通知。所有帖子在发布前经过<strong>AI自动审核</strong>，检测敏感词和违规内容，通过后自动发布。</p>
+
+  <h3>2.7 用户权益边界</h3>
+  <table>
+    <tr><th>功能</th><th><span class="tag tag-free">免费</span></th><th><span class="tag tag-trial">7天体验</span></th><th><span class="tag tag-paid">付费</span></th></tr>
+    <tr><td>题库刷题</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>免费学习板块</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>免费答疑机器人</td><td>✅</td><td>✅</td><td>✅</td></tr>
+    <tr><td>录播课程/直播</td><td>仅试看</td><td>全部</td><td>全部</td></tr>
+    <tr><td>付费学员专区</td><td>❌</td><td>✅ 限时</td><td>✅</td></tr>
+    <tr><td>5大机器人群服务</td><td>❌</td><td>✅ 限时</td><td>✅</td></tr>
+    <tr><td>专属每日学习计划</td><td>❌</td><td>✅ 限时</td><td>✅</td></tr>
+  </table>
+</div>
+
+<!-- ===== 3. 后台端 ===== -->
+<div class="section">
+  <h2>三、后台管理系统核心模块详解</h2>
+
+  <h3>3.1 数据看板</h3>
+  <p>登录后台首先看到的就是数据看板，集中展示核心指标：</p>
+  <ul>
+    <li><strong>学员数据：</strong>总学员数、免费/付费占比、新增注册趋势（日/周/月）</li>
+    <li><strong>活跃度：</strong>日活（DAU）、周活、月活、平均学习时长</li>
+    <li><strong>课程数据：</strong>课程总数、总播放量、完课率</li>
+    <li><strong>营收数据：</strong>付费学员数、收入趋势、单科vs全科购买比例</li>
+    <li><strong>机器人数据：</strong>总对话量、响应率、未解决问题数（需人工介入）</li>
+  </ul>
+
+  <h3>3.2 内容管理 — 同步机制</h3>
+  <div class="highlight">
+    <strong>关键设计：后台发什么，小程序就显示什么。</strong><br>
+    后台新增课程 → 保存到数据库（标记状态"已发布"） → 小程序端拉取数据时自动获取 → 显示在课程列表<br>
+    后台修改/下架课程 → 更新数据库状态 → 小程序端同步更新/隐藏
+  </div>
+  <p>这种设计的好处是：<strong>老师不需要任何技术操作</strong>，在后台点一下发布，学生端就立刻能看到。</p>
+
+  <h3>3.3 学员管理 — 一对一复习计划</h3>
+  <p>这是整个系统最具价值的核心功能之一。每个付费学员都可以单独上传复习计划：</p>
+  <div class="flow-box">
+    学员列表 → 点击某个学员 → 进入详情页 → 查看基本信息（姓名/电话/毕业院校/目标院校/当前进度） → 上传/编辑该学员的复习计划
+  </div>
+  <p>复习计划支持按<strong>时间分段</strong>设置（如8:00-9:00背单词、10:00-12:00高数），这些时段会同步给<strong>督学机器人</strong>，实现到点自动提醒。</p>
+
+  <h3>3.4 知识库/语料库 — AI的大脑</h3>
+  <p>这是所有机器人智能回复的<strong>知识底座</strong>。老师在这里上传和管理的资料，会被AI用来回答学生问题。</p>
+  <div class="highlight">
+    <strong>工作原理（RAG 检索增强生成）：</strong><br>
+    学生提问 → AI先在知识库中搜索最匹配的内容 → 如果找到 → 用预设内容回答（准确可控）<br>
+    如果没找到 → AI使用大模型自身能力 + 联网搜索 → 生成回答<br>
+    <strong>优势：</strong>常见问题用预设答案（精准），新问题用AI搜索（全面），两者互补
+  </div>
+  <p><strong>可以上传的内容：</strong>考研政策文件、院校分数线汇总、常见问题FAQ、真题解析、课程讲义等。支持PDF、Word、TXT等格式。</p>
+
+  <h3>3.5 消息模板管理</h3>
+  <p>督学机器人每天发什么消息、什么格式，由这里定义：</p>
+  <table>
+    <tr><th>时间点</th><th>模板示例</th><th>说明</th></tr>
+    <tr><td>8:00 计划推送</td><td>「早安{姓名}！今日学习计划：\n{时段1}：{科目}\n{时段2}：{科目}\n...」</td><td>插入变量，自动填入学生信息</td></tr>
+    <tr><td>到点提醒</td><td>「{姓名}同学，{时间}了，该学{科目}啦！点击查看详情」</td><td>根据学生个人计划自动触发</td></tr>
+    <tr><td>22:00 检查</td><td>「{姓名}同学，今天的任务完成了吗？\n✅ {时段1}：{状态}\n❌ {时段2}：{状态}\n请回复完成情况～」</td><td>学生回复后自动存档</td></tr>
+  </table>
+
+  <h3>3.6 机器人管理</h3>
+  <p>管理所有机器人的地方，包含：</p>
+  <ul>
+    <li><strong>免费答疑机器人：</strong>配置可回答的问题范围、预设答案</li>
+    <li><strong>付费机器人管理：</strong>哪些机器人入群（可选督学/解答/择校/自测/规划），新建/移除机器人</li>
+    <li><strong>对话记录：</strong>查看所有学生与机器人的对话历史，支持按学生/时间/机器人筛选</li>
+    <li><strong>预留扩展：</strong>这里保留了"新建机器人"入口，后续可以按需添加（如政治答疑机器人、专业课机器人等）</li>
+  </ul>
+</div>
+
+<!-- ===== 4. 企业微信机器人 ===== -->
+<div class="section">
+  <h2>四、企业微信机器人体系详解</h2>
+
+  <h3>4.1 自动拉群完整流程</h3>
+  <div class="flow-box">
+    <span class="step">1</span> 学生付费报名成功<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">2</span> 系统通过企业微信API自动创建群聊「{学生姓名}·考研专属服务群」<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">3</span> 自动邀请：学生本人 + 指定老师（1-多位） + 指定机器人入群<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">4</span> 机器人自动发送欢迎消息，并开始采集学员信息<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">5</span> AI提取关键信息 → 自动归档到后台学员档案
+  </div>
+
+  <h3>4.2 督学机器人 — 一天的时间线</h3>
+  <table>
+    <tr><th>时间</th><th>触发条件</th><th>行为</th><th>说明</th></tr>
+    <tr><td>08:00</td><td>定时任务</td><td>推送当日分段学习计划</td><td>内容来自后台设置的该学员个人计划</td></tr>
+    <tr><td>各时段到点</td><td>计时器匹配计划时段</td><td>私信提醒「该学XX科目了」</td><td>如计划中10:00-12:00是高数，10:00发提醒</td></tr>
+    <tr><td>22:00</td><td>定时任务</td><td>私信检查各时段完成情况</td><td>列出当日所有时段，问完成了吗</td></tr>
+    <tr><td>学生回复后</td><td>收到消息</td><td>识别完成/未完成 → 自动更新存档表格</td><td>表格在后台可查看（学员管理内）</td></tr>
+  </table>
+
+  <h3>4.3 解答机器人 — 三层应答机制</h3>
+  <p>这是AI能力体现最充分的地方，采用三层递进策略：</p>
+  <div class="highlight">
+    <strong>第一层 — 预设答案库（精准匹配）：</strong><br>
+    老师提前在知识库中上传的常见问题及答案（如"考研报名时间是什么时候"）。命中率最高，回答最准确。<br><br>
+    <strong>第二层 — AI生成回答（大模型理解）：</strong><br>
+    如果知识库没有直接匹配，大模型基于自身知识理解问题，生成回答。适合一般性考研问题。<br><br>
+    <strong>第三层 — AI联网搜索（实时信息）：</strong><br>
+    如果问题涉及最新政策、实时信息（如"今年XX大学分数线"），AI自动联网搜索获取最新资讯后回答。
+  </div>
+  <p><strong>支持的输入形式：</strong>文字、语音（转文字）、图片（OCR识别文字）、文档（PDF/Word提取内容）。</p>
+
+  <h3>4.4 全程规划老师 — 数据整合与决策</h3>
+  <p>这个机器人是整个系统的<strong>智能大脑</strong>，整合多方数据做出判断：</p>
+  <div class="flow-box">
+    <strong>输入数据来源：</strong><br>
+    ① 老师预设的复习路线（初始方案）<br>
+    ② 自测老师的测试结果（每半个月）<br>
+    ③ 督学机器人的完成情况（每天）<br>
+    ④ 解答机器人的问答记录（随时）<br>
+    ⑤ 刷题正确率（小程序端）<br><br>
+    <strong>输出：</strong><br>
+    ✅ 哪些知识点已经掌握了<br>
+    ❌ 哪些知识点还不会（薄弱环节）<br>
+    📈 建议调整的复习计划
+  </div>
+  <div class="highlight">
+    <strong>我的建议：</strong>这个机器人可以做一个"学情周报"，每周自动生成一份学生的学习报告，同步给老师和学生。内容包括本周学习时长、各科掌握度、薄弱知识点、下周建议等。
+  </div>
+
+  <h3>4.5 自测老师 — 出卷与监督机制</h3>
+  <p>自测老师每半个月（可自定义周期）自动触发一次：</p>
+  <div class="flow-box">
+    <span class="step">1</span> AI根据该学生的<strong>近期学习内容</strong>生成自测试卷（而非从题库随机抽题）<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">2</span> 在群内推送自测链接/试卷 → 学生在线答题<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">3</span> 系统自动批改客观题（AI可辅助批改主观题）<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">4</span> 生成成绩报告 → 同步给全程规划老师<br>
+    <span class="arrow">↓</span><br>
+    <span class="step">5</span> 未按时提交 → 自动提醒 → 超过N天未交 → 通知老师人工跟进
+  </div>
+
+  <h3>4.6 免费答疑机器人 — 转化引擎</h3>
+  <p>这是免费学员到付费学员的<strong>关键转化节点</strong>。设计上需要特别注意：</p>
+  <ul>
+    <li><strong>回答范围限制：</strong>只能回答考研基础问题（政策、科目、流程），深度问题引导报班</li>
+    <li><strong>转化话术：</strong>回答中适当植入"这个问题在付费课程中有详细讲解"、"我们的付费学员可以享受一对一解答"等引导</li>
+    <li><strong>客服转接：</strong>如果学生表现出明确意向（如问价格、问课程），自动转接人工客服</li>
+  </ul>
+</div>
+
+<!-- ===== 5. 数据流 ===== -->
+<div class="section">
+  <h2>五、数据流与系统架构建议</h2>
+
+  <h3>5.1 核心数据表关系（建议）</h3>
+  <table>
+    <tr><th>数据表</th><th>关联关系</th><th>说明</th></tr>
+    <tr><td>用户表</td><td>→ 学员信息、权益等级（免费/体验/付费）</td><td>核心用户数据</td></tr>
+    <tr><td>课程表</td><td>→ 章节表 → 视频/资料表</td><td>课程内容层级</td></tr>
+    <tr><td>题库表</td><td>→ 题目表 → 选项表</td><td>支持三种题型模式</td></tr>
+    <tr><td>学习计划表</td><td>→ 计划时段表 → 完成记录表</td><td>一对一计划存储</td></tr>
+    <tr><td>对话记录表</td><td>→ 消息表 → 知识库匹配记录</td><td>机器人对话日志</td></tr>
+    <tr><td>自测记录表</td><td>→ 自测题目表 → 答题记录表</td><td>自测数据</td></tr>
+    <tr><td>机器人配置表</td><td>→ 机器人-群关联表</td><td>机器人管理</td></tr>
+  </table>
+
+  <h3>5.2 技术架构建议</h3>
+  <div class="highlight">
+    <strong>前端：</strong>小程序端使用微信原生 + WXML/WXSS；后台使用 Vue/React（PC端适配）<br>
+    <strong>后端：</strong>建议使用 Node.js（NestJS）或 Python（FastAPI）作为API服务<br>
+    <strong>数据库：</strong>MySQL/PostgreSQL（核心业务数据）+ Redis（缓存/队列）<br>
+    <strong>AI能力：</strong>接入大模型API（如通义千问/文心一言/DeepSeek）+ Embedding模型实现知识库匹配<br>
+    <strong>企业微信集成：</strong>使用企微官方API（通讯录管理+群机器人+消息推送）<br>
+    <strong>文件存储：</strong>视频/资料使用对象存储（OSS/COS）<br>
+    <strong>云服务：</strong>推荐腾讯云（与微信生态集成最佳）
+  </div>
+
+  <h3>5.3 关键数据闭环</h3>
+  <div class="flow-box">
+    <strong>学生学习闭环：</strong><br>
+    看课/刷题 → 产生学习数据 → 督学机器人记录完成情况 → 自测老师验证掌握度 → 全程规划老师分析→ 调整学习计划 → 回到看课/刷题<br><br>
+    <strong>老师管理闭环：</strong><br>
+    预设计划 → 学生在群内收到计划 → 完成并反馈 → 后台查看完成情况 → 根据数据调整下一阶段计划<br><br>
+    <strong>商业闭环：</strong><br>
+    免费学员使用刷题+答疑 → 体验专业度 → 7天体验感受全部功能 → 付费报名 → 获得一对一服务 → 口碑传播（创业板块博主）→ 带来新免费学员
+  </div>
+</div>
+
+<!-- ===== 6. 我的设计建议 ===== -->
+<div class="section">
+  <h2>六、我的设计建议与优先级</h2>
+
+  <h3>6.1 分期实施建议</h3>
+  <p>考虑到开发资源，建议分三期推进：</p>
+
+  <h4>第一期（MVP — 核心闭环打通）</h4>
+  <div class="highlight">
+    <strong>目标：</strong>完成基础教学+付费+辅学闭环<br>
+    <strong>包含：</strong>①直播授课 ②录播课程 ③课程分类 ④题库系统（政治选择题模式）<br>
+    ⑤基础学员管理 ⑥后台内容管理 ⑦简易付费功能<br>
+    <strong>预计：</strong>2-3个月
+  </div>
+
+  <h4>第二期（AI智能服务上线）</h4>
+  <div class="highlight">
+    <strong>目标：</strong>企业微信机器人和AI能力全面接入<br>
+    <strong>包含：</strong>⑧免费答疑机器人 ⑨自动拉群 ⑩督学机器人 ⑪消息模板<br>
+    ⑫知识库管理 ⑬后台数据看板 ⑭角色权限<br>
+    <strong>预计：</strong>+1.5-2个月
+  </div>
+
+  <h4>第三期（深度智能与扩展）</h4>
+  <div class="highlight">
+    <strong>目标：</strong>全功能上线，智能分析驱动业务<br>
+    <strong>包含：</strong>⑮全程规划老师 ⑯自测老师 ⑰解答机器人 ⑱择校机器人<br>
+    ⑲错题本 ⑳论坛社区 ㉑创业板块 ㉒个性化复习计划定制<br>
+    <strong>预计：</strong>+2个月
+  </div>
+
+  <h3>6.2 几个关键设计要点</h3>
+  <ul>
+    <li><strong>数据打通是根基：</strong>三端必须共享同一套数据，否则机器人的判断会失准。这一点在架构设计时就要定好。</li>
+    <li><strong>知识库先行：</strong>AI机器人的效果好坏，70%取决于知识库的质量。建议在开发同时就组织老师整理常见问题和答案。</li>
+    <li><strong>消息模板灵活化：</strong>不要写死在代码里，让运营人员可以在后台随时调整话术，应对不同的营销策略。</li>
+    <li><strong>人机协作：</strong>机器人不是万能的，设计好"人工介入"的转接机制很重要。老师在群内可以随时接管对话。</li>
+    <li><strong>数据看板驱动决策：</strong>从第一天就要埋好数据点，后期才能做数据分析和智能优化。</li>
+  </ul>
+
+  <div style="text-align:center;color:#999;font-size:12px;margin-top:20px;border-top:1px solid #eee;padding-top:20px;">
+    考研督学系统 · 详细设计方案 V1.0
+  </div>
+</div>
+
+</div>
+</body>
+</html>
