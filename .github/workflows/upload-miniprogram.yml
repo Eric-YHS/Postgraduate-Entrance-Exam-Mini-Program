@@ -30,8 +30,8 @@ jobs:
         env:
           WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
         run: |
-          install -m 600 /dev/null private.wxdf85f0647253bb13.key
-          printf '%s\n' "$WECHAT_PRIVATE_KEY" > private.wxdf85f0647253bb13.key
+          install -m 600 /dev/null private.wx27fca32a9ddfdc8e.key
+          printf '%s\n' "$WECHAT_PRIVATE_KEY" > private.wx27fca32a9ddfdc8e.key
 
       - name: Upload MiniProgram
         run: |
@@ -39,4 +39,4 @@ jobs:
 
       - name: Remove private key
         if: always()
-        run: rm -f private.wxdf85f0647253bb13.key
+        run: rm -f private.wx27fca32a9ddfdc8e.key

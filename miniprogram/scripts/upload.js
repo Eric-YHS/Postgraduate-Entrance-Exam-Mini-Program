@@ -2,7 +2,7 @@ const ci = require('miniprogram-ci');
 const path = require('path');
 const fs = require('fs');
 
-const APPID = 'wxdf85f0647253bb13';
+const APPID = 'wx27fca32a9ddfdc8e';
 const PROJECT_ROOT = path.resolve(__dirname, '..');
 const PRIVATE_KEY_PATH = path.join(PROJECT_ROOT, `private.${APPID}.key`);
 
