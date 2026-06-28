@@ -41,6 +41,5 @@
   },
   "sitemapLocation": "sitemap.json",
   "lazyCodeLoading": "requiredComponents",
-  "requiredBackgroundModes": ["audio"],
-  "__ci_deployed_at": "2026-06-28"
+  "requiredBackgroundModes": ["audio"]
 }
