@@ -30,7 +30,8 @@ jobs:
         env:
           WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
         run: |
-          echo "$WECHAT_PRIVATE_KEY" > private.wxdf85f0647253bb13.key
+          install -m 600 /dev/null private.wxdf85f0647253bb13.key
+          printf '%s\n' "$WECHAT_PRIVATE_KEY" > private.wxdf85f0647253bb13.key
 
       - name: Upload MiniProgram
         run: |
