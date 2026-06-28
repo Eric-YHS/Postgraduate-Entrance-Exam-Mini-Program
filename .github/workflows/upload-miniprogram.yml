@@ -1,0 +1,41 @@
+name: Upload MiniProgram
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'miniprogram/**'
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./miniprogram
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: './miniprogram/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write WeChat private key
+        env:
+          WECHAT_PRIVATE_KEY: ${{ secrets.WECHAT_PRIVATE_KEY }}
+        run: |
+          echo "$WECHAT_PRIVATE_KEY" > private.wxdf85f0647253bb13.key
+
+      - name: Upload MiniProgram
+        run: |
+          npm run upload ${{ github.run_number }} "CI 自动上传 ${{ github.sha }}"
+
+      - name: Remove private key
+        if: always()
+        run: rm -f private.wxdf85f0647253bb13.key

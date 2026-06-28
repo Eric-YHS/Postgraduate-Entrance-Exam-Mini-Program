@@ -26,3 +26,6 @@ build/
 
 # 测试覆盖率
 coverage/
+
+# 微信小程序上传私钥（绝不要提交到仓库）
+private.*.key
