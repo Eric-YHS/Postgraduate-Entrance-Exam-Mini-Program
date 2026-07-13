@@ -159,27 +159,3 @@
   color: var(--text-secondary);
 }
 
-.playlist-video__tag {
-  padding: 2rpx 10rpx;
-  border-radius: 6rpx;
-  font-size: 20rpx;
-}
-
-.playlist-video__tag--locked {
-  color: var(--text-tertiary);
-  background: var(--bg-gray);
-}
-
-.playlist-video--locked {
-  opacity: 0.6;
-}
-
-.trial-hint {
-  margin-top: 12rpx;
-  padding: 12rpx 16rpx;
-  font-size: 24rpx;
-  color: var(--warning);
-  background: #FAEEDA;
-  border-radius: 8rpx;
-}
-

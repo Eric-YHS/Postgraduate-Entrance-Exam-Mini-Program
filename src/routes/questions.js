@@ -3,7 +3,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerQuestionRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, requireAdmin, safeJsonParse, toPublicPath, questionUpload, taskImportUpload, serializeQuestionForTeacher, serializeQuestionForStudent, updateStudyStreak, checkAndUnlockAchievements, readWorkbookRows, getFieldValue, stripHtml, canAccessContent } = shared;
+  const { db, config, requireAuth, requireStudent, requireTeacher, requireAdmin, safeJsonParse, toPublicPath, questionUpload, taskImportUpload, serializeQuestionForTeacher, serializeQuestionForStudent, updateStudyStreak, checkAndUnlockAchievements, readWorkbookRows, getFieldValue, stripHtml, canAccessContent } = shared;
 
   function questionIsAccessible(userId, question) {
     if (!question.is_paid_only) return true;
@@ -113,7 +113,9 @@ module.exports = function registerQuestionRoutes(app, shared) {
         return;
       }
 
-      const isPaidOnly = request.body.isPaidOnly === true || request.body.isPaidOnly === '1' || request.body.isPaidOnly === 1 ? 1 : 0;
+      const isPaidOnly = config.freeAccessMode
+        ? 0
+        : (request.body.isPaidOnly === true || request.body.isPaidOnly === '1' || request.body.isPaidOnly === 1 ? 1 : 0);
 
       const displayMode = sanitizeText(request.body.displayMode || 'radio');
       const sourceYear = Number(request.body.sourceYear || 0) || null;
@@ -131,7 +133,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
             analysis_video_path, analysis_video_url, is_paid_only, subject_scope,
             display_mode, formula_image_path, source_year, source_paper, difficulty, is_real_exam,
             created_by, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         title,
@@ -145,7 +147,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
         request.file ? toPublicPath(request.file.path) : '',
         String(request.body.analysisVideoUrl || '').trim(),
         isPaidOnly,
-        sanitizeText(request.body.subjectScope || ''),
+        config.freeAccessMode ? '' : sanitizeText(request.body.subjectScope || ''),
         displayMode,
         formulaImagePath,
         sourceYear,

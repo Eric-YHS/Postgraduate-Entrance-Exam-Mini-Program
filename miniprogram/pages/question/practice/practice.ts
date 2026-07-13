@@ -12,6 +12,43 @@ interface QuestionFilters {
   difficulty?: number | '';
 }
 
+type DisplayQuestionOption = QuestionOption & {
+  className: string;
+  isCorrect: boolean;
+  isWrong: boolean;
+};
+
+type DisplayQuestion = Omit<Question, 'options'> & {
+  difficultyText: string;
+  options: DisplayQuestionOption[];
+};
+
+function getDifficultyText(level?: number): string {
+  if (!level) return '';
+  return '★'.repeat(level) + '☆'.repeat(5 - level);
+}
+
+function buildDisplayQuestion(question: Question, selectedOption: string, hasAnswered: boolean): DisplayQuestion {
+  return {
+    ...question,
+    difficultyText: getDifficultyText(question.difficulty),
+    options: question.options.map((option) => {
+      const isCorrect = hasAnswered && option.label === question.correctOption;
+      const isWrong = hasAnswered && option.label === selectedOption && option.label !== question.correctOption;
+      const isSelected = option.label === selectedOption && !hasAnswered;
+      const className = [
+        isCorrect ? 'option-item--correct' : '',
+        isWrong ? 'option-item--wrong' : '',
+        isSelected ? 'option-item--selected' : '',
+        hasAnswered ? 'option-item--disabled' : '',
+      ]
+        .filter(Boolean)
+        .join(' ');
+      return { ...option, className, isCorrect, isWrong };
+    }),
+  };
+}
+
 Page({
   data: {
     title: '刷题练习',
@@ -20,7 +57,7 @@ Page({
     focusId: '',
     questions: [] as Question[],
     currentIndex: 0,
-    currentQuestion: null as Question | null,
+    currentQuestion: null as DisplayQuestion | null,
     selectedOption: '',
     hasAnswered: false,
     isCorrect: false,
@@ -127,7 +164,7 @@ Page({
       this.setData({
         questions: res.list,
         currentIndex,
-        currentQuestion: res.list[currentIndex],
+        currentQuestion: buildDisplayQuestion(res.list[currentIndex], '', false),
         total: res.list.length,
         progress: Math.round(((currentIndex + 1) / res.list.length) * 100),
         loading: false,
@@ -146,7 +183,11 @@ Page({
     if (this.data.hasAnswered) return;
 
     const { label } = e.currentTarget.dataset;
-    this.setData({ selectedOption: label });
+    const question = this.data.questions[this.data.currentIndex];
+    this.setData({
+      selectedOption: label,
+      currentQuestion: question ? buildDisplayQuestion(question, label, false) : null,
+    });
   },
 
   async onSubmit() {
@@ -159,6 +200,7 @@ Page({
         hasAnswered: true,
         isCorrect: result.isCorrect,
         aiExplanation: '',
+        currentQuestion: buildDisplayQuestion(this.data.questions[this.data.currentIndex], selectedOption, true),
       });
     } catch (err) {
       console.error('[Practice] 提交答案失败', err);
@@ -196,7 +238,7 @@ Page({
 
     this.setData({
       currentIndex: nextIndex,
-      currentQuestion: questions[nextIndex],
+      currentQuestion: buildDisplayQuestion(questions[nextIndex], '', false),
       selectedOption: '',
       hasAnswered: false,
       isCorrect: false,
@@ -233,20 +275,4 @@ Page({
     this.loadQuestions();
   },
 
-  getDifficultyText(level?: number): string {
-    if (!level) return '';
-    return '★'.repeat(level) + '☆'.repeat(5 - level);
-  },
-
-  isCorrectOption(option: QuestionOption): boolean {
-    return option.label === this.data.currentQuestion?.correctOption;
-  },
-
-  isWrongOption(option: QuestionOption): boolean {
-    return (
-      this.data.hasAnswered &&
-      option.label === this.data.selectedOption &&
-      option.label !== this.data.currentQuestion?.correctOption
-    );
-  },
 });

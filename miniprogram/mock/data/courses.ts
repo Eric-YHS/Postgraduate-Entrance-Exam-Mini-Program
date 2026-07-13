@@ -3,91 +3,73 @@ import type { CourseSummary, CourseDetail, CourseCategoryGroup } from '../../typ
 export const mockCourseSummaries: CourseSummary[] = [
   {
     id: 'course_001',
-    title: '2026 考研政治全程班',
+    title: '2026 考研政治公开课',
     coverUrl: '/assets/images/cover-placeholder-1.svg',
     subject: 'politics',
     category: 'public',
     teacherName: '张老师',
-    price: 19900,
-    originalPrice: 29900,
-    isFree: false,
-    trialCount: 2,
-    chapterCount: 24,
+    isFree: true,
+    chapterCount: 5,
     status: 'published',
     createdAt: '2026-01-01T00:00:00.000Z',
   },
   {
     id: 'course_002',
-    title: '2026 考研英语一精讲',
+    title: '2026 考研英语一学习专题',
     coverUrl: '/assets/images/cover-placeholder-2.svg',
     subject: 'english',
     category: 'public',
     teacherName: '李老师',
-    price: 15900,
-    originalPrice: 25900,
-    isFree: false,
-    trialCount: 3,
-    chapterCount: 30,
+    isFree: true,
+    chapterCount: 2,
     status: 'published',
     createdAt: '2026-01-02T00:00:00.000Z',
   },
   {
     id: 'course_003',
-    title: '考研数学公式速记课',
+    title: '考研数学公式学习专题',
     coverUrl: '/assets/images/cover-placeholder-3.svg',
     subject: 'math',
     category: 'public',
     teacherName: '王老师',
-    price: 0,
-    originalPrice: 9900,
     isFree: true,
-    trialCount: 0,
-    chapterCount: 12,
+    chapterCount: 2,
     status: 'published',
     createdAt: '2026-01-03T00:00:00.000Z',
   },
   {
     id: 'course_004',
-    title: '计算机专业课定向辅导',
+    title: '计算机专业课学习专题',
     coverUrl: '/assets/images/cover-placeholder-4.svg',
     major: 'computer',
     category: 'professional',
     teacherName: '陈老师',
-    price: 29900,
-    originalPrice: 39900,
-    isFree: false,
-    trialCount: 1,
-    chapterCount: 40,
+    isFree: true,
+    chapterCount: 2,
     status: 'published',
     createdAt: '2026-01-04T00:00:00.000Z',
   },
   {
     id: 'course_005',
-    title: '金融专硕专业课精讲',
+    title: '金融专硕知识专题',
     coverUrl: '/assets/images/cover-placeholder-5.svg',
     major: 'finance',
     category: 'professional',
     teacherName: '刘老师',
-    price: 25900,
-    originalPrice: 35900,
-    isFree: false,
-    trialCount: 1,
-    chapterCount: 32,
+    isFree: true,
+    chapterCount: 2,
     status: 'published',
     createdAt: '2026-01-05T00:00:00.000Z',
   },
   {
     id: 'course_006',
-    title: '法律硕士专业课系统班',
+    title: '法律硕士知识专题',
     coverUrl: '/assets/images/cover-placeholder-6.svg',
     major: 'law',
     category: 'professional',
     teacherName: '赵老师',
-    price: 27900,
-    originalPrice: 37900,
-    isFree: false,
-    trialCount: 1,
-    chapterCount: 36,
+    isFree: true,
+    chapterCount: 2,
     status: 'published',
     createdAt: '2026-01-06T00:00:00.000Z',
   },
@@ -96,8 +78,7 @@ export const mockCourseSummaries: CourseSummary[] = [
 export const mockCourseDetails: Record<string, CourseDetail> = {
   course_001: {
     ...mockCourseSummaries[0],
-    description: '本课程系统讲解考研政治马原、毛中特、史纲、思修四大模块，配套真题演练与押题冲刺。',
-    isPurchased: false,
+    description: '整理考研政治马原、毛中特、史纲、思修四大模块，配套真题练习与复习要点。',
     chapters: [
       {
         id: 'chapter_001',
@@ -110,8 +91,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1200,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: true,
-            trialDuration: 120,
             order: 1,
           },
           {
@@ -120,7 +99,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1500,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: true,
             order: 2,
           },
           {
@@ -129,7 +107,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1800,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 3,
           },
         ],
@@ -145,7 +122,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1600,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 1,
           },
           {
@@ -154,7 +130,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 2000,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 2,
           },
         ],
@@ -163,8 +138,7 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
   },
   course_002: {
     ...mockCourseSummaries[1],
-    description: '考研英语一阅读理解、完形填空、翻译、写作全题型精讲。',
-    isPurchased: false,
+    description: '整理考研英语一阅读理解、完形填空、翻译、写作等题型的学习方法。',
     chapters: [
       {
         id: 'chapter_003',
@@ -177,8 +151,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1300,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: true,
-            trialDuration: 120,
             order: 1,
           },
           {
@@ -187,7 +159,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1400,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 2,
           },
         ],
@@ -197,7 +168,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
   course_003: {
     ...mockCourseSummaries[2],
     description: '汇总考研数学核心公式，配套推导与应用例题。',
-    isPurchased: true,
     chapters: [
       {
         id: 'chapter_004',
@@ -210,7 +180,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 900,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 1,
           },
           {
@@ -219,7 +188,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 800,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 2,
           },
         ],
@@ -228,8 +196,7 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
   },
   course_004: {
     ...mockCourseSummaries[3],
-    description: '针对计算机考研专业课的系统辅导，覆盖数据结构、操作系统、计算机网络等核心科目。',
-    isPurchased: false,
+    description: '围绕计算机考研专业课整理，覆盖数据结构、操作系统、计算机网络等核心科目。',
     chapters: [
       {
         id: 'chapter_005',
@@ -242,8 +209,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1500,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: true,
-            trialDuration: 120,
             order: 1,
           },
           {
@@ -252,7 +217,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1400,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 2,
           },
         ],
@@ -261,8 +225,7 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
   },
   course_005: {
     ...mockCourseSummaries[4],
-    description: '金融专硕考研专业课精讲，包括货币银行学、国际金融、投资学等内容。',
-    isPurchased: false,
+    description: '整理金融专硕考研专业课知识，包括货币银行学、国际金融、投资学等内容。',
     chapters: [
       {
         id: 'chapter_006',
@@ -275,8 +238,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1600,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: true,
-            trialDuration: 120,
             order: 1,
           },
           {
@@ -285,7 +246,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1500,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 2,
           },
         ],
@@ -294,8 +254,7 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
   },
   course_006: {
     ...mockCourseSummaries[5],
-    description: '法律硕士考研专业课系统班，涵盖法理学、宪法学、民法学、刑法学等核心课程。',
-    isPurchased: false,
+    description: '法律硕士考研专业课知识整理，涵盖法理学、宪法学、民法学、刑法学等核心内容。',
     chapters: [
       {
         id: 'chapter_007',
@@ -308,8 +267,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1700,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: true,
-            trialDuration: 120,
             order: 1,
           },
           {
@@ -318,7 +275,6 @@ export const mockCourseDetails: Record<string, CourseDetail> = {
             duration: 1600,
             videoUrl:
               'https://wxsnsdy.tc.qq.com/105/20210/snsdyvideodownload?filekey=30280201010421301f0201690402534804102ca905ce620b1241b726bc41dcff44e00204012882540400&bizid=1023&hy=SH&fileparam=302c020101042530230204136ffd93020457e3c4ff02024ef202031e8d7f02030f42400204045a320a0201000400',
-            isTrial: false,
             order: 2,
           },
         ],

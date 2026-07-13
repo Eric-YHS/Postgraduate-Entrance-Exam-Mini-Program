@@ -2,7 +2,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerLiveRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, broadcastToLive, safeJsonParse, liveRooms, canAccessContent, toPublicPath, uploadRootDir, cloudUpload } = shared;
+  const { db, config, requireAuth, requireStudent, requireTeacher, sanitizeUser, serializeLiveSession, broadcastToLiveRoom, broadcastToLive, safeJsonParse, liveRooms, canAccessContent, toPublicPath, uploadRootDir, cloudUpload } = shared;
 
   app.post('/api/live-sessions', requireTeacher, (request, response) => {
     const title = sanitizeText(request.body.title);
@@ -11,7 +11,7 @@ module.exports = function registerLiveRoutes(app, shared) {
       return;
     }
 
-    const visibility = String(request.body.visibility || 'free').trim();
+    const visibility = config.freeAccessMode ? 'free' : String(request.body.visibility || 'free').trim();
     const validVisibilities = ['free', 'preview', 'trial_paid', 'subject_paid', 'all_paid'];
     if (!validVisibilities.includes(visibility)) {
       response.status(400).json({ error: '无效的可见性类型。' });
@@ -131,13 +131,13 @@ module.exports = function registerLiveRoutes(app, shared) {
         session.title + ' 回放',
         session.description || '',
         session.subject || '',
-        session.visibility || 'free',
+        config.freeAccessMode ? 'free' : (session.visibility || 'free'),
         '',
         filePath,
         '',
         request.file ? request.file.size : 0,
         0,
-        0,
+        config.freeAccessMode ? 1 : 0,
         request.currentUser.id,
         now
       );

@@ -1,141 +1,184 @@
-const { getAgent, createTeacher, createStudent, createProduct, loginAs, db } = require('./helper');
+const { getAgent, createUser, createTeacher, createStudent, loginAs, db } = require('./helper');
+const config = require('../src/config');
+const { canAccessContent, getUserEntitlement, requireEntitlement } = require('../src/services/entitlements');
+const { handleMessage } = require('../src/services/bots/freeTutorBot');
 
-describe('权益体系', () => {
-  function setEntitlement(studentId, payload) {
+describe('免费访问模式', () => {
+  test('默认启用免费模式并使权益检查直接放行', () => {
+    expect(config.freeAccessMode).toBe(true);
+    expect(canAccessContent(999999, { visibility: 'all_paid' })).toBe(true);
+
+    const next = jest.fn();
+    const request = { currentUser: { id: 999999 } };
+    requireEntitlement({ tier: 'paid', subject: '考研数学' })(request, {}, next);
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(request.userEntitlement).toMatchObject({ tier: 'free', effectiveTier: 'free' });
+  });
+
+  test('免费模式只移除收费门槛，不绕过登录鉴权', () => {
+    const next = jest.fn();
+    const response = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+
+    requireEntitlement({ tier: 'paid' })({}, response, next);
+
+    expect(next).not.toHaveBeenCalled();
+    expect(response.status).toHaveBeenCalledWith(401);
+  });
+
+  test('历史付费课程对免费学生开放列表和详情，并序列化为免费', async () => {
+    const agent = getAgent();
+    const teacher = createTeacher({ username: 'teacher_free_course' });
+    const student = createStudent({ username: 'student_free_course' });
+
+    const result = db.prepare(
+      'INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run('历史付费课程', '', '考研英语', 'subject_paid', '考研英语', teacher.id, new Date().toISOString());
+
+    await loginAs(agent, student.username);
+    const list = await agent.get('/api/courses').expect(200);
+    const course = list.body.courses.find((item) => item.id === result.lastInsertRowid);
+    expect(course).toMatchObject({ visibility: 'free', subjectScope: '' });
+
+    const detail = await agent.get(`/api/courses/${result.lastInsertRowid}`).expect(200);
+    expect(detail.body).toMatchObject({ id: result.lastInsertRowid, visibility: 'free', subjectScope: '' });
+  });
+
+  test('历史付费题目对免费学生可见且可作答', async () => {
+    const agent = getAgent();
+    const teacher = createTeacher({ username: 'teacher_free_question' });
+    const student = createStudent({ username: 'student_free_question' });
+    const options = JSON.stringify([
+      { key: 'A', text: '正确' },
+      { key: 'B', text: '错误' }
+    ]);
+    const result = db.prepare(`
+      INSERT INTO questions (
+        title, subject, stem, options, correct_answer, is_paid_only, subject_scope, created_by, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('历史付费题', '考研数学', '请选择正确答案', options, 'A', 1, '考研数学', teacher.id, new Date().toISOString());
+
+    await loginAs(agent, student.username);
+    const list = await agent.get(`/api/questions?ids=${result.lastInsertRowid}`).expect(200);
+    expect(list.body.questions).toHaveLength(1);
+    expect(list.body.questions[0]).toMatchObject({ isPaidOnly: 0, subjectScope: '' });
+
+    const answer = await agent
+      .post(`/api/questions/${result.lastInsertRowid}/answer`)
+      .send({ selectedAnswer: 'A' })
+      .expect(200);
+    expect(answer.body.result.isCorrect).toBe(true);
+  });
+
+  test('新建课程、直播和题目时忽略付费属性', async () => {
+    const agent = getAgent();
+    const teacher = createTeacher({ username: 'teacher_free_writes' });
+    await loginAs(agent, teacher.username);
+
+    const course = await agent
+      .post('/api/courses')
+      .field('title', '免费课程')
+      .field('visibility', 'all_paid')
+      .field('subjectScope', '考研英语')
+      .expect(200);
+    expect(db.prepare('SELECT visibility, subject_scope FROM courses WHERE id = ?').get(course.body.id))
+      .toEqual({ visibility: 'free', subject_scope: '' });
+
+    const live = await agent
+      .post('/api/live-sessions')
+      .send({ title: '免费直播', visibility: 'trial_paid' })
+      .expect(200);
+    expect(db.prepare('SELECT visibility FROM live_sessions WHERE id = ?').get(live.body.id))
+      .toEqual({ visibility: 'free' });
+
+    const question = await agent
+      .post('/api/questions')
+      .field('title', '免费题目')
+      .field('stem', '题干')
+      .field('optionA', '选项 A')
+      .field('optionB', '选项 B')
+      .field('correctAnswer', 'A')
+      .field('isPaidOnly', '1')
+      .field('subjectScope', '考研英语')
+      .expect(200);
+    expect(db.prepare('SELECT is_paid_only, subject_scope FROM questions WHERE id = ?').get(question.body.id))
+      .toEqual({ is_paid_only: 0, subject_scope: '' });
+  });
+
+  test('免费模式忽略付费属性更新并保留历史元数据', async () => {
+    const agent = getAgent();
+    const teacher = createTeacher({ username: 'teacher_free_updates' });
+    const now = new Date().toISOString();
+    const course = db.prepare(
+      'INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run('待更新课程', '', '考研英语', 'all_paid', '考研英语', teacher.id, now);
+    const question = db.prepare(`
+      INSERT INTO questions (title, subject, stem, options, correct_answer, is_paid_only, subject_scope, created_by, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run('待更新题目', '考研英语', '题干', JSON.stringify([{ key: 'A', text: 'A' }, { key: 'B', text: 'B' }]), 'A', 1, '考研英语', teacher.id, now);
+
+    await loginAs(agent, teacher.username);
+    await agent.put(`/api/admin/content/courses/${course.lastInsertRowid}`)
+      .send({ subject: '考研英语（更新）', visibility: 'free' })
+      .expect(200);
+    await agent.put(`/api/admin/questions/${question.lastInsertRowid}`)
+      .send({ title: '已更新题目', isPaidOnly: false, subjectScope: '' })
+      .expect(200);
+
+    expect(db.prepare('SELECT visibility, subject_scope FROM courses WHERE id = ?').get(course.lastInsertRowid))
+      .toEqual({ visibility: 'all_paid', subject_scope: '考研英语' });
+    expect(db.prepare('SELECT is_paid_only, subject_scope FROM questions WHERE id = ?').get(question.lastInsertRowid))
+      .toEqual({ is_paid_only: 1, subject_scope: '考研英语' });
+
+    const courseResponse = await agent.get(`/api/courses/${course.lastInsertRowid}`).expect(200);
+    expect(courseResponse.body).toMatchObject({ visibility: 'free', subjectScope: '' });
+    const questionResponse = await agent.get(`/api/admin/questions/${question.lastInsertRowid}`).expect(200);
+    expect(questionResponse.body.question).toMatchObject({ isPaidOnly: 0, subjectScope: '' });
+  });
+
+  test('免费模式拒绝配置或结算用户权益', async () => {
+    const agent = getAgent();
+    const admin = createUser({
+      username: 'admin_free_entitlements',
+      password: '123456',
+      role: 'admin',
+      displayName: '测试管理员'
+    });
+    const student = createStudent({ username: 'student_free_entitlements' });
+    await loginAs(agent, admin.username);
+
+    await agent.post(`/api/admin/entitlements/${student.id}`).send({ tier: 'paid' }).expect(410);
+    await agent.post('/api/entitlements/check-expired').send({}).expect(410);
+  });
+
+  test('权益接口在免费模式下只表现为 free', () => {
+    const student = createStudent({ username: 'student_hidden_entitlement' });
     db.prepare(`
-      INSERT INTO user_entitlements (
-        student_id, tier, trial_started_at, trial_ended_at, paid_started_at, paid_until, unlocked_subjects, package_type, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(student_id) DO UPDATE SET
-        tier = excluded.tier,
-        trial_started_at = excluded.trial_started_at,
-        trial_ended_at = excluded.trial_ended_at,
-        paid_started_at = excluded.paid_started_at,
-        paid_until = excluded.paid_until,
-        unlocked_subjects = excluded.unlocked_subjects,
-        package_type = excluded.package_type,
-        updated_at = excluded.updated_at
-    `).run(
-      studentId,
-      payload.tier,
-      payload.trialStartedAt || null,
-      payload.trialEndedAt || null,
-      payload.paidStartedAt || null,
-      payload.paidUntil || null,
-      JSON.stringify(payload.unlockedSubjects || []),
-      payload.packageType || 'none',
-      new Date().toISOString(),
-      new Date().toISOString()
-    );
-  }
+      INSERT INTO user_entitlements (student_id, tier, package_type, unlocked_subjects, created_at, updated_at)
+      VALUES (?, 'paid', 'all_subjects', '[]', ?, ?)
+    `).run(student.id, new Date().toISOString(), new Date().toISOString());
 
-  test('免费用户访问付费课程被拦截', async () => {
-    const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_ent_1' });
-    const student = createStudent({ username: 'student_ent_free' });
-
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('付费课', '', '考研英语', 'subject_paid', '考研英语', teacher.id, new Date().toISOString());
-
-    await loginAs(agent, student.username);
-    const res = await agent.get('/api/courses');
-    expect(res.body.courses.some((c) => c.title === '付费课')).toBe(false);
-  });
-
-  test('体验用户在有效期内可访问付费内容', async () => {
-    const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_ent_2' });
-    const student = createStudent({ username: 'student_ent_trial' });
-
-    setEntitlement(student.id, {
-      tier: 'trial',
-      trialStartedAt: new Date().toISOString(),
-      trialEndedAt: new Date(Date.now() + 86400000).toISOString()
+    expect(getUserEntitlement(student.id)).toMatchObject({
+      tier: 'free',
+      effectiveTier: 'free',
+      packageType: 'none',
+      unlockedSubjects: []
     });
-
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('付费课', '', '考研英语', 'trial_paid', '', teacher.id, new Date().toISOString());
-
-    await loginAs(agent, student.username);
-    const res = await agent.get('/api/courses');
-    expect(res.body.courses.length).toBe(1);
   });
 
-  test('体验用户到期后访问付费内容被拦截', async () => {
-    const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_ent_3' });
-    const student = createStudent({ username: 'student_ent_expired' });
+  test('免费答疑不会把考试报名问题误判为课程交易咨询', async () => {
+    const student = createStudent({ username: 'student_free_tutor_faq' });
+    const result = await handleMessage({ userId: student.id, message: '考研报名时间是什么时候？', source: 'test' });
 
-    setEntitlement(student.id, {
-      tier: 'trial',
-      trialStartedAt: new Date(Date.now() - 86400000 * 8).toISOString(),
-      trialEndedAt: new Date(Date.now() - 86400000).toISOString()
-    });
-
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('付费课', '', '考研英语', 'trial_paid', '', teacher.id, new Date().toISOString());
-
-    await loginAs(agent, student.username);
-    const res = await agent.get('/api/courses');
-    expect(res.body.courses.length).toBe(0);
+    expect(result.action).toBe('faq');
+    expect(result.reply).toContain('预报名');
   });
 
-  test('单科付费用户只能访问已解锁科目', async () => {
-    const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_ent_4' });
-    const student = createStudent({ username: 'student_ent_single' });
+  test('明确咨询课程价格时只引导免费资源', async () => {
+    const student = createStudent({ username: 'student_free_tutor_course_price' });
+    const result = await handleMessage({ userId: student.id, message: '你们的课程价格是多少？', source: 'test' });
 
-    setEntitlement(student.id, {
-      tier: 'paid',
-      packageType: 'single_subject',
-      unlockedSubjects: ['考研英语']
-    });
-
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('英语课', '', '考研英语', 'subject_paid', '考研英语', teacher.id, new Date().toISOString());
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('数学课', '', '考研数学', 'subject_paid', '考研数学', teacher.id, new Date().toISOString());
-
-    await loginAs(agent, student.username);
-    const res = await agent.get('/api/courses');
-    const paidTitles = [...new Set(res.body.courses.filter((c) => ['英语课', '数学课'].includes(c.title)).map((c) => c.title))];
-    expect(paidTitles).toEqual(['英语课']);
-  });
-
-  test('全科付费用户可访问全部付费内容', async () => {
-    const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_ent_5' });
-    const student = createStudent({ username: 'student_ent_all' });
-
-    setEntitlement(student.id, {
-      tier: 'paid',
-      packageType: 'all_subjects'
-    });
-
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('英语课', '', '考研英语', 'all_paid', '', teacher.id, new Date().toISOString());
-    db.prepare('INSERT INTO courses (title, description, subject, visibility, subject_scope, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run('数学课', '', '考研数学', 'all_paid', '', teacher.id, new Date().toISOString());
-
-    await loginAs(agent, student.username);
-    const res = await agent.get('/api/courses');
-    const paidTitles = [...new Set(res.body.courses.filter((c) => ['英语课', '数学课'].includes(c.title)).map((c) => c.title))];
-    expect(paidTitles.length).toBe(2);
-  });
-
-  test('支付成功后自动开通权益', async () => {
-    const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_ent_6' });
-    const student = createStudent({ username: 'student_ent_pay' });
-    const product = createProduct({ createdBy: teacher.id, title: '全科包', price: 199, stock: 10 });
-    db.prepare('UPDATE products SET package_type = ?, status = ? WHERE id = ?').run('all_subjects', 'active', product.id);
-
-    await loginAs(agent, student.username);
-    const orderRes = await agent.post('/api/orders').send({ productId: product.id, quantity: 1, shippingAddress: '测试' }).expect(200);
-    await agent.post(`/api/orders/${orderRes.body.id}/pay`).send({}).expect(200);
-
-    const entitlementRes = await agent.get('/api/entitlements/me').expect(200);
-    expect(entitlementRes.body.entitlement.tier).toBe('paid');
-    expect(entitlementRes.body.entitlement.packageType).toBe('all_subjects');
+    expect(result.action).toBe('free_resources');
+    expect(result.reply).toContain('免费开放');
+    expect(result.handoff).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 <view class="reply-list">
-  <view class="reply-item" wx:for="{{ replies }}" wx:key="id" wx:for-item="reply">
+  <view class="reply-item" wx:for="{{ displayReplies }}" wx:key="id" wx:for-item="reply">
     <image class="reply-avatar" src="{{ reply.author.avatarUrl }}" mode="aspectFill" />
     <view class="reply-main">
       <view class="reply-header">
@@ -12,7 +12,7 @@
       <view class="reply-content">{{ reply.content }}</view>
 
       <view class="reply-footer">
-        <text class="reply-time">{{ formatTime(reply.createdAt) }}</text>
+        <text class="reply-time">{{ reply.displayCreatedAt }}</text>
         <text
           class="reply-action"
           bindtap="onReplyTap"

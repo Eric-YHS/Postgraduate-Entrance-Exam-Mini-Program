@@ -10,8 +10,11 @@
     "lint:fix": "eslint . --ext .ts,.js --fix",
     "format": "prettier --write '**/*.{ts,js,json,wxml,wxss}'",
     "typecheck": "tsc --noEmit",
-    "upload": "node scripts/upload.js",
-    "upload:prod": "node scripts/upload.js"
+    "mode:restricted": "node scripts/set-release-mode.js restricted",
+    "mode:qualified": "node scripts/set-release-mode.js qualified",
+    "verify:release": "node scripts/verify-release-mode.js",
+    "upload": "npm run verify:release && node scripts/upload.js",
+    "upload:prod": "npm run verify:release && node scripts/upload.js"
   },
   "keywords": [
     "wechat-miniprogram",

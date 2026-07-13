@@ -4,7 +4,7 @@
     "ky-empty": "/components/ky-empty/ky-empty",
     "ky-error": "/components/ky-error/ky-error",
     "course-chapter-list": "/components/course-chapter-list/course-chapter-list",
-    "course-buy-bar": "/components/course-buy-bar/course-buy-bar"
+    "ky-safe-area": "/components/ky-safe-area/ky-safe-area"
   },
   "navigationBarTitleText": "课程详情"
 }

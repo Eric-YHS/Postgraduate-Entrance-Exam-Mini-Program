@@ -1,5 +1,4 @@
 import { getCourseDetail } from '../../../services/course.service';
-import { canPlayVideo } from '../../../utils/course';
 import { getCourseProgress } from '../../../utils/study-progress';
 import type { CourseDetail } from '../../../types/course';
 
@@ -60,30 +59,8 @@ Page({
     const video = chapter?.videos.find((v) => v.id === videoId);
     if (!video) return;
 
-    const canPlay = canPlayVideo(video, detail);
-    if (!canPlay) return;
-
     wx.navigateTo({
       url: `/pages/course/video/video?courseId=${detail.id}&videoId=${videoId}&chapterId=${chapterId}`,
-    });
-  },
-
-  onBuyTap() {
-    const { detail } = this.data;
-    if (!detail) return;
-
-    // TODO: 接入真实支付流程
-    wx.showModal({
-      title: '购买课程',
-      content: `确认购买「${detail.title}」？\n价格：¥${(detail.price / 100).toFixed(2)}`,
-      success: (res) => {
-        if (res.confirm) {
-          wx.showToast({
-            title: '支付功能开发中',
-            icon: 'none',
-          });
-        }
-      },
     });
   },
 
@@ -91,13 +68,9 @@ Page({
     const { detail } = this.data;
     if (!detail?.chapters.length) return;
 
-    // 找到第一个可播放的视频
     const firstChapter = detail.chapters[0];
     const firstVideo = firstChapter.videos[0];
     if (!firstVideo) return;
-
-    const canPlay = canPlayVideo(firstVideo, detail);
-    if (!canPlay) return;
 
     wx.navigateTo({
       url: `/pages/course/video/video?courseId=${detail.id}&videoId=${firstVideo.id}&chapterId=${firstChapter.id}`,

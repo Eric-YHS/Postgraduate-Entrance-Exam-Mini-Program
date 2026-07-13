@@ -1,8 +1,20 @@
-import { formatDuration, formatTrialLimit, getTrialLimit, isVideoUnlocked } from '../../utils/course';
-import type { CourseDetail, CourseVideo } from '../../types/course';
+import { formatDuration } from '../../utils/course';
+import type { CourseChapter, CourseDetail, CourseVideo } from '../../types/course';
+
+type DisplayVideo = CourseVideo & {
+  durationText: string;
+  progressPercent: number;
+  showProgress: boolean;
+  completed: boolean;
+};
+
+type DisplayChapter = Omit<CourseChapter, 'videos'> & {
+  videos: DisplayVideo[];
+};
 
 interface ChapterListData {
   expandedChapters: Record<string, boolean>;
+  displayChapters: DisplayChapter[];
 }
 
 interface ChapterListProperties {
@@ -24,17 +36,23 @@ Component({
 
   data: {
     expandedChapters: {} as Record<string, boolean>,
+    displayChapters: [] as DisplayChapter[],
   },
 
   lifetimes: {
     attached() {
       this.expandFirstChapter();
+      this.buildDisplayChapters();
     },
   },
 
   observers: {
     course() {
       this.expandFirstChapter();
+      this.buildDisplayChapters();
+    },
+    progressMap() {
+      this.buildDisplayChapters();
     },
   },
 
@@ -62,21 +80,22 @@ Component({
       this.triggerEvent('videotap', { videoId, chapterId });
     },
 
-    formatDuration(seconds: number): string {
-      return formatDuration(seconds);
-    },
-
-    formatTrialTag(video: CourseVideo, course: CourseDetail): string {
-      return formatTrialLimit(getTrialLimit(video, course));
-    },
-
-    isUnlocked(video: CourseVideo, course: CourseDetail): boolean {
-      return isVideoUnlocked(video, course);
-    },
-
-    getProgressPercent(videoId: string): number {
-      const progressMap = (this.data as unknown as ChapterListData & ChapterListProperties).progressMap;
-      return progressMap[videoId]?.percent || 0;
+    buildDisplayChapters() {
+      const { course, progressMap } = this.data as unknown as ChapterListData & ChapterListProperties;
+      const displayChapters = (course?.chapters || []).map((chapter) => ({
+        ...chapter,
+        videos: chapter.videos.map((video) => {
+          const progressPercent = progressMap[video.id]?.percent || 0;
+          return {
+            ...video,
+            durationText: formatDuration(video.duration),
+            progressPercent,
+            showProgress: progressPercent > 0 && progressPercent < 100,
+            completed: progressPercent >= 100,
+          };
+        }),
+      }));
+      this.setData({ displayChapters });
     },
   },
 });

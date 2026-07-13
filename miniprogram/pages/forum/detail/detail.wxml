@@ -10,7 +10,7 @@
           <image class="topic-avatar" src="{{ topic.author.avatarUrl }}" mode="aspectFill" />
           <view class="topic-meta">
             <text class="topic-author">{{ topic.author.nickname }}</text>
-            <text class="topic-time">{{ formatTime(topic.createdAt) }}</text>
+            <text class="topic-time">{{ topic.displayCreatedAt }}</text>
           </view>
         </view>
 
@@ -40,17 +40,17 @@
             data-index="{{ index }}"
           />
           <video
-            wx:if="{{ getVideoAttachment(topic.attachments) }}"
+            wx:if="{{ topic.videoAttachment }}"
             class="topic-video"
-            src="{{ getVideoAttachment(topic.attachments).url }}"
+            src="{{ topic.videoAttachment.url }}"
             controls
             object-fit="cover"
           />
         </view>
 
-        <view class="topic-attachments" wx:if="{{ getFileAttachments(topic.attachments).length > 0 }}">
+        <view class="topic-attachments" wx:if="{{ topic.fileAttachments.length > 0 }}">
           <view
-            wx:for="{{ getFileAttachments(topic.attachments) }}"
+            wx:for="{{ topic.fileAttachments }}"
             wx:key="id"
             class="file-item"
           >

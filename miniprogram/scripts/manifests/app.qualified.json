@@ -1,6 +1,9 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/course/list/list",
+    "pages/course/detail/detail",
+    "pages/course/video/video",
     "pages/question/practice/practice",
     "pages/question/wrong-book/wrong-book",
     "pages/forum/index/index",
@@ -26,11 +29,16 @@
         "text": "首页"
       },
       {
+        "pagePath": "pages/course/list/list",
+        "text": "课程"
+      },
+      {
         "pagePath": "pages/user/center/center",
         "text": "我的"
       }
     ]
   },
   "sitemapLocation": "sitemap.json",
-  "lazyCodeLoading": "requiredComponents"
+  "lazyCodeLoading": "requiredComponents",
+  "requiredBackgroundModes": ["audio"]
 }

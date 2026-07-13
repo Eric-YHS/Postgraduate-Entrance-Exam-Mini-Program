@@ -6,6 +6,7 @@ const { detectSensitiveWords, invalidateCache } = require('../services/moderatio
 module.exports = function registerAdminRoutes(app, shared) {
   const {
     db,
+    config,
     sanitizeUser,
     requireAdmin,
     requireRole,
@@ -348,6 +349,9 @@ module.exports = function registerAdminRoutes(app, shared) {
   app.post('/api/admin/entitlements/:userId', requireRole(['admin', 'customer_service']), (request, response) => {
     const userId = Number(request.params.userId);
     if (!Number.isInteger(userId) || userId <= 0) return response.status(400).json({ error: '无效的用户 ID。' });
+    if (config.freeAccessMode) {
+      return response.status(410).json({ error: '免费模式下无需配置用户权益。' });
+    }
     try {
       setUserEntitlement(userId, request.body || {});
       response.json({ ok: true, entitlement: getUserEntitlement(userId) });
@@ -357,6 +361,9 @@ module.exports = function registerAdminRoutes(app, shared) {
   });
 
   app.post('/api/entitlements/check-expired', requireAdmin, (request, response) => {
+    if (config.freeAccessMode) {
+      return response.status(410).json({ error: '免费模式下无需处理权益到期。' });
+    }
     const trialDowngraded = downgradeExpiredTrials();
     const paidDowngraded = downgradeExpiredPaid();
     response.json({ trialDowngraded, paidDowngraded });
@@ -512,11 +519,13 @@ module.exports = function registerAdminRoutes(app, shared) {
     `).get(id);
 
     // 订单记录
-    const orders = db.prepare(`
-      SELECT orders.*, products.title AS product_title FROM orders
-      LEFT JOIN products ON products.id = orders.product_id
-      WHERE orders.student_id = ? ORDER BY orders.created_at DESC LIMIT 50
-    `).all(id).map(serializeOrder);
+    const orders = config.freeAccessMode
+      ? []
+      : db.prepare(`
+          SELECT orders.*, products.title AS product_title FROM orders
+          LEFT JOIN products ON products.id = orders.product_id
+          WHERE orders.student_id = ? ORDER BY orders.created_at DESC LIMIT 50
+        `).all(id).map(serializeOrder);
 
     // 专属复习计划
     const personalPlans = db.prepare(`
@@ -566,7 +575,7 @@ module.exports = function registerAdminRoutes(app, shared) {
 
     const entitlement = getUserEntitlement(studentId);
     const effectiveTier = entitlement.effectiveTier || entitlement.tier;
-    if (effectiveTier !== 'paid') {
+    if (!config.freeAccessMode && effectiveTier !== 'paid') {
       response.status(400).json({ error: '只有付费学员才能创建专属复习计划。' });
       return;
     }
@@ -598,6 +607,9 @@ module.exports = function registerAdminRoutes(app, shared) {
   // 内容管理：统一查询课程/网盘文件/直播/商品
   app.get('/api/admin/content', requireRole(['admin', 'teacher']), (request, response) => {
     const { type } = request.query;
+    if (config.freeAccessMode && type === 'products') {
+      return response.status(410).json({ error: '免费模式下商城功能不可用。' });
+    }
     let result = {};
     if (!type || type === 'courses') {
       result.courses = db.prepare('SELECT courses.*, users.display_name AS teacher_name FROM courses LEFT JOIN users ON users.id = courses.created_by ORDER BY courses.created_at DESC LIMIT 200').all().map(serializeCourse);
@@ -613,10 +625,10 @@ module.exports = function registerAdminRoutes(app, shared) {
         title: row.title,
         description: row.description,
         subject: row.subject,
-        visibility: row.visibility || 'free',
-        subjectScope: row.subject_scope || '',
+        visibility: config.freeAccessMode ? 'free' : (row.visibility || 'free'),
+        subjectScope: config.freeAccessMode ? '' : (row.subject_scope || ''),
         sortOrder: row.sort_order || 0,
-        isFreePreview: row.is_free_preview || 0,
+        isFreePreview: config.freeAccessMode ? 1 : (row.is_free_preview || 0),
         createdBy: row.created_by,
         teacherName: row.teacher_name,
         createdAt: row.created_at
@@ -625,7 +637,7 @@ module.exports = function registerAdminRoutes(app, shared) {
     if (!type || type === 'live_sessions') {
       result.liveSessions = db.prepare('SELECT live_sessions.*, users.display_name AS teacher_name FROM live_sessions LEFT JOIN users ON users.id = live_sessions.created_by ORDER BY live_sessions.created_at DESC LIMIT 200').all().map(serializeLiveSession);
     }
-    if (!type || type === 'products') {
+    if (!config.freeAccessMode && (!type || type === 'products')) {
       let productQuery = 'SELECT products.*, users.display_name AS teacher_name FROM products LEFT JOIN users ON users.id = products.created_by';
       const productParams = [];
       // B-14: 支持低库存阈值参数
@@ -653,6 +665,9 @@ module.exports = function registerAdminRoutes(app, shared) {
     };
     const table = tableMap[type];
     if (!table) return response.status(400).json({ error: '无效的内容类型。' });
+    if (config.freeAccessMode && table === 'products') {
+      return response.status(410).json({ error: '免费模式下商城功能不可用。' });
+    }
 
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!row) return response.status(404).json({ error: '内容不存在。' });
@@ -664,11 +679,11 @@ module.exports = function registerAdminRoutes(app, shared) {
     const updates = [];
     const params = [];
 
-    if (request.body.visibility !== undefined) {
+    if (request.body.visibility !== undefined && !config.freeAccessMode) {
       updates.push('visibility = ?');
       params.push(request.body.visibility);
     }
-    if (request.body.subjectScope !== undefined) {
+    if (request.body.subjectScope !== undefined && !config.freeAccessMode) {
       updates.push('subject_scope = ?');
       params.push(sanitizeText(request.body.subjectScope));
     }
@@ -680,11 +695,11 @@ module.exports = function registerAdminRoutes(app, shared) {
       updates.push('subject = ?');
       params.push(sanitizeText(request.body.subject));
     }
-    if (request.body.isPaidOnly !== undefined && table === 'folder_items') {
+    if (request.body.isPaidOnly !== undefined && table === 'folder_items' && !config.freeAccessMode) {
       updates.push('is_paid_only = ?');
       params.push(request.body.isPaidOnly ? 1 : 0);
     }
-    if (request.body.isFreePreview !== undefined && table === 'folder_items') {
+    if (request.body.isFreePreview !== undefined && table === 'folder_items' && !config.freeAccessMode) {
       updates.push('is_free_preview = ?');
       params.push(request.body.isFreePreview ? 1 : 0);
     }
@@ -717,6 +732,9 @@ module.exports = function registerAdminRoutes(app, shared) {
     const tableMap = { courses: 'courses', folder_items: 'folder_items', live_sessions: 'live_sessions', products: 'products' };
     const table = tableMap[type];
     if (!table) return response.status(400).json({ error: '无效的内容类型。' });
+    if (config.freeAccessMode && table === 'products') {
+      return response.status(410).json({ error: '免费模式下商城功能不可用。' });
+    }
 
     const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
     if (!row) return response.status(404).json({ error: '内容不存在。' });
@@ -788,8 +806,8 @@ module.exports = function registerAdminRoutes(app, shared) {
     if (body.correctAnswer !== undefined) { updates.push('correct_answer = ?'); params.push(correctAnswer); }
     if (body.analysisText !== undefined) { updates.push('analysis_text = ?'); params.push(sanitizeText(body.analysisText)); }
     if (body.tags !== undefined) { updates.push('tags = ?'); params.push(JSON.stringify(Array.isArray(body.tags) ? body.tags : [])); }
-    if (body.isPaidOnly !== undefined) { updates.push('is_paid_only = ?'); params.push(body.isPaidOnly ? 1 : 0); }
-    if (body.subjectScope !== undefined) { updates.push('subject_scope = ?'); params.push(sanitizeText(body.subjectScope)); }
+    if (body.isPaidOnly !== undefined && !config.freeAccessMode) { updates.push('is_paid_only = ?'); params.push(body.isPaidOnly ? 1 : 0); }
+    if (body.subjectScope !== undefined && !config.freeAccessMode) { updates.push('subject_scope = ?'); params.push(sanitizeText(body.subjectScope)); }
 
     if (!updates.length) return response.status(400).json({ error: '没有需要更新的字段。' });
 

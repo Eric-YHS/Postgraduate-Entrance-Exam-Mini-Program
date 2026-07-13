@@ -32,10 +32,6 @@
   background: var(--success);
 }
 
-.cover-badge--trial {
-  background: var(--warning);
-}
-
 .info-card {
   margin-bottom: 24rpx;
 }
@@ -78,6 +74,50 @@
   padding-left: 16rpx;
 }
 
-.buy-bar-placeholder {
+.course-action-placeholder {
   height: 120rpx;
+}
+
+.course-action-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-white);
+  box-shadow: 0 -4rpx 20rpx rgba(0, 0, 0, 0.06);
+  z-index: 100;
+}
+
+.course-action-bar__content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 32rpx;
+}
+
+.course-action-bar__info {
+  display: flex;
+  flex-direction: column;
+}
+
+.course-action-bar__title {
+  font-size: 32rpx;
+  font-weight: 500;
+  color: var(--success);
+}
+
+.course-action-bar__subtitle {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: var(--text-tertiary);
+}
+
+.course-action-bar__button {
+  padding: 24rpx 56rpx;
+  border-radius: 40rpx;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+  color: #fff;
+  font-size: 30rpx;
+  font-weight: 500;
+  box-shadow: 0 8rpx 20rpx rgba(29, 78, 137, 0.25);
 }

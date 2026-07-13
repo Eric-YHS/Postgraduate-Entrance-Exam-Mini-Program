@@ -30,6 +30,8 @@ if (!Number.isInteger(port) || port < 1 || port > 65535) {
 }
 const tokenTtlDays = Number(process.env.TOKEN_TTL_DAYS || 30);
 const nodeEnv = process.env.NODE_ENV || 'development';
+// 默认关闭全部付费能力；false 仅重新启用旧服务端逻辑，恢复商业化前仍需完成前端与数据迁移。
+const freeAccessMode = String(process.env.FREE_ACCESS_MODE || 'true').toLowerCase() !== 'false';
 
 // SESSION_SECRET 安全校验
 const rawSessionSecret = process.env.SESSION_SECRET;
@@ -75,13 +77,15 @@ const aiApiKey = process.env.AI_API_KEY || '';
 const aiApiUrl = process.env.AI_API_URL || '';
 const aiModel = process.env.AI_MODEL || 'deepseek-chat';
 
-// 微信支付 V3 配置
-const wxPayAppId = process.env.WX_PAY_APP_ID || process.env.WX_APP_ID || '';
-const wxPayMchId = process.env.WX_PAY_MCH_ID || '';
-const wxPayApiV3Key = process.env.WX_PAY_API_V3_KEY || '';
-const wxPayPrivateKeyPath = process.env.WX_PAY_PRIVATE_KEY_PATH || '';
-const wxPaySerialNo = process.env.WX_PAY_SERIAL_NO || '';
-const wxPayEnabled = process.env.WX_PAY_ENABLED === 'true' ? 'true' : (process.env.WX_PAY_ENABLED || 'false');
+// 微信支付 V3 配置。免费模式下即使环境变量仍有残留，也不会向应用暴露。
+const wxPayAppId = freeAccessMode ? '' : (process.env.WX_PAY_APP_ID || process.env.WX_APP_ID || '');
+const wxPayMchId = freeAccessMode ? '' : (process.env.WX_PAY_MCH_ID || '');
+const wxPayApiV3Key = freeAccessMode ? '' : (process.env.WX_PAY_API_V3_KEY || '');
+const wxPayPrivateKeyPath = freeAccessMode ? '' : (process.env.WX_PAY_PRIVATE_KEY_PATH || '');
+const wxPaySerialNo = freeAccessMode ? '' : (process.env.WX_PAY_SERIAL_NO || '');
+const wxPayEnabled = freeAccessMode
+  ? 'false'
+  : (process.env.WX_PAY_ENABLED === 'true' ? 'true' : (process.env.WX_PAY_ENABLED || 'false'));
 
 // WebRTC ICE 服务器配置
 // 默认只有 STUN；生产环境应配置 TURN 服务器以保证 NAT 穿透成功率
@@ -111,6 +115,7 @@ module.exports = {
   aiModel,
   cookieSecure,
   dbPath,
+  freeAccessMode,
   iceServers,
   nodeEnv,
   port,

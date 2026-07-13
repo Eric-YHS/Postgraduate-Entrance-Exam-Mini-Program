@@ -1,4 +1,5 @@
 const dayjs = require('dayjs');
+const config = require('../config');
 const { db } = require('../db');
 const { safeJsonParse } = require('./taskService');
 
@@ -55,6 +56,10 @@ function computeEffectiveTier(entitlement) {
 }
 
 function getUserEntitlement(userId) {
+  if (config.freeAccessMode) {
+    return { ...defaultEntitlement(userId), effectiveTier: 'free' };
+  }
+
   const row = db.prepare('SELECT * FROM user_entitlements WHERE student_id = ?').get(userId);
   if (!row) return defaultEntitlement(userId);
   const entitlement = parseEntitlementRow(row);
@@ -63,6 +68,8 @@ function getUserEntitlement(userId) {
 }
 
 function canAccessContent(userId, content) {
+  if (config.freeAccessMode) return true;
+
   const entitlement = getUserEntitlement(userId);
   const tier = entitlement.effectiveTier || computeEffectiveTier(entitlement);
   const visibility = content.visibility || 'free';
@@ -96,6 +103,13 @@ function requireEntitlement(options = {}) {
       response.status(401).json({ error: '未登录。' });
       return;
     }
+
+    if (config.freeAccessMode) {
+      request.userEntitlement = getUserEntitlement(userId);
+      next();
+      return;
+    }
+
     const entitlement = getUserEntitlement(userId);
     const effectiveTier = entitlement.effectiveTier || computeEffectiveTier(entitlement);
 
@@ -120,6 +134,8 @@ function requireEntitlement(options = {}) {
 }
 
 function createTrialEntitlement(userId) {
+  if (config.freeAccessMode) return;
+
   const existing = db.prepare('SELECT id FROM user_entitlements WHERE student_id = ?').get(userId);
   if (existing) return;
 
@@ -142,6 +158,8 @@ function logEntitlementChange(studentId, previousTier, newTier, reason) {
 }
 
 function downgradeExpiredTrials() {
+  if (config.freeAccessMode) return [];
+
   const now = nowIso();
   const expired = db.prepare(`
     SELECT * FROM user_entitlements
@@ -165,6 +183,8 @@ function downgradeExpiredTrials() {
 }
 
 function downgradeExpiredPaid() {
+  if (config.freeAccessMode) return [];
+
   const now = nowIso();
   const expired = db.prepare(`
     SELECT * FROM user_entitlements
@@ -188,6 +208,8 @@ function downgradeExpiredPaid() {
 }
 
 function grantEntitlementFromOrder(order, product) {
+  if (config.freeAccessMode) return;
+
   if (!product || !product.package_type) return;
   const packageType = product.package_type;
   if (packageType !== 'single_subject' && packageType !== 'all_subjects') return;
@@ -235,6 +257,10 @@ function grantEntitlementFromOrder(order, product) {
 }
 
 function setUserEntitlement(userId, payload) {
+  if (config.freeAccessMode) {
+    throw new Error('免费模式下无需配置用户权益。');
+  }
+
   const allowedTiers = ['free', 'trial', 'paid'];
   const tier = payload.tier;
   if (!allowedTiers.includes(tier)) {

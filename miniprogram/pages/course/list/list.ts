@@ -8,7 +8,29 @@ import type {
   CourseSubcategory,
 } from '../../../types/course';
 import { COURSE_CATEGORY_MAP, SUBJECT_MAP, MAJOR_MAP } from '../../../constants/index';
-import { formatPrice } from '../../../utils/course';
+
+type CourseListItem = CourseSummary & {
+  categoryLabel: string;
+  courseTag: string;
+};
+
+function getCourseTag(course: CourseSummary): string {
+  if (course.category === 'public' && course.subject) {
+    return SUBJECT_MAP[course.subject] || course.subject;
+  }
+  if (course.category === 'professional' && course.major) {
+    return MAJOR_MAP[course.major] || course.major;
+  }
+  return COURSE_CATEGORY_MAP[course.category] || course.category;
+}
+
+function toCourseListItem(course: CourseSummary): CourseListItem {
+  return {
+    ...course,
+    categoryLabel: COURSE_CATEGORY_MAP[course.category] || course.category,
+    courseTag: getCourseTag(course),
+  };
+}
 
 Page({
   data: {
@@ -16,7 +38,7 @@ Page({
     activeSubFilter: '',
     categories: [] as CourseCategoryGroup[],
     subFilters: [] as CourseSubcategory[],
-    courses: [] as CourseSummary[],
+    courses: [] as CourseListItem[],
     loading: false,
     error: false,
     page: 1,
@@ -81,7 +103,8 @@ Page({
         params as { category: CourseCategory; subject?: Subject; major?: Major; page: number; pageSize: number }
       );
 
-      const courses = reset ? res.list : [...this.data.courses, ...res.list];
+      const courseItems = res.list.map(toCourseListItem);
+      const courses = reset ? courseItems : [...this.data.courses, ...courseItems];
       const hasMore = courses.length < res.total;
 
       this.setData({
@@ -122,29 +145,4 @@ Page({
     });
   },
 
-  formatPrice(price: number): string {
-    return formatPrice(price);
-  },
-
-  getCategoryName(category: string): string {
-    return COURSE_CATEGORY_MAP[category] || category;
-  },
-
-  getSubjectName(subject: string): string {
-    return SUBJECT_MAP[subject] || subject;
-  },
-
-  getMajorName(major: string): string {
-    return MAJOR_MAP[major] || major;
-  },
-
-  getCourseTag(item: CourseSummary): string {
-    if (item.category === 'public' && item.subject) {
-      return this.getSubjectName(item.subject);
-    }
-    if (item.category === 'professional' && item.major) {
-      return this.getMajorName(item.major);
-    }
-    return this.getCategoryName(item.category);
-  },
 });

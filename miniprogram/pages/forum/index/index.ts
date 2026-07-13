@@ -1,12 +1,14 @@
 import { getHashtags, getTopics, toggleFavorite } from '../../../services/forum.service';
-import { FeatureCode } from '../../../constants/index';
-import { guardPermission } from '../../../utils/permission';
 import { formatDateTime } from '../../../utils/date';
 import type { Hashtag, Topic } from '../../../types/forum';
 
+type TopicListItem = Topic & {
+  displayCreatedAt: string;
+};
+
 Page({
   data: {
-    topics: [] as Topic[],
+    topics: [] as TopicListItem[],
     hashtags: [] as Hashtag[],
     activeHashtag: '',
     loading: false,
@@ -46,7 +48,11 @@ Page({
         pageSize: this.data.pageSize,
       });
 
-      const topics = reset ? res.list : [...this.data.topics, ...res.list];
+      const incomingTopics = res.list.map((topic) => ({
+        ...topic,
+        displayCreatedAt: formatDateTime(topic.createdAt),
+      }));
+      const topics = reset ? incomingTopics : [...this.data.topics, ...incomingTopics];
       const hasMore = topics.length < res.total;
 
       this.setData({
@@ -102,13 +108,8 @@ Page({
   },
 
   onPostTap() {
-    if (!guardPermission(FeatureCode.FORUM_POST)) return;
     wx.navigateTo({
       url: '/pages/forum/post/post',
     });
-  },
-
-  formatTime(date: string): string {
-    return formatDateTime(date);
   },
 });

@@ -21,6 +21,14 @@
       {
         "value": ".gitignore",
         "type": "file"
+      },
+      {
+        "value": "scripts",
+        "type": "folder"
+      },
+      {
+        "value": "private.wx27fca32a9ddfdc8e.key",
+        "type": "file"
       }
     ],
     "include": []

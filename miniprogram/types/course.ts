@@ -20,10 +20,7 @@ export interface CourseSummary extends ListItem {
   major?: Major;
   category: CourseCategory;
   teacherName: string;
-  price: number;
-  originalPrice: number;
   isFree: boolean;
-  trialCount: number;
   chapterCount: number;
   status: CourseStatus;
 }
@@ -33,9 +30,6 @@ export interface CourseVideo extends ListItem {
   title: string;
   duration: number;
   videoUrl: string;
-  isTrial: boolean;
-  /** 试看时长（秒），isTrial=true 时有效 */
-  trialDuration?: number;
   order: number;
 }
 
@@ -66,7 +60,6 @@ export interface CourseChapter extends ListItem {
 export interface CourseDetail extends CourseSummary {
   description: string;
   chapters: CourseChapter[];
-  isPurchased: boolean;
 }
 
 /** 课程查询参数 */
@@ -81,8 +74,6 @@ export interface CourseQueryParams {
 /** 视频播放授权响应 */
 export interface VideoAuthResponse {
   videoUrl: string;
-  isTrial: boolean;
-  trialDuration?: number;
   fullDuration: number;
 }
 
@@ -94,11 +85,4 @@ export interface VideoProgress {
   duration: number;
   percent: number;
   updatedAt: string;
-}
-
-/** 章节锁定状态 */
-export interface ChapterLockStatus {
-  chapterId: string;
-  isLocked: boolean;
-  unlockCondition: 'free' | 'trial' | 'paid' | 'progress';
 }

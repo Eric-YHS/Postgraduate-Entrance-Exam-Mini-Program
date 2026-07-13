@@ -4,6 +4,7 @@ const { getTasksForStudentOnDate, normalizeTaskRow } = require('./taskService');
 const { sendSubscribeMessage } = require('./wxPush');
 const { sendMorningPlan, sendDueReminders, sendEveningCheck, getPaidStudents } = require('./bots/supervisorBot');
 const { downgradeExpiredTrials, downgradeExpiredPaid } = require('./entitlements');
+const config = require('../config');
 
 // Phase 3: 引入进阶智能服务机器人
 let plannerBot = null;
@@ -386,6 +387,10 @@ function startScheduler(db, notifyClient) {
   // B 线：体验到期降级与到期前提醒
   cron.schedule('0 9 * * *', () => {
     try {
+      if (config.freeAccessMode) {
+        return;
+      }
+
       const downgraded = downgradeExpiredTrials();
       for (const studentId of downgraded) {
         createNotification(db, notifyClient, {

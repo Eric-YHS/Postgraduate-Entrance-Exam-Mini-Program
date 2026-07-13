@@ -1,6 +1,6 @@
 /**
- * 免费答疑机器人（引流转化）
- * 处理考研基础问题的免费答疑，并在适当时机植入转化话术
+ * 免费答疑机器人
+ * 处理考研基础问题，并按运行模式引导可用的学习资源
  */
 
 const { quickAsk } = require('../ai');
@@ -17,6 +17,9 @@ const HANDOFF_KEYWORDS = ['人工', '客服', '转人工', '人工客服', '找�
 
 /** 报班/付费意向关键词 */
 const ENROLLMENT_KEYWORDS = ['报班', '报名', '付费', '课程咨询', '多少钱', '价格', '费用', '学费', '怎么报名', '怎么付费', '想报班', '想报名', '报个名', '报个班', '课程价格', '课程费用', '报什么班', '推荐课程', '有什么课', '课程介绍', 'VIP', 'vip', '一对一', '1对1'];
+
+/** 免费模式只识别明确的课程交易咨询，避免误伤考试报名、报名费和院校学费问题 */
+const FREE_MODE_COMMERCIAL_INTENT = /报班|怎么付费|想报班|报个班|课程咨询|课程价格|课程费用|付费课程|收费课程|vip|一对一|1对1|课程.{0,8}(多少钱|价格|费用|收费)|(多少钱|价格|费用).{0,8}课程/i;
 
 /** 考研相关主题词（用于判断问题是否在范围内） */
 const KAOYAN_TOPICS = [
@@ -58,6 +61,16 @@ const CONVERSION_PHRASES = [
   '对于这类个性化问题，建议报名我们的付费课程，获得一对一学习规划服务。'
 ];
 
+/** 免费模式下的站内学习资源引导 */
+const FREE_RESOURCE_PHRASES = [
+  '可以直接在小程序内学习免费课程，并进入题库按章节练习和复盘错题。',
+  '建议先在小程序的免费课程中学习对应知识点，再到题库完成一组配套练习。',
+  '小程序内的免费课程和题库都可以直接使用，可以结合当前薄弱科目安排学习。'
+];
+
+/** 模型回复中可能出现的课程销售话术 */
+const SALES_OUTPUT_PATTERN = /(付费课程|收费课程|vip|报班|课程顾问|顾问老师|课程商城|购买课程|下单|开通会员|续费|一对一.{0,8}(课程|辅导|销售)|(课程|辅导|培训|班).{0,10}报名|课程.{0,8}(价格|费用|收费))/i;
+
 /** 预设 FAQ 答案（常见考研基础问题） */
 const FAQ_MAP = {
   '考研报名时间': '考研报名分为预报名和正式报名。预报名一般在 9 月下旬（应届生可参加），正式报名在 10 月。报名网站为中国研究生招生信息网（研招网）。',
@@ -97,6 +110,9 @@ function shouldHandoff(message) {
  */
 function hasEnrollmentIntent(message) {
   const lower = message.toLowerCase();
+  if (config.freeAccessMode) {
+    return FREE_MODE_COMMERCIAL_INTENT.test(lower);
+  }
   return ENROLLMENT_KEYWORDS.some((kw) => lower.includes(kw));
 }
 
@@ -120,8 +136,24 @@ function isKaoyanRelated(message) {
  * 随机选择一条转化话术
  */
 function pickConversionPhrase() {
-  const idx = Math.floor(Math.random() * CONVERSION_PHRASES.length);
-  return CONVERSION_PHRASES[idx];
+  const phrases = config.freeAccessMode ? FREE_RESOURCE_PHRASES : CONVERSION_PHRASES;
+  const idx = Math.floor(Math.random() * phrases.length);
+  return phrases[idx];
+}
+
+function sanitizeFreeModeReply(reply) {
+  const text = String(reply || '').trim();
+  if (SALES_OUTPUT_PATTERN.test(text)) {
+    return `这个问题可以结合你的目标科目和当前进度逐步处理。
+
+${pickConversionPhrase()}`;
+  }
+
+  if (/免费课程/.test(text) && /题库/.test(text)) {
+    return text;
+  }
+
+  return text ? `${text}\n\n💡 ${pickConversionPhrase()}` : pickConversionPhrase();
 }
 
 /**
@@ -239,6 +271,9 @@ function buildRagSystemPrompt(chunks, groupContext = '') {
   const groupContextBlock = groupContext
     ? `${groupContext}\n\n---\n\n`
     : '';
+  const resourceInstruction = config.freeAccessMode
+    ? '7. 不得推荐收费课程、VIP、报班、课程顾问、购买、开通会员或一对一销售服务；可以引导使用小程序内的免费课程和题库。若学生咨询考试报名费或院校学费等客观信息，应正常回答并提醒以官网为准。'
+    : '7. 在回答末尾，像朋友推荐一样自然地提一句付费课程（参考句式："对了，这个问题在我们的付费课程里有更详细的讲解，还有配套练习～"），不要生硬推销。';
 
   return `${groupContextBlock}你是一位正在和学生微信聊天的考研学长/学姐。你本人就是考研过来人，对考研政策、备考方法非常熟悉。你在聊天中看到了以下参考资料，请用这些资料来回答学生的问题。
 
@@ -252,7 +287,7 @@ ${context}
 4. 不要标注参考来源、不要编号、不要用"根据XX"这类正式句式；
 5. 如果涉及政策或时间，自然地提醒一句"不过具体还是要看官网最新通知哦"；
 6. 如果参考资料不够回答，就用你自己的知识补充，保持自然；
-7. 在回答末尾，像朋友推荐一样自然地提一句付费课程（参考句式："对了，这个问题在我们的付费课程里有更详细的讲解，还有配套练习～"），不要生硬推销。`;
+${resourceInstruction}`;
 }
 
 /**
@@ -263,6 +298,9 @@ function buildGeneralSystemPrompt(groupContext = '') {
   const groupContextBlock = groupContext
     ? `${groupContext}\n\n---\n\n`
     : '';
+  const resourceInstruction = config.freeAccessMode
+    ? '6. 不得推荐收费课程、VIP、报班、课程顾问、购买、开通会员或一对一销售服务；可以引导使用小程序内的免费课程和题库。若学生咨询考试报名费或院校学费等客观信息，应正常回答并提醒以官网为准。'
+    : '6. 在回答末尾，像朋友推荐一样自然地提一句付费课程（参考句式："对了，这个问题在付费课程里有更详细的讲解和配套练习～"），不要生硬推销。';
 
   return `${groupContextBlock}你是一位正在和学生微信聊天的考研学长/学姐。你本人就是考研过来人，对考研政策、考试科目、院校信息、报名流程这些都非常了解。
 
@@ -272,13 +310,19 @@ function buildGeneralSystemPrompt(groupContext = '') {
 3. 绝对不要提"知识库"、"资料库"、"系统"、"数据库"这些词——你就是在用自己的经验聊天；
 4. 只回答考研相关的问题，如果明显不相关，就笑着说不擅长这个，引导回考研话题；
 5. 如果涉及政策或时间，自然加一句"具体还是要看官网最新通知哦"；
-6. 在回答末尾，像朋友推荐一样自然地提一句付费课程（参考句式："对了，这个问题在付费课程里有更详细的讲解和配套练习～"），不要生硬推销。`;
+${resourceInstruction}`;
 }
 
 /**
  * 构建超范围拒绝回复
  */
 function buildOutOfScopeReply() {
+  if (config.freeAccessMode) {
+    return `抱歉，这个问题超出了考研答疑范围。我主要回答考研政策、考试科目、院校信息和备考方法等问题。
+
+如果你有考研相关的问题，欢迎继续提问。也可以直接使用小程序内的免费课程和题库进行学习与练习。`;
+  }
+
   return `抱歉，这个问题超出了免费答疑的范围。我主要负责回答考研政策、考试科目、院校信息、报名流程等基础问题。
 
 如果你有考研相关的问题，欢迎继续提问！如果想获得更深入、更个性化的解答，可以了解我们的付费课程，享受一对一专属答疑服务。`;
@@ -288,6 +332,12 @@ function buildOutOfScopeReply() {
  * 构建转化引导回复（报班意向）
  */
 function buildConversionReply() {
+  if (config.freeAccessMode) {
+    return `小程序内的学习内容目前免费开放。你可以进入「课程」选择科目学习，也可以进入「题库」进行章节练习和错题复盘。
+
+建议先学习当前薄弱知识点，再完成一组对应练习。`;
+  }
+
   return `你好！看来你对我们的课程很感兴趣。我们提供多种考研辅导课程，包括：
 
 - VIP 全程班：系统课程 + 一对一答疑 + 学习规划
@@ -303,6 +353,11 @@ function buildConversionReply() {
  * 构建转人工引导回复
  */
 function buildHandoffReply(baseReply = '') {
+  if (config.freeAccessMode) {
+    const resourceText = `\n\n---\n${pickConversionPhrase()}`;
+    return baseReply ? baseReply + resourceText : resourceText.trim();
+  }
+
   const handoffText = '\n\n---\n如果你希望获得更深入、更个性化的解答，欢迎联系我们的课程顾问，了解付费课程详情。我们的专业老师会根据你的情况制定专属学习方案，并提供一对一答疑服务。回复「人工」或直接咨询报名即可。';
   return baseReply ? baseReply + handoffText : handoffText.trim();
 }
@@ -350,7 +405,7 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
 
   // 0. 检查是否已处于人工接管状态
   if (isHandedOff(userId)) {
-    reply = '已转接人工客服，请稍候。';
+    reply = config.freeAccessMode ? '已转接人工支持，请稍候。' : '已转接人工客服，请稍候。';
     await recordConversation(userId, trimmedMessage, reply, false, source, 'already_handed_off');
     return { reply, handoff: false, action: 'already_handed_off' };
   }
@@ -359,7 +414,9 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
   if (shouldHandoff(trimmedMessage)) {
     handoff = true;
     action = 'handoff';
-    reply = '已为你转接人工客服，课程顾问老师会尽快与你联系，请稍等。';
+    reply = config.freeAccessMode
+      ? '已为你转接人工支持，工作人员会尽快与你联系，请稍等。'
+      : '已为你转接人工客服，课程顾问老师会尽快与你联系，请稍等。';
     await handoffToHuman(userId, trimmedMessage, source);
     await recordConversation(userId, trimmedMessage, reply, handoff, source, action);
     return { reply, handoff, action };
@@ -368,9 +425,11 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
   // 2. 判断是否表露报班/付费意向
   if (hasEnrollmentIntent(trimmedMessage)) {
     reply = buildConversionReply();
-    handoff = true;
-    action = 'suggest_handoff';
-    await handoffToHuman(userId, trimmedMessage, source);
+    handoff = !config.freeAccessMode;
+    action = config.freeAccessMode ? 'free_resources' : 'suggest_handoff';
+    if (handoff) {
+      await handoffToHuman(userId, trimmedMessage, source);
+    }
     await recordConversation(userId, trimmedMessage, reply, handoff, source, action);
     return { reply, handoff, action };
   }
@@ -428,25 +487,32 @@ async function handleMessage({ userId, message, source = 'wecom', groupId = null
     }
   } catch (err) {
     console.error('[freeTutorBot] AI 生成回答失败:', err.message);
-    reply = '抱歉，我暂时无法回答这个问题，请稍后再试。如果问题紧急，可以回复「人工」联系客服。';
+    reply = config.freeAccessMode
+      ? '抱歉，我暂时无法回答这个问题，请稍后再试。你可以先使用小程序内的免费课程和题库继续学习。'
+      : '抱歉，我暂时无法回答这个问题，请稍后再试。如果问题紧急，可以回复「人工」联系客服。';
     handoff = false;
     action = 'ai_error';
   }
 
-  // 7. 确保回答中包含转化话术（如果 AI 没有生成，则追加）
-  if (!handoff && !reply.includes('付费')) {
-    const phrase = pickConversionPhrase();
-    reply += `\n\n💡 ${phrase}`;
-  }
+  if (config.freeAccessMode) {
+    // 提示词之外再做一次输出检查，避免模型把知识库中的历史销售内容带入回复。
+    reply = sanitizeFreeModeReply(reply);
+  } else {
+    // 7. 确保回答中包含转化话术（如果 AI 没有生成，则追加）
+    if (!handoff && !reply.includes('付费')) {
+      const phrase = pickConversionPhrase();
+      reply += `\n\n💡 ${phrase}`;
+    }
 
-  // 8. 如果问题复杂或表露报班意向，标记转人工
-  const lowerReply = reply.toLowerCase();
-  const complexIndicators = ['建议报名', '需要个性化', '具体情况', '一对一', '详细规划', '专属方案'];
-  const isComplex = complexIndicators.some((ind) => lowerReply.includes(ind));
-  if (isComplex && !handoff) {
-    handoff = true;
-    action = 'suggest_handoff';
-    reply = buildHandoffReply(reply);
+    // 8. 如果问题复杂或表露报班意向，标记转人工
+    const lowerReply = reply.toLowerCase();
+    const complexIndicators = ['建议报名', '需要个性化', '具体情况', '一对一', '详细规划', '专属方案'];
+    const isComplex = complexIndicators.some((ind) => lowerReply.includes(ind));
+    if (isComplex && !handoff) {
+      handoff = true;
+      action = 'suggest_handoff';
+      reply = buildHandoffReply(reply);
+    }
   }
 
   // 9. 记录对话（type='free_tutor'）

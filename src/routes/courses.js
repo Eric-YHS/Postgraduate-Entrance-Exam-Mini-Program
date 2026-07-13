@@ -4,7 +4,7 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerCourseRoutes(app, shared) {
-  const { db, requireTeacher, requireAuth, requireRole, toPublicPath, uploadRootDir, courseUpload, cloudUpload, safeJsonParse, stripHtml, serializeCourse, canAccessContent } = shared;
+  const { db, config, requireTeacher, requireAuth, requireRole, toPublicPath, uploadRootDir, courseUpload, cloudUpload, safeJsonParse, stripHtml, serializeCourse, canAccessContent } = shared;
 
   // 创建课程
   app.post('/api/courses', requireTeacher, (request, response) => {
@@ -20,7 +20,7 @@ module.exports = function registerCourseRoutes(app, shared) {
         return;
       }
 
-      const visibility = String(request.body.visibility || 'free').trim();
+      const visibility = config.freeAccessMode ? 'free' : String(request.body.visibility || 'free').trim();
       const validVisibilities = ['free', 'preview', 'trial_paid', 'subject_paid', 'all_paid'];
       if (!validVisibilities.includes(visibility)) {
         response.status(400).json({ error: '无效的可见性类型。' });
@@ -39,7 +39,7 @@ module.exports = function registerCourseRoutes(app, shared) {
         sanitizeText(request.body.subject || '考研规划'),
         request.body.categoryId ? Number(request.body.categoryId) : null,
         visibility,
-        sanitizeText(request.body.subjectScope || ''),
+        config.freeAccessMode ? '' : sanitizeText(request.body.subjectScope || ''),
         request.file ? toPublicPath(request.file.path) : '',
         String(request.body.videoUrl || '').trim(),
         request.currentUser.id,
@@ -164,17 +164,17 @@ module.exports = function registerCourseRoutes(app, shared) {
       title: row.title,
       description: row.description,
       subject: row.subject,
-      visibility: row.visibility || 'free',
-      subjectScope: row.subject_scope || '',
+      visibility: config.freeAccessMode ? 'free' : (row.visibility || 'free'),
+      subjectScope: config.freeAccessMode ? '' : (row.subject_scope || ''),
       filePath: row.file_path,
       fileUrl: row.file_url,
       fileSize: row.file_size,
       sortOrder: row.sort_order,
-      isFreePreview: row.is_free_preview || 0,
+      isFreePreview: config.freeAccessMode ? 1 : (row.is_free_preview || 0),
       createdBy: row.created_by,
       createdAt: row.created_at
     };
-    if (accessInfo.locked) {
+    if (accessInfo.locked && !config.freeAccessMode) {
       item.locked = true;
       item.filePath = '';
       item.fileUrl = '';
@@ -363,7 +363,7 @@ module.exports = function registerCourseRoutes(app, shared) {
         return;
       }
       const fileUrl = String(request.body.fileUrl || '').trim();
-      const visibility = String(request.body.visibility || 'free').trim();
+      const visibility = config.freeAccessMode ? 'free' : String(request.body.visibility || 'free').trim();
       const validVisibilities = ['free', 'preview', 'trial_paid', 'subject_paid', 'all_paid'];
       if (!validVisibilities.includes(visibility)) {
         response.status(400).json({ error: '无效的可见性类型。' });
@@ -371,7 +371,9 @@ module.exports = function registerCourseRoutes(app, shared) {
       }
       const chapterId = request.body.chapterId ? Number(request.body.chapterId) : null;
       const sortOrder = Number(request.body.sortOrder) || 0;
-      const isFreePreview = request.body.isFreePreview === true || request.body.isFreePreview === '1' || request.body.isFreePreview === 1 ? 1 : 0;
+      const isFreePreview = config.freeAccessMode
+        ? 1
+        : (request.body.isFreePreview === true || request.body.isFreePreview === '1' || request.body.isFreePreview === 1 ? 1 : 0);
 
       if (!title) {
         response.status(400).json({ error: '文件标题不能为空。' });
@@ -395,7 +397,7 @@ module.exports = function registerCourseRoutes(app, shared) {
         sanitizeText(request.body.description),
         sanitizeText(request.body.subject),
         visibility,
-        sanitizeText(request.body.subjectScope || ''),
+        config.freeAccessMode ? '' : sanitizeText(request.body.subjectScope || ''),
         request.file ? toPublicPath(request.file.path) : '',
         fileUrl,
         request.file ? request.file.size : 0,
@@ -447,11 +449,11 @@ module.exports = function registerCourseRoutes(app, shared) {
     if (body.title !== undefined) { updates.push('title = ?'); params.push(sanitizeText(body.title)); }
     if (body.description !== undefined) { updates.push('description = ?'); params.push(sanitizeText(body.description)); }
     if (body.subject !== undefined) { updates.push('subject = ?'); params.push(sanitizeText(body.subject)); }
-    if (body.visibility !== undefined) { updates.push('visibility = ?'); params.push(body.visibility); }
-    if (body.subjectScope !== undefined) { updates.push('subject_scope = ?'); params.push(sanitizeText(body.subjectScope)); }
+    if (body.visibility !== undefined && !config.freeAccessMode) { updates.push('visibility = ?'); params.push(body.visibility); }
+    if (body.subjectScope !== undefined && !config.freeAccessMode) { updates.push('subject_scope = ?'); params.push(sanitizeText(body.subjectScope)); }
     if (body.chapterId !== undefined) { updates.push('chapter_id = ?'); params.push(body.chapterId ? Number(body.chapterId) : null); }
     if (body.sortOrder !== undefined) { updates.push('sort_order = ?'); params.push(Number(body.sortOrder) || 0); }
-    if (body.isFreePreview !== undefined) { updates.push('is_free_preview = ?'); params.push(body.isFreePreview === true || body.isFreePreview === '1' || body.isFreePreview === 1 ? 1 : 0); }
+    if (body.isFreePreview !== undefined && !config.freeAccessMode) { updates.push('is_free_preview = ?'); params.push(body.isFreePreview === true || body.isFreePreview === '1' || body.isFreePreview === 1 ? 1 : 0); }
 
     if (!updates.length) return response.status(400).json({ error: '没有需要更新的字段。' });
     params.push(id);

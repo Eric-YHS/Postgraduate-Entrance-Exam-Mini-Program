@@ -3,8 +3,6 @@ import type { ListItem } from './common';
 /** 用户等级 */
 export enum UserLevel {
   FREE = 'free',
-  TRIAL = 'trial',
-  PAID = 'paid',
 }
 
 /** 用户资料 */
@@ -15,10 +13,8 @@ export interface UserProfile extends ListItem {
   avatarUrl: string;
   phone?: string;
   level: UserLevel;
-  trialEndTime?: string;
   targetSchool?: string;
   targetMajor?: string;
-  purchasedCourses: string[];
 }
 
 /** 用户登录响应 */

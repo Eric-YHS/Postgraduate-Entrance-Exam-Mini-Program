@@ -17,13 +17,13 @@ const mockAuthors: Author[] = [
     id: 'user_002',
     nickname: '学霸学姐',
     avatarUrl: '/assets/images/avatar-placeholder.svg',
-    level: UserLevel.PAID,
+    level: UserLevel.FREE,
   },
   {
     id: 'user_003',
     nickname: '数学达人',
     avatarUrl: '/assets/images/avatar-placeholder.svg',
-    level: UserLevel.PAID,
+    level: UserLevel.FREE,
   },
 ];
 

@@ -41,7 +41,7 @@
         <image class="topic-avatar" src="{{ item.author.avatarUrl }}" mode="aspectFill" />
         <view class="topic-meta">
           <text class="topic-author">{{ item.author.nickname }}</text>
-          <text class="topic-time">{{ formatTime(item.createdAt) }}</text>
+          <text class="topic-time">{{ item.displayCreatedAt }}</text>
         </view>
         <view
           class="topic-favorite {{ item.favoritedByMe ? 'topic-favorite--active' : '' }}"

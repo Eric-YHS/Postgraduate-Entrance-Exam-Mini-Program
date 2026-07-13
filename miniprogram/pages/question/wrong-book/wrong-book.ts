@@ -3,10 +3,24 @@ import type { WrongQuestion } from '../../../types/question';
 import { SUBJECT_MAP } from '../../../constants/index';
 import { formatDateTime } from '../../../utils/date';
 
+type WrongQuestionListItem = WrongQuestion & {
+  subjectLabel: string;
+  displayTime: string;
+};
+
+function toWrongQuestionListItem(question: WrongQuestion, activeTab: 'active' | 'mastered'): WrongQuestionListItem {
+  const timestamp = activeTab === 'active' ? question.lastWrongAt : question.masteredAt;
+  return {
+    ...question,
+    subjectLabel: SUBJECT_MAP[question.subject] || question.subject,
+    displayTime: timestamp ? formatDateTime(timestamp) : '',
+  };
+}
+
 Page({
   data: {
     activeTab: 'active' as 'active' | 'mastered',
-    questions: [] as WrongQuestion[],
+    questions: [] as WrongQuestionListItem[],
     loading: false,
     error: false,
     page: 1,
@@ -43,7 +57,8 @@ Page({
         pageSize: this.data.pageSize,
       });
 
-      const questions = reset ? res.list : [...this.data.questions, ...res.list];
+      const questionItems = res.list.map((question) => toWrongQuestionListItem(question, this.data.activeTab));
+      const questions = reset ? questionItems : [...this.data.questions, ...questionItems];
       const hasMore = questions.length < res.total;
 
       this.setData({
@@ -82,9 +97,11 @@ Page({
       } else {
         // 更新状态
         this.setData({
-          questions: this.data.questions.map((q) =>
-            q.id === id ? { ...q, isMastered: true, masteredAt: new Date().toISOString() } : q
-          ),
+          questions: this.data.questions.map((q) => {
+            if (q.id !== id) return q;
+            const masteredAt = new Date().toISOString();
+            return { ...q, isMastered: true, masteredAt, displayTime: formatDateTime(masteredAt) };
+          }),
         });
       }
     } catch (err) {
@@ -104,11 +121,4 @@ Page({
     });
   },
 
-  getSubjectName(subject: string): string {
-    return SUBJECT_MAP[subject] || subject;
-  },
-
-  formatTime(date: string): string {
-    return formatDateTime(date);
-  },
 });

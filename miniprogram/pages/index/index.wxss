@@ -1,5 +1,5 @@
 .welcome-card {
-  background: linear-gradient(135deg, #1D4E89 0%, #2E75B6 100%);
+  background: linear-gradient(135deg, #1d4e89 0%, #2e75b6 100%);
   color: #fff;
 }
 
@@ -46,7 +46,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 22%;
+  width: 30%;
 }
 
 .feature-icon {
@@ -60,10 +60,18 @@
   margin-bottom: 12rpx;
 }
 
-.feature-icon--course { background: #EEEDFE; }
-.feature-icon--question { background: #E1F5EE; }
-.feature-icon--wrong { background: #FAEEDA; }
-.feature-icon--forum { background: #FCEBEB; }
+.feature-icon--course {
+  background: #eeedfe;
+}
+.feature-icon--question {
+  background: #e1f5ee;
+}
+.feature-icon--wrong {
+  background: #faeeda;
+}
+.feature-icon--forum {
+  background: #fcebeb;
+}
 
 .feature-name {
   font-size: 26rpx;
@@ -78,7 +86,7 @@
 
 .course-item {
   display: flex;
-  background: #FAFAFA;
+  background: #fafafa;
   border-radius: 12rpx;
   overflow: hidden;
 }
@@ -115,20 +123,14 @@
   color: var(--text-secondary);
 }
 
-.course-price-row {
+.course-access-row {
   display: flex;
   align-items: baseline;
   gap: 12rpx;
 }
 
-.course-price {
+.course-access {
   font-size: 30rpx;
   font-weight: 600;
-  color: var(--danger);
-}
-
-.course-original-price {
-  font-size: 24rpx;
-  color: var(--text-tertiary);
-  text-decoration: line-through;
+  color: var(--success);
 }

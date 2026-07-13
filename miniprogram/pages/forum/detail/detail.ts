@@ -3,9 +3,16 @@ import { formatDateTime } from '../../../utils/date';
 import { auditText } from '../../../utils/content-audit';
 import type { Reply, Topic } from '../../../types/forum';
 
+type TopicDetail = Topic & { replies: Reply[] };
+type TopicDetailView = TopicDetail & {
+  displayCreatedAt: string;
+  videoAttachment: Topic['attachments'][number] | null;
+  fileAttachments: Topic['attachments'];
+};
+
 Page({
   data: {
-    topic: null as (Topic & { replies: Reply[] }) | null,
+    topic: null as TopicDetailView | null,
     loading: false,
     error: false,
     replyContent: '',
@@ -32,7 +39,13 @@ Page({
     this.setData({ loading: true, error: false });
     try {
       const topic = await getTopicById(this.topicId);
-      this.setData({ topic, loading: false });
+      const topicView: TopicDetailView = {
+        ...topic,
+        displayCreatedAt: formatDateTime(topic.createdAt),
+        videoAttachment: topic.attachments.find((attachment) => attachment.type === 'video') || null,
+        fileAttachments: topic.attachments.filter((attachment) => attachment.type === 'attachment'),
+      };
+      this.setData({ topic: topicView, loading: false });
     } catch (err) {
       console.error('[ForumDetail] 加载帖子详情失败', err);
       this.setData({ loading: false, error: true });
@@ -63,14 +76,6 @@ Page({
 
   onReplyInput(e: WechatMiniprogram.Input) {
     this.setData({ replyContent: e.detail.value });
-  },
-
-  getVideoAttachment(attachments: Topic['attachments']) {
-    return attachments.find((a) => a.type === 'video') || null;
-  },
-
-  getFileAttachments(attachments: Topic['attachments']) {
-    return attachments.filter((a) => a.type === 'attachment');
   },
 
   onCancelTarget() {
@@ -118,9 +123,5 @@ Page({
     const urls = topic.attachments.filter((a) => a.type === 'image').map((a) => a.url);
     const index = e.currentTarget.dataset.index as number;
     wx.previewImage({ urls, current: urls[index] });
-  },
-
-  formatTime(date: string): string {
-    return formatDateTime(date);
   },
 });

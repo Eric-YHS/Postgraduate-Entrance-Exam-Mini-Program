@@ -4,6 +4,7 @@ const { renderTemplate } = require('../messageTemplate');
 const { getBotByCode, logConversation } = require('../botManager');
 const { sendAppMessage } = require('../wecom');
 const { getUserEntitlement, computeEffectiveTier } = require('../entitlements');
+const config = require('../../config');
 
 const BOT_CODE = 'supervisor';
 const BOT_TYPE = 'supervisor';
@@ -18,6 +19,10 @@ const BOT_TYPE = 'supervisor';
  * @returns {boolean}
  */
 function isPaidStudent(db, studentId) {
+  if (config.freeAccessMode) {
+    return Boolean(db.prepare("SELECT id FROM users WHERE id = ? AND role = 'student'").get(studentId));
+  }
+
   const entitlement = getUserEntitlement(studentId);
   return computeEffectiveTier(entitlement) === 'paid';
 }
@@ -32,6 +37,16 @@ function getPaidStudents(db) {
   // 预留 wecom_userid 字段，当前可能不存在则返回 null
   const columns = db.prepare("PRAGMA table_info(users)").all();
   const hasWecomUserid = columns.some(c => c.name === 'wecom_userid');
+
+  if (config.freeAccessMode) {
+    const wecomColumn = hasWecomUserid ? 'u.wecom_userid' : 'NULL AS wecom_userid';
+    return db.prepare(`
+      SELECT u.id, u.display_name, ${wecomColumn}
+      FROM users u
+      WHERE u.role = 'student'
+      ORDER BY u.id ASC
+    `).all();
+  }
 
   if (hasWecomUserid) {
     return db.prepare(`
@@ -286,7 +301,10 @@ async function sendEveningCheck(db, studentId) {
  */
 async function handleReply(db, studentId, text) {
   if (!isPaidStudent(db, studentId)) {
-    return { success: false, message: '您当前不是付费学员，无法使用督学服务。' };
+    return {
+      success: false,
+      message: config.freeAccessMode ? '督学服务仅面向学生用户。' : '您当前不是付费学员，无法使用督学服务。'
+    };
   }
 
   const student = getStudent(db, studentId);

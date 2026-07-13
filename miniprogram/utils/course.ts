@@ -1,54 +1,13 @@
-import { checkPermission, guardPermission } from './permission';
-import { FeatureCode } from '../constants/index';
 import type { CourseChapter, CourseDetail, CourseVideo } from '../types/course';
 
 /** 判断某视频是否可以播放 */
-export function canPlayVideo(video: CourseVideo, course: CourseDetail): boolean {
-  // 免费课程：全部可播放
-  if (course.isFree) return true;
-
-  // 已购买课程：全部可播放
-  if (course.isPurchased) return true;
-
-  // 试看视频：需要试看权限
-  if (video.isTrial) {
-    return checkPermission(FeatureCode.COURSE_TRIAL);
-  }
-
-  // 完整视频：需要完整权限（无权限时会弹窗）
-  return guardPermission(FeatureCode.COURSE_FULL);
+export function canPlayVideo(_video: CourseVideo, _course: CourseDetail): boolean {
+  return true;
 }
 
 /** 获取视频播放前的阻断原因，返回 null 表示可以播放 */
-export function getPlayBlockReason(video: CourseVideo, course: CourseDetail): string | null {
-  if (course.isFree || course.isPurchased) return null;
-  if (video.isTrial) return null;
-  return '该视频需要购买课程或开通会员后观看';
-}
-
-/** 判断是否为试看视频 */
-export function isTrialVideo(video: CourseVideo, course: CourseDetail): boolean {
-  if (course.isFree || course.isPurchased) return false;
-  return video.isTrial;
-}
-
-/** 获取试看限制时长（秒），未限制返回 0 */
-export function getTrialLimit(video: CourseVideo, course: CourseDetail): number {
-  if (!isTrialVideo(video, course)) return 0;
-  return video.trialDuration || 0;
-}
-
-/** 格式化试看时长提示 */
-export function formatTrialLimit(seconds: number): string {
-  if (seconds <= 0) return '可试看';
-  if (seconds < 60) return `试看 ${seconds} 秒`;
-  return `试看 ${Math.floor(seconds / 60)} 分钟`;
-}
-
-/** 判断视频是否已被试看/完整解锁 */
-export function isVideoUnlocked(video: CourseVideo, course: CourseDetail): boolean {
-  if (course.isFree || course.isPurchased) return true;
-  return video.isTrial;
+export function getPlayBlockReason(_video: CourseVideo, _course: CourseDetail): string | null {
+  return null;
 }
 
 /** 获取课程总视频数 */
@@ -105,11 +64,6 @@ export function getPrevVideo(
     }
   }
   return null;
-}
-
-/** 格式化价格（分 → 元） */
-export function formatPrice(price: number): string {
-  return (price / 100).toFixed(2);
 }
 
 /** 格式化时长（秒 → mm:ss 或 HH:mm:ss） */

@@ -11,8 +11,7 @@
     <view class="cover-section">
       <image class="course-cover" src="{{ detail.coverUrl }}" mode="aspectFill" />
       <view class="cover-mask">
-        <view class="cover-badge" wx:if="{{ detail.isFree }}">免费</view>
-        <view class="cover-badge cover-badge--trial" wx:elif="{{ detail.trialCount > 0 }}">可试看</view>
+        <view class="cover-badge">免费开放</view>
       </view>
     </view>
 
@@ -37,12 +36,15 @@
     </view>
   </block>
 
-  <!-- 底部购买栏 -->
-  <view wx:if="{{ detail }}" class="buy-bar-placeholder"></view>
-  <course-buy-bar
-    wx:if="{{ detail }}"
-    course="{{ detail }}"
-    bind:buy="onBuyTap"
-    bind:startlearning="onStartLearning"
-  />
+  <view wx:if="{{ detail }}" class="course-action-placeholder"></view>
+  <view wx:if="{{ detail }}" class="course-action-bar">
+    <view class="course-action-bar__content">
+      <view class="course-action-bar__info">
+        <text class="course-action-bar__title">免费开放</text>
+        <text class="course-action-bar__subtitle">全部内容均可直接学习</text>
+      </view>
+      <view class="course-action-bar__button" bindtap="onStartLearning">开始学习</view>
+    </view>
+    <ky-safe-area position="bottom" />
+  </view>
 </view>

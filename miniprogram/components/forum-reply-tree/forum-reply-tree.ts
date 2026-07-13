@@ -1,4 +1,9 @@
 import { formatDateTime } from '../../utils/date';
+import type { Reply } from '../../types/forum';
+
+type ReplyView = Reply & {
+  displayCreatedAt: string;
+};
 
 Component({
   properties: {
@@ -6,6 +11,20 @@ Component({
     replies: { type: Array, value: [] },
     /** 帖子 ID */
     topicId: { type: String, value: '' },
+  },
+
+  data: {
+    displayReplies: [] as ReplyView[],
+  },
+
+  observers: {
+    replies(replies: Reply[]) {
+      const displayReplies = (replies || []).map((reply) => ({
+        ...reply,
+        displayCreatedAt: formatDateTime(reply.createdAt),
+      }));
+      this.setData({ displayReplies });
+    },
   },
 
   methods: {
@@ -16,10 +35,6 @@ Component({
         replyId: id,
         replyToAuthorName: name,
       });
-    },
-
-    formatTime(date: string): string {
-      return formatDateTime(date);
     },
   },
 });

@@ -120,23 +120,17 @@
   margin-top: 8rpx;
 }
 
-.course-price-row {
+.course-access-row {
   display: flex;
   align-items: baseline;
   gap: 12rpx;
   margin-top: 8rpx;
 }
 
-.course-price {
+.course-access {
   font-size: 32rpx;
   font-weight: 600;
-  color: var(--danger);
-}
-
-.course-original-price {
-  font-size: 24rpx;
-  color: var(--text-tertiary);
-  text-decoration: line-through;
+  color: var(--success);
 }
 
 .load-more {

@@ -1,107 +1,72 @@
-const { getAgent, createTeacher, createStudent, createProduct, loginAs } = require('./helper');
+const { getAgent, createTeacher, createStudent, createProduct, loginAs, db } = require('./helper');
+const config = require('../src/config');
 
-describe('商城接口', () => {
-  test('POST /api/orders 创建未支付订单，支付成功后扣减库存', async () => {
+describe('免费模式下的交易与推广接口', () => {
+  test.each([
+    ['GET', '/api/products'],
+    ['POST', '/api/orders'],
+    ['GET', '/api/refunds'],
+    ['GET', '/api/cart'],
+    ['POST', '/api/cart/checkout'],
+    ['GET', '/api/addresses'],
+    ['GET', '/api/group-buys'],
+    ['POST', '/api/wxpay/callback'],
+    ['POST', '/api/promoter/apply'],
+    ['GET', '/api/admin/promoter-applications'],
+    ['GET', '/api/admin/refunds']
+  ])('%s %s 返回 410', async (method, path) => {
     const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_store_1' });
-    const student = createStudent({ username: 'student_store_1' });
-    const product = createProduct({ createdBy: teacher.id, title: '测试资料', price: 9.9, stock: 10 });
+    const response = method === 'GET'
+      ? await agent.get(path)
+      : await agent.post(path).send({});
 
-    await loginAs(agent, student.username);
-
-    const res = await agent
-      .post('/api/orders')
-      .send({ productId: product.id, quantity: 2, shippingAddress: '测试地址' })
-      .expect(200);
-
-    expect(res.body.ok).toBe(true);
-    expect(res.body.id).toBeGreaterThan(0);
-
-    const db = require('./helper').db;
-    const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(res.body.id);
-    expect(order.status).toBe('unpaid');
-
-    let row = db.prepare('SELECT stock FROM products WHERE id = ?').get(product.id);
-    expect(row.stock).toBe(10);
-
-    await agent.post(`/api/orders/${order.id}/pay`).send({}).expect(200);
-
-    row = db.prepare('SELECT stock FROM products WHERE id = ?').get(product.id);
-    expect(row.stock).toBe(8);
-
-    const paidOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
-    expect(paidOrder.status).toBe('paid');
+    expect(response.status).toBe(410);
+    expect(response.body.error).toContain('免费模式');
   });
 
-  test('POST /api/orders 支付时库存不足拒绝并发超卖', async () => {
-    const teacher = createTeacher({ username: 'teacher_store_2' });
-    const product = createProduct({ createdBy: teacher.id, title: '限量资料', price: 99, stock: 1 });
-
-    const studentA = createStudent({ username: 'student_store_a' });
-    const studentB = createStudent({ username: 'student_store_b' });
-
-    const agentA = getAgent();
-    const agentB = getAgent();
-    await loginAs(agentA, studentA.username);
-    await loginAs(agentB, studentB.username);
-
-    const [resA, resB] = await Promise.all([
-      agentA.post('/api/orders').send({ productId: product.id, quantity: 1, shippingAddress: 'A' }),
-      agentB.post('/api/orders').send({ productId: product.id, quantity: 1, shippingAddress: 'B' })
-    ]);
-
-    expect(resA.status).toBe(200);
-    expect(resB.status).toBe(200);
-
-    const payA = await agentA.post(`/api/orders/${resA.body.id}/pay`).send({});
-    const payB = await agentB.post(`/api/orders/${resB.body.id}/pay`).send({});
-
-    const successCount = [payA, payB].filter((r) => r.status === 200).length;
-    expect(successCount).toBe(1);
-
-    const row = require('./helper').db.prepare('SELECT stock FROM products WHERE id = ?').get(product.id);
-    expect(row.stock).toBe(0);
-
-    const paidCount = require('./helper').db.prepare("SELECT COUNT(*) AS c FROM orders WHERE product_id = ? AND status = 'paid'").get(product.id).c;
-    expect(paidCount).toBe(1);
-  });
-
-  test('POST /api/cart/checkout 创建未支付订单，支付后扣减库存并清空购物车', async () => {
+  test('订单接口不可创建交易记录', async () => {
     const agent = getAgent();
-    const teacher = createTeacher({ username: 'teacher_store_3' });
-    const student = createStudent({ username: 'student_store_3' });
-    const product = createProduct({ createdBy: teacher.id, title: '购物车资料', price: 19.9, stock: 5 });
-
+    const teacher = createTeacher({ username: 'teacher_disabled_store' });
+    const student = createStudent({ username: 'student_disabled_store' });
+    const product = createProduct({ createdBy: teacher.id, title: '不可购买资料', price: 9.9, stock: 10 });
     await loginAs(agent, student.username);
 
-    await agent
-      .post('/api/cart')
-      .send({ productId: product.id, quantity: 2 })
+    const before = db.prepare('SELECT COUNT(*) AS count FROM orders').get().count;
+    await agent.post('/api/orders').send({ productId: product.id, quantity: 1, shippingAddress: '测试地址' }).expect(410);
+    const after = db.prepare('SELECT COUNT(*) AS count FROM orders').get().count;
+    expect(after).toBe(before);
+  });
+
+  test('学生和教师 bootstrap 不返回 products/orders 模块', async () => {
+    const teacherAgent = getAgent();
+    const studentAgent = getAgent();
+    const teacher = createTeacher({ username: 'teacher_no_store_bootstrap' });
+    const student = createStudent({ username: 'student_no_store_bootstrap' });
+    await loginAs(teacherAgent, teacher.username);
+    await loginAs(studentAgent, student.username);
+
+    const teacherBootstrap = await teacherAgent
+      .get('/api/teacher/bootstrap?modules=products,orders,courses')
       .expect(200);
+    expect(teacherBootstrap.body).not.toHaveProperty('products');
+    expect(teacherBootstrap.body).not.toHaveProperty('orders');
+    expect(teacherBootstrap.body).toHaveProperty('courses');
 
-    const db = require('./helper').db;
-    db.prepare(
-      'INSERT INTO address_book (student_id, name, phone, address, is_default, created_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(student.id, '测试', '13800000000', '测试地址', 1, new Date().toISOString());
-    const address = db.prepare('SELECT id FROM address_book WHERE student_id = ?').get(student.id);
-
-    const res = await agent
-      .post('/api/cart/checkout')
-      .send({ addressId: address.id })
+    const studentBootstrap = await studentAgent
+      .get('/api/student/bootstrap?modules=products,orders,courses')
       .expect(200);
+    expect(studentBootstrap.body).not.toHaveProperty('products');
+    expect(studentBootstrap.body).not.toHaveProperty('orders');
+    expect(studentBootstrap.body).toHaveProperty('courses');
+  });
 
-    expect(res.body.ok).toBe(true);
-    expect(res.body.orderIds.length).toBe(1);
-
-    const cart = db.prepare('SELECT COUNT(*) AS c FROM shopping_cart WHERE student_id = ?').get(student.id).c;
-    expect(cart).toBe(0);
-
-    let stock = db.prepare('SELECT stock FROM products WHERE id = ?').get(product.id).stock;
-    expect(stock).toBe(5);
-
-    await agent.post(`/api/orders/${res.body.orderIds[0]}/pay`).send({}).expect(200);
-
-    stock = db.prepare('SELECT stock FROM products WHERE id = ?').get(product.id).stock;
-    expect(stock).toBe(3);
+  test('微信支付环境配置在免费模式下强制失效', () => {
+    expect(config.freeAccessMode).toBe(true);
+    expect(config.wxPayEnabled).toBe('false');
+    expect(config.wxPayAppId).toBe('');
+    expect(config.wxPayMchId).toBe('');
+    expect(config.wxPayApiV3Key).toBe('');
+    expect(config.wxPayPrivateKeyPath).toBe('');
+    expect(config.wxPaySerialNo).toBe('');
   });
 });

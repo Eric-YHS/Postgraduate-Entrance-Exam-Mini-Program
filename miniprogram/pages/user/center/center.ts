@@ -1,12 +1,11 @@
 import { userStore, refreshUserInfo } from '../../../store/user.store';
-import { UserLevel } from '../../../types/user';
 import type { UserProfile } from '../../../types/user';
-import { getRemainingDays } from '../../../utils/date';
+import { ONLINE_COURSE_FEATURE_ENABLED } from '../../../config/release';
 
 Page({
   data: {
     user: null as UserProfile | null,
-    trialDays: 0,
+    onlineCoursesVisible: ONLINE_COURSE_FEATURE_ENABLED,
     menuGroups: [
       {
         title: '学习工具',
@@ -17,12 +16,8 @@ Page({
         ],
       },
       {
-        title: '我的服务',
-        items: [
-          { icon: '🛒', name: '我的订单', path: '' },
-          { icon: '💬', name: '在线答疑', path: '' },
-          { icon: '🎯', name: '创业宣传', path: '/pages/promoter/apply/apply' },
-        ],
+        title: '学习支持',
+        items: [{ icon: '💬', name: '在线答疑', path: '' }],
       },
       {
         title: '系统设置',
@@ -41,8 +36,7 @@ Page({
 
     this.unsubscribe = userStore.subscribe((state: { profile: UserProfile | null }) => {
       const user = state.profile;
-      const trialDays = user?.level === UserLevel.TRIAL && user?.trialEndTime ? getRemainingDays(user.trialEndTime) : 0;
-      this.setData({ user, trialDays });
+      this.setData({ user });
     });
 
     refreshUserInfo();
@@ -68,8 +62,8 @@ Page({
 
   onLevelTap() {
     wx.showModal({
-      title: '会员权益',
-      content: '开通会员即可解锁全部课程、专属学习计划和 AI 督学服务。',
+      title: '免费开放',
+      content: '当前开放的学习计划、题库和交流功能均免费开放，不设付费入口。',
       showCancel: false,
       confirmText: '知道了',
     });

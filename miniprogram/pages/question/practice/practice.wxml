@@ -34,7 +34,7 @@
         <text wx:if="{{ currentQuestion.isRealExam }}" class="meta-tag meta-tag--real">真题</text>
         <text wx:if="{{ currentQuestion.sourceYear }}" class="meta-tag">{{ currentQuestion.sourceYear }}年</text>
         <text wx:if="{{ currentQuestion.sourcePaper }}" class="meta-tag">{{ currentQuestion.sourcePaper }}</text>
-        <text wx:if="{{ currentQuestion.difficulty }}" class="meta-tag meta-tag--difficulty">难度 {{ getDifficultyText(currentQuestion.difficulty) }}</text>
+        <text wx:if="{{ currentQuestion.difficulty }}" class="meta-tag meta-tag--difficulty">难度 {{ currentQuestion.difficultyText }}</text>
       </view>
       <!-- 英语单词模式 -->
       <block wx:if="{{ currentQuestion.displayMode === 'word' }}">
@@ -69,7 +69,7 @@
       <view
         wx:for="{{ currentQuestion.options }}"
         wx:key="label"
-        class="option-item {{ isCorrectOption(item) ? 'option-item--correct' : '' }} {{ isWrongOption(item) ? 'option-item--wrong' : '' }} {{ selectedOption === item.label && !hasAnswered ? 'option-item--selected' : '' }} {{ hasAnswered ? 'option-item--disabled' : '' }}"
+        class="option-item {{ item.className }}"
         bindtap="onOptionTap"
         data-label="{{ item.label }}"
       >
@@ -85,8 +85,8 @@
         </view>
 
         <view wx:if="{{ hasAnswered }}" class="option-status">
-          <text wx:if="{{ isCorrectOption(item) }}" class="status-correct">✓</text>
-          <text wx:elif="{{ isWrongOption(item) }}" class="status-wrong">✗</text>
+          <text wx:if="{{ item.isCorrect }}" class="status-correct">✓</text>
+          <text wx:elif="{{ item.isWrong }}" class="status-wrong">✗</text>
         </view>
       </view>
     </view>

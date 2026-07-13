@@ -11,11 +11,13 @@ module.exports = {
       env_file: path.join(rootDir, '.env'),
       env: {
         NODE_ENV: 'development',
-        PORT: 3000
+        PORT: 3000,
+        FREE_ACCESS_MODE: 'true'
       },
       env_production: {
         NODE_ENV: 'production',
-        PORT: 3000
+        PORT: 3000,
+        FREE_ACCESS_MODE: 'true'
       }
     }
   ]

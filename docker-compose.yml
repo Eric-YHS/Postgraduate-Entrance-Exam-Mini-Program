@@ -13,3 +13,4 @@ services:
       - ./data:/app/data
     environment:
       - TZ=Asia/Shanghai
+      - FREE_ACCESS_MODE=true

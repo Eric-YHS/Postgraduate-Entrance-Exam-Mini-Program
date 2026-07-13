@@ -34,7 +34,7 @@
       >
         <view class="question-main">
           <view class="question-header">
-            <text class="question-subject">{{ getSubjectName(item.subject) }}</text>
+            <text class="question-subject">{{ item.subjectLabel }}</text>
             <text wx:if="{{ activeTab === 'active' }}" class="question-wrong-count">错 {{ item.wrongCount }} 次</text>
           </view>
 
@@ -51,7 +51,7 @@
           <view class="question-meta">
             <text class="meta-time">
               {{ activeTab === 'active' ? '最近做错：' : '掌握时间：' }}
-              {{ formatTime(activeTab === 'active' ? item.lastWrongAt : item.masteredAt) }}
+              {{ item.displayTime }}
             </text>
           </view>
         </view>

@@ -10,9 +10,6 @@
         </view>
         <view class="user-level" bindtap="onLevelTap">
           <ky-user-level-tag level="{{ user.level }}" show-icon="{{ true }}" />
-          <text class="trial-countdown" wx:if="{{ user.level === 'trial' && trialDays > 0 }}">
-            剩余 {{ trialDays }} 天
-          </text>
         </view>
       </view>
     </view>
@@ -20,7 +17,7 @@
 
   <!-- 数据统计 -->
   <view class="stats-card card">
-    <view class="stats-item">
+    <view class="stats-item" wx:if="{{ onlineCoursesVisible }}">
       <view class="stats-value">0</view>
       <view class="stats-label">已学课程</view>
     </view>

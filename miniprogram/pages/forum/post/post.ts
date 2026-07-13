@@ -1,6 +1,4 @@
 import { createTopic } from '../../../services/forum.service';
-import { FeatureCode } from '../../../constants/index';
-import { checkPermission } from '../../../utils/permission';
 import { auditText } from '../../../utils/content-audit';
 import { uploadAttachments, uploadImages, uploadVideo } from '../../../utils/upload';
 
@@ -13,17 +11,6 @@ Page({
     hashtags: [] as string[],
     hashtagInput: '',
     submitting: false,
-  },
-
-  onLoad() {
-    if (!checkPermission(FeatureCode.FORUM_POST)) {
-      wx.showModal({
-        title: '功能受限',
-        content: '发帖功能需要开通会员或体验权限',
-        showCancel: false,
-        success: () => wx.navigateBack(),
-      });
-    }
   },
 
   onContentInput(e: WechatMiniprogram.Input) {

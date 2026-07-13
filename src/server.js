@@ -343,8 +343,8 @@ function serializeCourse(row) {
     description: row.description,
     subject: row.subject,
     categoryId: row.category_id || null,
-    visibility: row.visibility || 'free',
-    subjectScope: row.subject_scope || '',
+    visibility: config.freeAccessMode ? 'free' : (row.visibility || 'free'),
+    subjectScope: config.freeAccessMode ? '' : (row.subject_scope || ''),
     videoPath: row.video_path,
     videoUrl: row.video_url,
     teacherName: row.teacher_name,
@@ -359,7 +359,7 @@ function serializeLiveSession(row) {
     title: row.title,
     description: row.description,
     subject: row.subject,
-    visibility: row.visibility || 'free',
+    visibility: config.freeAccessMode ? 'free' : (row.visibility || 'free'),
     status: row.status,
     recordingPath: row.recording_path || '',
     teacherName: row.teacher_name,
@@ -494,8 +494,8 @@ function serializeQuestionForTeacher(row) {
     analysisText: row.analysis_text,
     analysisVideoPath: row.analysis_video_path,
     analysisVideoUrl: row.analysis_video_url,
-    isPaidOnly: row.is_paid_only || 0,
-    subjectScope: row.subject_scope || '',
+    isPaidOnly: config.freeAccessMode ? 0 : (row.is_paid_only || 0),
+    subjectScope: config.freeAccessMode ? '' : (row.subject_scope || ''),
     displayMode: row.display_mode || 'radio',
     formulaImagePath: row.formula_image_path || '',
     sourceYear: row.source_year || null,
@@ -513,8 +513,8 @@ function serializeQuestionForStudent(row, latestRecord) {
     subject: row.subject,
     stem: row.stem,
     options: safeJsonParse(row.options, []),
-    isPaidOnly: row.is_paid_only || 0,
-    subjectScope: row.subject_scope || '',
+    isPaidOnly: config.freeAccessMode ? 0 : (row.is_paid_only || 0),
+    subjectScope: config.freeAccessMode ? '' : (row.subject_scope || ''),
     displayMode: row.display_mode || 'radio',
     formulaImagePath: row.formula_image_path || '',
     sourceYear: row.source_year || null,
@@ -634,9 +634,9 @@ function getTeacherModuleData(modules) {
       result.forumTopics = forumTopics.map((t) => serializeForumTopic(t, replies));
     } else if (mod === 'questions') {
       result.questions = db.prepare('SELECT * FROM questions ORDER BY created_at DESC LIMIT 200').all().map(serializeQuestionForTeacher);
-    } else if (mod === 'products') {
+    } else if (mod === 'products' && !config.freeAccessMode) {
       result.products = db.prepare('SELECT * FROM products ORDER BY created_at DESC LIMIT 100').all().map(serializeProduct);
-    } else if (mod === 'orders') {
+    } else if (mod === 'orders' && !config.freeAccessMode) {
       result.orders = db
         .prepare('SELECT orders.*, products.title AS product_title, users.display_name AS student_name FROM orders LEFT JOIN products ON products.id = orders.product_id LEFT JOIN users ON users.id = orders.student_id ORDER BY orders.created_at DESC LIMIT 200')
         .all().map(serializeOrder);
@@ -736,9 +736,9 @@ function getStudentModuleData(user, modules) {
           if (!q.isPaidOnly) return true;
           return canAccessContent(user.id, { visibility: q.subjectScope ? 'subject_paid' : 'all_paid', subjectScope: q.subjectScope, subject: q.subject });
         });
-    } else if (mod === 'products') {
+    } else if (mod === 'products' && !config.freeAccessMode) {
       result.products = db.prepare('SELECT * FROM products WHERE status = ? ORDER BY created_at DESC LIMIT 100').all('active').map(serializeProduct);
-    } else if (mod === 'orders') {
+    } else if (mod === 'orders' && !config.freeAccessMode) {
       result.orders = db
         .prepare('SELECT orders.*, products.title AS product_title, users.display_name AS student_name FROM orders LEFT JOIN products ON products.id = orders.product_id LEFT JOIN users ON users.id = orders.student_id WHERE orders.student_id = ? ORDER BY orders.created_at DESC LIMIT 100')
         .all(user.id).map(serializeOrder);
@@ -1586,6 +1586,25 @@ const shared = {
   liveRooms
 };
 
+if (config.freeAccessMode) {
+  const transactionUnavailable = (request, response) => {
+    response.status(410).json({ error: '免费模式下交易与推广功能不可用。' });
+  };
+  app.use([
+    '/api/products',
+    '/api/orders',
+    '/api/refunds',
+    '/api/cart',
+    '/api/addresses',
+    '/api/group-buys',
+    '/api/wxpay',
+    '/api/promoter',
+    '/api/admin/orders',
+    '/api/admin/refunds',
+    '/api/admin/promoter-applications'
+  ], transactionUnavailable);
+}
+
 require('./routes/auth')(app, shared);
 require('./routes/admin')(app, shared);
 require('./routes/students')(app, shared);
@@ -1593,7 +1612,7 @@ require('./routes/teachers')(app, shared);
 require('./routes/courses')(app, shared);
 require('./routes/questions')(app, shared);
 require('./routes/forum')(app, shared);
-require('./routes/store')(app, shared);
+if (!config.freeAccessMode) require('./routes/store')(app, shared);
 require('./routes/live')(app, shared);
 require('./routes/search')(app, shared);
 require('./routes/upload')(app, shared);
@@ -1602,7 +1621,7 @@ require('./routes/messageTemplates')(app, shared);
 require('./routes/bots')(app, shared);
 require('./routes/ai')(app, shared);
 require('./routes/wecom')(app, shared);
-require('./routes/promoter')(app, shared);
+if (!config.freeAccessMode) require('./routes/promoter')(app, shared);
 require('./routes/misc')(app, shared);
 
 // ── 企业微信会话归档轮询器（群聊监听） ──

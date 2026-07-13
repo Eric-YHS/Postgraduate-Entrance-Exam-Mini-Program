@@ -62,10 +62,6 @@
   border-top: 1rpx solid #F0F0F0;
 }
 
-.video-item--locked {
-  opacity: 0.7;
-}
-
 .video-icon {
   width: 64rpx;
   height: 64rpx;
@@ -100,29 +96,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   margin-right: 16rpx;
-}
-
-.video-tags {
-  display: flex;
-  gap: 8rpx;
-  flex-shrink: 0;
-}
-
-.video-tag {
-  padding: 2rpx 10rpx;
-  border-radius: 6rpx;
-  font-size: 20rpx;
-  font-weight: 500;
-}
-
-.video-tag--trial {
-  color: var(--warning);
-  background: #FAEEDA;
-}
-
-.video-tag--locked {
-  color: var(--text-tertiary);
-  background: #F0F0F0;
 }
 
 .video-meta {

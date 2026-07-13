@@ -1,14 +1,25 @@
 import { getCourseDetail } from '../../../services/course.service';
-import {
-  canPlayVideo,
-  formatDuration,
-  formatTrialLimit,
-  getTrialLimit,
-  isTrialVideo,
-  isVideoUnlocked,
-} from '../../../utils/course';
+import { formatDuration } from '../../../utils/course';
 import { getStudyProgress, saveStudyProgress, markVideoCompleted } from '../../../utils/study-progress';
 import type { CourseDetail, CourseVideo, CourseChapter } from '../../../types/course';
+
+type PlaylistVideo = CourseVideo & {
+  durationText: string;
+};
+
+type PlaylistChapter = Omit<CourseChapter, 'videos'> & {
+  videos: PlaylistVideo[];
+};
+
+function buildPlaylist(chapters: CourseChapter[]): PlaylistChapter[] {
+  return chapters.map((chapter) => ({
+    ...chapter,
+    videos: chapter.videos.map((video) => ({
+      ...video,
+      durationText: formatDuration(video.duration),
+    })),
+  }));
+}
 
 // 节流函数
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -30,17 +41,17 @@ Page({
     course: null as CourseDetail | null,
     currentVideo: null as CourseVideo | null,
     currentChapter: null as CourseChapter | null,
+    playlistChapters: [] as PlaylistChapter[],
     videoUrl: '',
     poster: '',
     totalVideos: 0,
     loading: false,
     error: false,
     currentTime: 0,
+    currentTimeText: formatDuration(0),
+    currentVideoDurationText: formatDuration(0),
     duration: 0,
     showPlaylist: false,
-    isTrialMode: false,
-    trialLimit: 0,
-    trialStopped: false,
   },
 
   videoContext: null as WechatMiniprogram.VideoContext | null,
@@ -80,33 +91,23 @@ Page({
         return;
       }
 
-      // 权限校验
-      if (!canPlayVideo(video, course)) {
-        this.setData({ loading: false });
-        setTimeout(() => wx.navigateBack(), 1500);
-        return;
-      }
-
       // 读取历史进度
       const progress = getStudyProgress(videoId);
       const startTime = progress ? progress.currentTime : 0;
 
       const totalVideos = course.chapters.reduce((sum, chapter) => sum + chapter.videos.length, 0);
 
-      const isTrialMode = isTrialVideo(video, course);
-      const trialLimit = getTrialLimit(video, course);
-
       this.setData({
         course,
         currentVideo: video,
         currentChapter: chapter || null,
+        playlistChapters: buildPlaylist(course.chapters),
         videoUrl: video.videoUrl,
         poster: course.coverUrl,
         totalVideos,
+        currentTimeText: formatDuration(0),
+        currentVideoDurationText: formatDuration(video.duration),
         loading: false,
-        isTrialMode,
-        trialLimit,
-        trialStopped: false,
       });
 
       this.hasLoaded = true;
@@ -147,36 +148,9 @@ Page({
 
   onTimeUpdate(e: WechatMiniprogram.VideoTimeUpdate) {
     const { currentTime, duration } = e.detail;
-    this.setData({ currentTime, duration });
-
-    // 试看时长限制
-    if (this.data.isTrialMode && !this.data.trialStopped && this.data.trialLimit > 0) {
-      if (currentTime >= this.data.trialLimit) {
-        this.handleTrialLimitReached();
-        return;
-      }
-    }
+    this.setData({ currentTime, duration, currentTimeText: formatDuration(currentTime) });
 
     this.throttledSave(currentTime, duration, this.data.videoId, this.data.courseId);
-  },
-
-  handleTrialLimitReached() {
-    this.setData({ trialStopped: true });
-    this.videoContext?.pause();
-    this.videoContext?.seek(this.data.trialLimit);
-
-    wx.showModal({
-      title: '试看结束',
-      content: '试看时长已用完，购买课程或开通会员即可观看完整内容',
-      confirmText: '去购买',
-      cancelText: '知道了',
-      success: (res) => {
-        if (res.confirm) {
-          // TODO: 跳转购买页
-          wx.showToast({ title: '购买功能开发中', icon: 'none' });
-        }
-      },
-    });
   },
 
   throttledSave: throttle((currentTime: number, duration: number, videoId: string, courseId: string) => {
@@ -227,16 +201,8 @@ Page({
     const video = chapter?.videos.find((v) => v.id === videoId);
     if (!video) return;
 
-    if (!canPlayVideo(video, course)) {
-      wx.showToast({ title: '该视频需要购买后观看', icon: 'none' });
-      return;
-    }
-
     // 保存当前视频进度
     this.saveProgress();
-
-    const isTrialMode = isTrialVideo(video, course);
-    const trialLimit = getTrialLimit(video, course);
 
     // 切换视频
     this.setData({
@@ -245,11 +211,10 @@ Page({
       currentChapter: chapter || null,
       videoUrl: video.videoUrl,
       currentTime: 0,
+      currentTimeText: formatDuration(0),
+      currentVideoDurationText: formatDuration(video.duration),
       duration: 0,
       showPlaylist: false,
-      isTrialMode,
-      trialLimit,
-      trialStopped: false,
     });
 
     // 读取新视频历史进度
@@ -262,16 +227,4 @@ Page({
     }
   },
 
-  formatDuration(seconds: number): string {
-    return formatDuration(seconds);
-  },
-
-  isVideoUnlocked(video: CourseVideo, course: CourseDetail): boolean {
-    return isVideoUnlocked(video, course);
-  },
-
-  formatTrialTag(video: CourseVideo, course: CourseDetail): string {
-    const limit = getTrialLimit(video, course);
-    return formatTrialLimit(limit);
-  },
 });

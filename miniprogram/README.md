@@ -20,7 +20,7 @@
 | A-08 | 热门话题标签 |
 | A-09 | 论坛 AI 自动审核（本地敏感词 Trie + `auditStatus` 预留） |
 | A-11 | 课程章节制管理 |
-| A-12 | 课程试看机制（`trialDuration` 限制 + 购买引导） |
+| A-12 | 课程免费开放（全部视频可直接学习） |
 | A-13 | 课程分类公共课/专业课分栏 |
 
 > A-10（直播）不在当前规划内。
@@ -37,13 +37,12 @@ miniprogram/
 ├── project.private.config.json # 本地私有配置（不提交）
 ├── components/                 # 公共组件与业务组件
 │   ├── course-chapter-list/    # 课程章节列表
-│   ├── course-buy-bar/         # 课程购买栏
 │   ├── formula-renderer/       # 公式图片渲染
 │   ├── forum-reply-tree/       # 论坛回复树
 │   ├── ky-loading/             # 加载、空态、错误、安全区组件
 │   ├── media-uploader/         # 图片/视频/附件上传
 │   └── question-filter/        # 真题筛选面板
-├── constants/                  # 常量与 FeatureCode
+├── constants/                  # 业务常量
 ├── mock/                       # 本地 Mock 数据与处理器
 ├── pages/                      # 页面
 │   ├── course/                 # 课程列表/详情/播放
@@ -57,7 +56,7 @@ miniprogram/
 ├── utils/                      # 工具函数
 │   ├── content-audit.ts        # 内容审核
 │   ├── course.ts               # 课程/视频辅助
-│   ├── permission.ts           # 三层权益校验
+│   ├── permission.ts           # 功能开放状态
 │   ├── upload.ts               # 媒体上传
 │   └── wrong-book.ts           # 错题本本地存储
 ├── miniprogram_npm/            # npm 构建产物（Vant Weapp）
@@ -94,8 +93,28 @@ npm install
 ## Mock 说明
 
 - 当前接口默认走本地 Mock（`mock/handlers/`）
-- 修改 `mock/data/user.ts` 中的 `CURRENT_MOCK_USER_LEVEL` 可切换 `free` / `trial` / `paid` 身份
+- `mock/data/user.ts` 默认提供免费开放身份
 - 切换为真实后端时，在 `utils/request.ts` 中调整 `USE_MOCK` 或 `BASE_URL` 即可
+
+## 在线课程资质开关
+
+当前发布状态为 `restricted`：只隐藏在线课程列表、课程详情和视频播放链路；题库、错题本、论坛、个人中心等其它功能继续开放。当前已开放功能全部免费，不设购买或会员入口。
+
+课程源码仍保留在 `pages/course/`，发布模式清单保留在 `scripts/manifests/`。获得在线教育相关资质后，可一键恢复：
+
+```bash
+npm run mode:qualified
+npm run verify:release
+```
+
+需要重新隐藏课程时执行：
+
+```bash
+npm run mode:restricted
+npm run verify:release
+```
+
+`npm run upload` 会先执行发布模式校验，防止误把课程页或后台音频能力上传到资质受限版本，也会防止题库、论坛、个人中心等应保留页面被误隐藏。
 
 ## 代码规范
 
@@ -167,7 +186,7 @@ git push origin feature/your-module-name
 - 提交前务必跑 `typecheck` + `lint`
 - 修改公共组件或公共类型时，注意检查所有引用页面是否受影响
 - 上传类功能依赖微信小程序 API，真机调试时需配置合法域名或使用开发者工具「不校验合法域名」
-- 三层权益（免费/体验/付费）逻辑在 `utils/permission.ts` 中维护，新增受限功能时请遵循现有 `FeatureCode` 规范
+- 当前所有学习功能均免费开放，新增功能应保持一致
 
 ## 联系人
 
