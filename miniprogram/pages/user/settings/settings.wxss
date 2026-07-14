@@ -1,0 +1,52 @@
+.settings-page {
+  padding-top: 24rpx;
+}
+
+.setting-group {
+  padding: 0 24rpx;
+}
+
+.group-title {
+  padding: 24rpx 0 12rpx;
+  color: var(--text-secondary);
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.setting-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 112rpx;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.setting-item:last-child {
+  border-bottom: 0;
+}
+
+.item-title {
+  font-size: 29rpx;
+}
+
+.item-title--danger {
+  color: var(--danger);
+}
+
+.item-description {
+  margin-top: 5rpx;
+  color: var(--text-tertiary);
+  font-size: 23rpx;
+}
+
+.arrow {
+  color: var(--text-tertiary);
+  font-size: 28rpx;
+}
+
+.version {
+  padding: 20rpx 0 40rpx;
+  color: var(--text-tertiary);
+  font-size: 23rpx;
+  text-align: center;
+}

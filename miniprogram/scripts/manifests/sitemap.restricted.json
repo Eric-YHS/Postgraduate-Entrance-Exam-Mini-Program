@@ -28,6 +28,22 @@
     {
       "action": "allow",
       "page": "pages/user/center/center"
+    },
+    {
+      "action": "allow",
+      "page": "pages/plan/index/index"
+    },
+    {
+      "action": "allow",
+      "page": "pages/support/qa/qa"
+    },
+    {
+      "action": "allow",
+      "page": "pages/user/settings/settings"
+    },
+    {
+      "action": "allow",
+      "page": "pages/user/help/help"
     }
   ]
 }

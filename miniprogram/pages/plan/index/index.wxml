@@ -1,0 +1,38 @@
+<view class="container plan-page">
+  <view class="summary card">
+    <view class="summary-title">今日计划</view>
+    <view class="summary-count">已完成 {{ completedCount }} / {{ items.length }}</view>
+    <view class="summary-tip">计划仅保存在当前设备</view>
+  </view>
+
+  <view class="add-card card">
+    <input
+      class="plan-input"
+      value="{{ inputValue }}"
+      maxlength="80"
+      placeholder="输入一项要完成的计划"
+      confirm-type="done"
+      bindinput="onInput"
+      bindconfirm="onAdd"
+    />
+    <button class="add-button" bindtap="onAdd">添加</button>
+  </view>
+
+  <view class="empty card" wx:if="{{ items.length === 0 }}">
+    <view class="empty-icon">📅</view>
+    <view class="empty-title">还没有学习计划</view>
+    <view class="empty-tip">从一项今天能完成的小目标开始</view>
+  </view>
+
+  <view class="plan-list card" wx:else>
+    <view class="plan-item" wx:for="{{ items }}" wx:key="id">
+      <view class="check {{ item.completed ? 'check--completed' : '' }}" bindtap="onToggle" data-id="{{ item.id }}">
+        <text wx:if="{{ item.completed }}">✓</text>
+      </view>
+      <view class="plan-content {{ item.completed ? 'plan-content--completed' : '' }}" bindtap="onToggle" data-id="{{ item.id }}">
+        {{ item.content }}
+      </view>
+      <view class="delete" bindtap="onDelete" data-id="{{ item.id }}">删除</view>
+    </view>
+  </view>
+</view>

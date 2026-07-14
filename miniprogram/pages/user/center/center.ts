@@ -10,20 +10,20 @@ Page({
       {
         title: '学习工具',
         items: [
-          { icon: '📝', name: '我的题库', path: '' },
-          { icon: '📚', name: '错题本', path: '' },
-          { icon: '📅', name: '学习计划', path: '' },
+          { icon: '📝', name: '我的题库', path: '/pages/question/practice/practice' },
+          { icon: '📚', name: '错题本', path: '/pages/question/wrong-book/wrong-book' },
+          { icon: '📅', name: '学习计划', path: '/pages/plan/index/index' },
         ],
       },
       {
         title: '学习支持',
-        items: [{ icon: '💬', name: '在线答疑', path: '' }],
+        items: [{ icon: '💬', name: '在线答疑', path: '/pages/support/qa/qa' }],
       },
       {
         title: '系统设置',
         items: [
-          { icon: '⚙️', name: '设置', path: '' },
-          { icon: '❓', name: '帮助与反馈', path: '' },
+          { icon: '⚙️', name: '设置', path: '/pages/user/settings/settings' },
+          { icon: '❓', name: '帮助与反馈', path: '/pages/user/help/help' },
         ],
       },
     ],
@@ -49,14 +49,11 @@ Page({
   },
 
   onMenuTap(e: WechatMiniprogram.BaseEvent) {
-    const { name, path } = e.currentTarget.dataset;
-    if (path) {
-      wx.navigateTo({ url: path });
-      return;
-    }
-    wx.showToast({
-      title: `${name} 开发中`,
-      icon: 'none',
+    const path = String(e.currentTarget.dataset.path || '');
+    if (!path) return;
+    wx.navigateTo({
+      url: path,
+      fail: () => wx.showToast({ title: '页面打开失败', icon: 'none' }),
     });
   },
 

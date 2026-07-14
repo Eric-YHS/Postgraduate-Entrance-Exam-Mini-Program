@@ -1,0 +1,23 @@
+<view class="container help-page">
+  <view class="help-hero card">
+    <view class="hero-title">使用帮助</view>
+    <view class="hero-text">常见问题可以在这里快速找到答案</view>
+  </view>
+
+  <view class="faq-card card">
+    <view class="section-title">常见问题</view>
+    <view class="faq-item" wx:for="{{ faqs }}" wx:key="question">
+      <view class="faq-question" bindtap="onToggleFaq" data-index="{{ index }}">
+        <text>{{ item.question }}</text>
+        <text class="faq-arrow">{{ expandedIndex === index ? '−' : '+' }}</text>
+      </view>
+      <view class="faq-answer" wx:if="{{ expandedIndex === index }}">{{ item.answer }}</view>
+    </view>
+  </view>
+
+  <view class="feedback-card card">
+    <view class="feedback-title">问题仍未解决？</view>
+    <view class="feedback-text">请提交具体问题和相关截图，我们会持续优化体验。</view>
+    <button class="feedback-button" open-type="feedback">提交意见反馈</button>
+  </view>
+</view>

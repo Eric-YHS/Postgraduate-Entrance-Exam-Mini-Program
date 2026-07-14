@@ -59,6 +59,10 @@ if (mode === 'restricted') {
     'pages/forum/detail/detail',
     'pages/forum/post/post',
     'pages/user/center/center',
+    'pages/plan/index/index',
+    'pages/support/qa/qa',
+    'pages/user/settings/settings',
+    'pages/user/help/help',
   ];
   const missingPages = requiredVisiblePages.filter((page) => !actual.pages.includes(page));
   if (missingPages.length > 0) {
@@ -67,6 +71,9 @@ if (mode === 'restricted') {
 
   const indexWxml = fs.readFileSync(path.join(projectRoot, 'pages', 'index', 'index.wxml'), 'utf8');
   const centerWxml = fs.readFileSync(path.join(projectRoot, 'pages', 'user', 'center', 'center.wxml'), 'utf8');
+  const centerTs = fs.readFileSync(path.join(projectRoot, 'pages', 'user', 'center', 'center.ts'), 'utf8');
+  const runtimeConfig = fs.readFileSync(path.join(projectRoot, 'config', 'runtime.ts'), 'utf8');
+  const uploadSource = fs.readFileSync(path.join(projectRoot, 'utils', 'upload.ts'), 'utf8');
   const guardedMarkers = [
     'class="feature-item" wx:if="{{ onlineCoursesVisible }}"',
     'class="recommend-card card" wx:if="{{ onlineCoursesVisible }}"',
@@ -75,6 +82,28 @@ if (mode === 'restricted') {
   const visibleLeak = guardedMarkers.filter((marker) => !(indexWxml.includes(marker) || centerWxml.includes(marker)));
   if (visibleLeak.length > 0) {
     throw new Error(`在线课程入口缺少隐藏条件: ${visibleLeak.join(', ')}`);
+  }
+
+  const placeholderPages = actual.pages.filter((page) => {
+    const pageTs = fs.readFileSync(path.join(projectRoot, `${page}.ts`), 'utf8');
+    const pageWxml = fs.readFileSync(path.join(projectRoot, `${page}.wxml`), 'utf8');
+    return pageTs.includes('开发中') || pageWxml.includes('开发中');
+  });
+  if (placeholderPages.length > 0) {
+    throw new Error(`可见页面仍包含“开发中”占位提示: ${placeholderPages.join(', ')}`);
+  }
+
+  const menuPaths = [...centerTs.matchAll(/path:\s*'([^']+)'/g)].map((match) => match[1].replace(/^\//, ''));
+  const invalidMenuPaths = menuPaths.filter((page) => !actual.pages.includes(page));
+  if (invalidMenuPaths.length > 0) {
+    throw new Error(`个人中心菜单指向未注册页面: ${invalidMenuPaths.join(', ')}`);
+  }
+
+  if (!runtimeConfig.includes('USE_MOCK_API = true')) {
+    throw new Error('当前审核版本必须启用统一 Mock API 模式');
+  }
+  if (!uploadSource.includes('USE_MOCK_API') || /USE_MOCK\s*=\s*false/.test(uploadSource)) {
+    throw new Error('媒体上传未与统一 Mock API 模式保持一致');
   }
 }
 

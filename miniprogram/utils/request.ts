@@ -1,9 +1,7 @@
 import type { RequestOptions, ApiResponse } from '../types/common';
 import { getToken } from './auth';
 import { mockRegistry } from '../mock/handlers/index';
-
-const USE_MOCK = true;
-const BASE_URL = 'https://api.kaoyan.com'; // 真实后端地址（预留）
+import { API_BASE_URL, USE_MOCK_API } from '../config/runtime';
 
 /** 显示加载提示 */
 function showLoading(title = '加载中...'): void {
@@ -33,7 +31,7 @@ export function request<T = unknown>(options: RequestOptions): Promise<T> {
   const { url, method = 'GET', data, header = {}, loading = true, retry = true } = options;
 
   // Mock 拦截
-  if (USE_MOCK && mockRegistry[url]) {
+  if (USE_MOCK_API && mockRegistry[url]) {
     return new Promise((resolve, reject) => {
       if (loading) showLoading();
       setTimeout(() => {
@@ -53,7 +51,7 @@ export function request<T = unknown>(options: RequestOptions): Promise<T> {
     if (loading) showLoading();
 
     wx.request({
-      url: `${BASE_URL}${url}`,
+      url: `${API_BASE_URL}${url}`,
       method,
       data,
       header: {

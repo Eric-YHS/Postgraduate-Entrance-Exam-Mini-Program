@@ -1,8 +1,7 @@
 import { StorageKey } from '../constants/storage-keys';
 import type { LoginResponse, UserProfile } from '../types/user';
 import { mockLogin } from '../mock/handlers/user.handler';
-
-const USE_MOCK = true; // 骨架阶段默认使用 Mock
+import { USE_MOCK_API } from '../config/runtime';
 
 /** 获取 Token */
 export function getToken(): string {
@@ -69,7 +68,7 @@ export function wxLogin(): Promise<string> {
 
 /** 用 code 换取 token（Mock 阶段直接走本地 Mock） */
 export async function code2Token(code: string): Promise<LoginResponse> {
-  if (USE_MOCK) {
+  if (USE_MOCK_API) {
     return mockLogin(code);
   }
 

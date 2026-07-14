@@ -14,6 +14,7 @@ import {
   mockToggleFavorite,
   mockGetHashtags,
 } from './forum.handler';
+import { mockAnswerQuestion } from './support.handler';
 
 /** Mock 处理器注册表 */
 export interface MockRegistry {
@@ -39,6 +40,13 @@ export const mockRegistry: MockRegistry = {
   '/api/forum/topics/:id/replies': (data) => mockCreateReply(data || {}),
   '/api/forum/topics/:id/favorite': (data) => mockToggleFavorite(data || {}),
   '/api/forum/hashtags': () => mockGetHashtags(),
+
+  // 自助答疑
+  '/api/support/answer': (data) => mockAnswerQuestion(data || {}),
+  '/api/ai/explain-question': async (data) => {
+    const result = await mockAnswerQuestion(data || {});
+    return { explanation: result.answer };
+  },
 };
 
 export { mockLogin, mockGetUserProfile } from './user.handler';
@@ -57,3 +65,4 @@ export {
   mockToggleFavorite,
   mockGetHashtags,
 } from './forum.handler';
+export { mockAnswerQuestion } from './support.handler';

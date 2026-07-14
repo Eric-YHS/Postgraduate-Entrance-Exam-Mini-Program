@@ -1,0 +1,32 @@
+<view class="container settings-page">
+  <view class="setting-group card">
+    <view class="group-title">通用设置</view>
+    <view class="setting-item" bindtap="onOpenPermissions">
+      <view>
+        <view class="item-title">系统权限管理</view>
+        <view class="item-description">查看或调整已授权权限</view>
+      </view>
+      <view class="arrow">></view>
+    </view>
+    <view class="setting-item" bindtap="onPrivacy">
+      <view>
+        <view class="item-title">隐私与数据说明</view>
+        <view class="item-description">了解本地数据和发布内容的使用方式</view>
+      </view>
+      <view class="arrow">></view>
+    </view>
+  </view>
+
+  <view class="setting-group card">
+    <view class="group-title">存储管理</view>
+    <view class="setting-item" bindtap="onClearStudyData">
+      <view>
+        <view class="item-title item-title--danger">清理本地学习数据</view>
+        <view class="item-description">当前占用 {{ storageSize }}</view>
+      </view>
+      <view class="arrow">></view>
+    </view>
+  </view>
+
+  <view class="version">当前版本 {{ version }} · 已开放功能全部免费</view>
+</view>

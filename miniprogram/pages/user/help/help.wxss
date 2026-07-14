@@ -1,0 +1,74 @@
+.help-page {
+  padding-top: 24rpx;
+}
+
+.help-hero {
+  background: linear-gradient(135deg, #1d4e89, #2e75b6);
+  color: #ffffff;
+}
+
+.hero-title {
+  font-size: 38rpx;
+  font-weight: 600;
+}
+
+.hero-text {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  opacity: 0.9;
+}
+
+.faq-item {
+  border-bottom: 1rpx solid var(--border);
+}
+
+.faq-item:last-child {
+  border-bottom: 0;
+}
+
+.faq-question {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 92rpx;
+  font-size: 28rpx;
+}
+
+.faq-arrow {
+  margin-left: 20rpx;
+  color: var(--primary);
+  font-size: 36rpx;
+}
+
+.faq-answer {
+  padding: 0 0 24rpx;
+  color: var(--text-secondary);
+  font-size: 26rpx;
+  line-height: 1.75;
+}
+
+.feedback-card {
+  text-align: center;
+}
+
+.feedback-title {
+  font-size: 30rpx;
+  font-weight: 600;
+}
+
+.feedback-text {
+  margin: 12rpx 0 24rpx;
+  color: var(--text-secondary);
+  font-size: 25rpx;
+}
+
+.feedback-button {
+  border-radius: 40rpx;
+  background: var(--primary);
+  color: #ffffff;
+  font-size: 29rpx;
+}
+
+.feedback-button::after {
+  border: 0;
+}

@@ -1,5 +1,6 @@
-const USE_MOCK = false;
-const UPLOAD_URL = '/api/upload';
+import { API_BASE_URL, USE_MOCK_API } from '../config/runtime';
+
+const UPLOAD_URL = `${API_BASE_URL}/api/upload`;
 
 /** 上传结果 */
 export interface UploadResult {
@@ -63,7 +64,7 @@ export function chooseAttachments(max = 3): Promise<Array<{ name: string; path: 
 
 /** 上传单文件到服务端 */
 function uploadFile(filePath: string, formData?: Record<string, string>): Promise<UploadResult> {
-  if (USE_MOCK) {
+  if (USE_MOCK_API) {
     return Promise.resolve({
       url: filePath,
       name: formData?.name,
@@ -99,7 +100,7 @@ function uploadFile(filePath: string, formData?: Record<string, string>): Promis
 
 /** 上传图片列表 */
 export async function uploadImages(paths: string[]): Promise<UploadResult[]> {
-  if (USE_MOCK) {
+  if (USE_MOCK_API) {
     return paths.map((url) => ({ url }));
   }
   return Promise.all(paths.map((path) => uploadFile(path, { type: 'image' })));
@@ -107,7 +108,7 @@ export async function uploadImages(paths: string[]): Promise<UploadResult[]> {
 
 /** 上传视频 */
 export async function uploadVideo(path: string): Promise<UploadResult> {
-  if (USE_MOCK) {
+  if (USE_MOCK_API) {
     return { url: path };
   }
   return uploadFile(path, { type: 'video' });
@@ -117,7 +118,7 @@ export async function uploadVideo(path: string): Promise<UploadResult> {
 export async function uploadAttachments(
   files: Array<{ name: string; path: string; size: number }>
 ): Promise<UploadResult[]> {
-  if (USE_MOCK) {
+  if (USE_MOCK_API) {
     return files.map((file) => ({ url: file.path, name: file.name, size: file.size }));
   }
   return Promise.all(

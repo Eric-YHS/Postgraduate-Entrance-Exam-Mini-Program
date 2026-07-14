@@ -1,0 +1,38 @@
+<view class="container qa-page">
+  <view class="intro card">
+    <view class="intro-title">自助答疑</view>
+    <view class="intro-text">输入你的问题，获取题库、计划与使用方面的帮助。</view>
+  </view>
+
+  <view class="ask-card card">
+    <textarea
+      class="question-input"
+      value="{{ question }}"
+      maxlength="300"
+      placeholder="例如：错题本怎么使用？"
+      bindinput="onInput"
+    />
+    <button class="ask-button" loading="{{ submitting }}" disabled="{{ submitting }}" bindtap="onSubmit">
+      {{ submitting ? '查询中' : '提交问题' }}
+    </button>
+  </view>
+
+  <view class="answer-card card" wx:if="{{ answer }}">
+    <view class="section-title">答复</view>
+    <view class="answer-text">{{ answer }}</view>
+  </view>
+
+  <view class="suggestion-card card">
+    <view class="section-title">常见问题</view>
+    <view
+      class="suggestion-item"
+      wx:for="{{ suggestions }}"
+      wx:key="*this"
+      bindtap="onSuggestionTap"
+      data-question="{{ item }}"
+    >
+      <text>{{ item }}</text>
+      <text class="arrow">></text>
+    </view>
+  </view>
+</view>

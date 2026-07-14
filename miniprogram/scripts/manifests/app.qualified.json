@@ -9,7 +9,11 @@
     "pages/forum/index/index",
     "pages/forum/detail/detail",
     "pages/forum/post/post",
-    "pages/user/center/center"
+    "pages/user/center/center",
+    "pages/plan/index/index",
+    "pages/support/qa/qa",
+    "pages/user/settings/settings",
+    "pages/user/help/help"
   ],
   "window": {
     "backgroundTextStyle": "dark",
