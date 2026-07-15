@@ -9,6 +9,23 @@
     />
     <view class="content-count">{{ content.length || 0 }}/1000</view>
 
+    <view class="security-card card" bindtap="onOpenSecurityRecords">
+      <view class="security-header">
+        <view>
+          <view class="security-title">微信内容安全保护</view>
+          <view class="security-stage">{{ securityStage }}</view>
+        </view>
+        <view class="security-records">检测记录 ></view>
+      </view>
+      <view class="security-api" wx:for="{{ securityApis }}" wx:key="name">
+        <view>
+          <view class="security-api-name">{{ item.name }}</view>
+          <view class="security-api-label">{{ item.label }}</view>
+        </view>
+        <view class="security-status {{ item.passed ? 'security-status--passed' : '' }}">{{ item.status }}</view>
+      </view>
+    </view>
+
     <!-- 媒体上传 -->
     <view class="form-section card">
       <view class="section-title">图片 / 视频 / 附件</view>

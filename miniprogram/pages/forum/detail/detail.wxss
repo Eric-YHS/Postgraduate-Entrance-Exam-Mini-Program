@@ -16,6 +16,27 @@
   padding: 24rpx;
 }
 
+.manual-review {
+  margin-bottom: 20rpx;
+  padding: 16rpx 18rpx;
+  border: 1rpx solid #f1d49a;
+  border-radius: 10rpx;
+  background: #fff8e8;
+}
+
+.manual-review-title {
+  color: #9a6414;
+  font-size: 27rpx;
+  font-weight: 600;
+}
+
+.manual-review-text {
+  margin-top: 6rpx;
+  color: #806a47;
+  font-size: 23rpx;
+  line-height: 1.55;
+}
+
 .topic-header {
   display: flex;
   align-items: center;
@@ -149,6 +170,12 @@
   color: var(--primary, #1d4e89);
   background-color: var(--primary-light, #e8f0f8);
   border-radius: 8rpx;
+}
+
+.reply-security-status {
+  margin-bottom: 10rpx;
+  color: #55746b;
+  font-size: 21rpx;
 }
 
 .cancel-target {

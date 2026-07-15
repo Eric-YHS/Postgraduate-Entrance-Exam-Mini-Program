@@ -44,6 +44,10 @@
     {
       "action": "allow",
       "page": "pages/user/help/help"
+    },
+    {
+      "action": "allow",
+      "page": "pages/user/content-security/content-security"
     }
   ]
 }

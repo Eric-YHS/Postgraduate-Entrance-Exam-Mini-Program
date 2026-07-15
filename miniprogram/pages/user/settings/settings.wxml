@@ -15,6 +15,13 @@
       </view>
       <view class="arrow">></view>
     </view>
+    <view class="setting-item" bindtap="onContentSecurity">
+      <view>
+        <view class="item-title">内容安全检测记录</view>
+        <view class="item-description">查看微信官方接口调用及已保存返回值</view>
+      </view>
+      <view class="arrow">></view>
+    </view>
   </view>
 
   <view class="setting-group card">

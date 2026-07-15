@@ -6,6 +6,10 @@
     <scroll-view scroll-y class="detail-scroll" enhanced scroll-with-animation
       >
       <view class="topic-detail card">
+        <view class="manual-review" wx:if="{{ topic.auditStatus === 'manual' }}">
+          <view class="manual-review-title">待人工审核</view>
+          <view class="manual-review-text">视频或普通附件暂不支持微信自动识别，审核完成前仅本人可见，不会进入公开列表。</view>
+        </view>
         <view class="topic-header">
           <image class="topic-avatar" src="{{ topic.author.avatarUrl }}" mode="aspectFill" />
           <view class="topic-meta">
@@ -86,6 +90,7 @@
 
     <!-- 底部回复栏 -->
     <view class="reply-bar">
+      <view class="reply-security-status">微信内容安全 · {{ replySecurityStatus }}</view>
       <view wx:if="{{ replyTarget }}" class="reply-target" bindtap="onCancelTarget">
         回复 {{ replyTarget.authorName }}
         <text class="cancel-target">×</text>

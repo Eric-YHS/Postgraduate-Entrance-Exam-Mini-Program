@@ -305,6 +305,28 @@ function initializeDatabase() {
       created_at TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS content_security_checks (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      request_id TEXT NOT NULL,
+      user_hash TEXT NOT NULL,
+      api_name TEXT NOT NULL CHECK (api_name IN ('msgSecCheck', 'imgSecCheck', 'mediaCheckAsync')),
+      content_type TEXT NOT NULL CHECK (content_type IN ('text', 'image', 'audio')),
+      input_digest TEXT NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('passed', 'submitted', 'review', 'rejected', 'error')),
+      errcode INTEGER DEFAULT NULL,
+      errmsg TEXT DEFAULT '',
+      suggestion TEXT DEFAULT '',
+      label INTEGER DEFAULT NULL,
+      trace_id TEXT DEFAULT '',
+      raw_response TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_content_security_checks_user_created
+      ON content_security_checks(user_hash, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_content_security_checks_request
+      ON content_security_checks(request_id);
+
     CREATE TABLE IF NOT EXISTS forum_likes (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       topic_id INTEGER NOT NULL,

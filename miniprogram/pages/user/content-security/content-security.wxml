@@ -1,0 +1,65 @@
+<view class="container security-page">
+  <view class="hero card">
+    <view class="hero-title">微信内容安全能力</view>
+    <view class="hero-text">UGC 发布前调用微信官方接口，检测结果和原始返回值会保存至服务器。</view>
+    <view class="service-status">{{ serviceStatus }}</view>
+  </view>
+
+  <view class="api-list card">
+    <view class="api-row">
+      <text class="api-name">msgSecCheck</text>
+      <text>文字内容安全识别</text>
+    </view>
+    <view class="api-row">
+      <text class="api-name">imgSecCheck</text>
+      <text>图片同步安全检测</text>
+    </view>
+    <view class="api-row">
+      <text class="api-name">mediaCheckAsync</text>
+      <text>图片异步安全检测</text>
+    </view>
+  </view>
+
+  <view class="test-card card">
+    <view class="section-title">文字接口验证</view>
+    <textarea
+      class="test-input"
+      maxlength="1000"
+      value="{{ sampleText }}"
+      bindinput="onTextInput"
+    />
+    <button class="action-button" loading="{{ runningText }}" disabled="{{ runningText }}" bindtap="onRunTextCheck">
+      调用 msgSecCheck
+    </button>
+  </view>
+
+  <view class="test-card card">
+    <view class="section-title">图片接口验证</view>
+    <image class="selected-image" wx:if="{{ selectedImage }}" src="{{ selectedImage }}" mode="aspectFit" />
+    <button class="action-button" loading="{{ runningImage }}" disabled="{{ runningImage }}" bindtap="onChooseImageCheck">
+      选择图片并调用两项接口
+    </button>
+  </view>
+
+  <view class="record-section">
+    <view class="record-title">已保存的接口返回值</view>
+    <view class="empty card" wx:if="{{ checks.length === 0 }}">运行检测后将在这里显示 errcode、suggest、label 和 trace_id</view>
+    <view class="record card" wx:for="{{ checks }}" wx:key="index">
+      <view class="record-header">
+        <view>
+          <view class="record-api">{{ item.apiName }}</view>
+          <view class="record-time">{{ item.timeText }}</view>
+        </view>
+        <view class="record-status record-status--{{ item.status }}">{{ item.statusText }}</view>
+      </view>
+      <view class="field"><text>errcode</text><text>{{ item.errcode }}</text></view>
+      <view class="field"><text>errmsg</text><text>{{ item.errmsg || '-' }}</text></view>
+      <view class="field"><text>suggest</text><text>{{ item.suggestion || '-' }}</text></view>
+      <view class="field"><text>label</text><text>{{ item.label === null ? '-' : item.label }}</text></view>
+      <view class="field"><text>trace_id</text><text class="trace">{{ item.traceId || '-' }}</text></view>
+      <view class="raw-title">微信原始返回值</view>
+      <text class="raw-json" selectable>{{ item.rawJson }}</text>
+      <button class="copy-button" size="mini" data-index="{{ index }}" bindtap="onCopyRaw">复制返回值</button>
+    </view>
+  </view>
+</view>

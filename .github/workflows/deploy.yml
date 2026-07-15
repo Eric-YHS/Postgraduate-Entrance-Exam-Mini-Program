@@ -4,6 +4,10 @@ on:
   push:
     branches: [main]
 
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -14,8 +18,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: "20"
+          cache: "npm"
 
       - name: Install dependencies
         run: npm ci
@@ -39,6 +43,9 @@ jobs:
           echo "SERVER_HOST length: ${#SERVER_HOST}"
           echo "SERVER_USER length: ${#SERVER_USER}"
           echo "SERVER_SSH_KEY length: ${#SERVER_SSH_KEY}"
+          test -n "$SERVER_HOST"
+          test -n "$SERVER_USER"
+          test -n "$SERVER_SSH_KEY"
         env:
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
@@ -74,9 +81,31 @@ jobs:
       - name: Test SSH connection
         run: ssh deploy-server "echo 'SSH connection OK'"
 
+      - name: Sync checked-out revision to server
+        run: |
+          APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
+          ssh deploy-server "test \"\$(readlink -f '$APP_DIR')\" = '$APP_DIR'"
+          rsync -az \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='.env.backup' \
+            --exclude='.cache/' \
+            --exclude='.playwright-mcp/' \
+            --exclude='backups/' \
+            --exclude='data/' \
+            --exclude='data.sqlite' \
+            --exclude='data.sqlite-shm' \
+            --exclude='data.sqlite-wal' \
+            --exclude='node_modules/' \
+            --exclude='miniprogram/node_modules/' \
+            --exclude='public/uploads/' \
+            --exclude='private.*.key' \
+            --exclude='wechat-platform-login*.png' \
+            -e ssh ./ "deploy-server:$APP_DIR/"
+
       - name: Deploy via SSH
         run: |
-          ssh deploy-server 'bash -s' <<'REMOTESCRIPT'
+          ssh deploy-server "DEPLOY_SHA='${{ github.sha }}' bash -s" <<'REMOTESCRIPT'
           set -e
 
           # 加载 nvm 环境（服务器使用 nvm 管理 Node）
@@ -86,26 +115,36 @@ jobs:
 
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
           BACKUP_DIR=$APP_DIR/backups
+          test "$(readlink -f "$APP_DIR")" = "$APP_DIR"
           cd $APP_DIR
 
           # 备份环境变量
           cp .env .env.backup
+          chmod 600 .env .env.backup
+
+          # 标记本次由 Runner 同步的精确提交；服务健康接口会回传该值。
+          printf '%s\n' "$DEPLOY_SHA" > .deploy-sha
+          rm -f .content-security-verified
 
           # 部署前备份 SQLite 数据库
           mkdir -p $BACKUP_DIR
           TIMESTAMP=$(date +%Y%m%d_%H%M%S)
-          cp data/data.sqlite $BACKUP_DIR/data-$TIMESTAMP.sqlite || true
-          cp data/data.sqlite-shm $BACKUP_DIR/data-$TIMESTAMP.sqlite-shm || true
-          cp data/data.sqlite-wal $BACKUP_DIR/data-$TIMESTAMP.sqlite-wal || true
+          DB_PATH=$(grep '^DB_PATH=' .env | tail -n 1 | cut -d'=' -f2-)
+          DB_PATH=${DB_PATH:-$APP_DIR/data.sqlite}
+          case "$DB_PATH" in
+            /*) ;;
+            *) DB_PATH="$APP_DIR/$DB_PATH" ;;
+          esac
+          DB_PATH=$(readlink -m "$DB_PATH")
+          case "$DB_PATH" in
+            "$APP_DIR"/*) ;;
+            *) echo "DB_PATH is outside APP_DIR; refusing unsafe backup"; exit 1 ;;
+          esac
+          cp "$DB_PATH" "$BACKUP_DIR/data-$TIMESTAMP.sqlite" || true
+          cp "$DB_PATH-shm" "$BACKUP_DIR/data-$TIMESTAMP.sqlite-shm" || true
+          cp "$DB_PATH-wal" "$BACKUP_DIR/data-$TIMESTAMP.sqlite-wal" || true
           # 保留最近 7 天备份
           find $BACKUP_DIR -name 'data-*.sqlite*' -mtime +7 -delete || true
-
-          # 拉取最新代码
-          git fetch origin main
-          git checkout -f origin/main
-
-          # 恢复环境变量
-          cp .env.backup .env
 
           # 确保新增环境变量存在（默认值）
           if ! grep -q "^HF_MIRROR=" .env; then
@@ -123,6 +162,44 @@ jobs:
 
           # 安装依赖
           npm ci --omit=dev
+
+          # 重启前真实获取一次微信 access_token。配置缺失、Secret 错误或 IP 未加白名单时
+          # 直接失败，保持当前线上进程继续运行，不上传无法审核 UGC 的小程序版本。
+          node <<'NODE'
+          const config = require('./src/config');
+          if (
+            !config.wxAppId ||
+            config.wxAppId !== config.expectedWxAppId ||
+            !config.wxAppSecret ||
+            !config.contentSecurityPublicBaseUrlValid
+          ) {
+            console.error('Content security credentials are missing');
+            process.exit(1);
+          }
+          fetch('https://api.weixin.qq.com/cgi-bin/stable_token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(15000),
+            body: JSON.stringify({
+              grant_type: 'client_credential',
+              appid: config.wxAppId,
+              secret: config.wxAppSecret,
+              force_refresh: false
+            })
+          })
+            .then((response) => response.json())
+            .then((data) => {
+              if (!data.access_token) {
+                console.error(`Content security credential check failed (errcode=${data.errcode ?? 'unknown'})`);
+                process.exit(1);
+              }
+            })
+            .catch(() => {
+              console.error('Content security credential check failed (network error)');
+              process.exit(1);
+            });
+          NODE
+          printf '%s\n' "$DEPLOY_SHA" > .content-security-verified
 
           # 清理并重新启动应用（避免旧配置残留导致 reload 异常）
           pm2 delete study-planner || true
@@ -143,6 +220,21 @@ jobs:
             fi
             sleep 5
           done
+
+          CONTENT_SECURITY_HEALTH=$(curl -fsS http://localhost:3000/api/content-security/health)
+          CONTENT_SECURITY_HEALTH="$CONTENT_SECURITY_HEALTH" DEPLOY_SHA="$DEPLOY_SHA" node -e '
+            const health = JSON.parse(process.env.CONTENT_SECURITY_HEALTH);
+            const required = ["msgSecCheck", "imgSecCheck", "mediaCheckAsync"];
+            if (
+              !health.configured ||
+              !health.credentialsVerified ||
+              health.deploymentSha !== process.env.DEPLOY_SHA ||
+              !required.every((name) => health.apis.includes(name))
+            ) {
+              console.error("Content security backend is not verified for this deployment");
+              process.exit(1);
+            }
+          '
 
           pm2 save
           echo "Deploy completed at $(date)"

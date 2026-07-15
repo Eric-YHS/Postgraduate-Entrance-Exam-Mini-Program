@@ -30,6 +30,66 @@
   padding: 8rpx 0 16rpx;
 }
 
+.security-card {
+  margin-bottom: 16rpx;
+  padding: 22rpx 24rpx;
+  border: 1rpx solid #cde7df;
+  background: #f4fbf8;
+}
+
+.security-header,
+.security-api {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.security-header {
+  margin-bottom: 12rpx;
+}
+
+.security-title {
+  color: #176b54;
+  font-size: 28rpx;
+  font-weight: 600;
+}
+
+.security-stage,
+.security-api-label {
+  margin-top: 5rpx;
+  color: #668079;
+  font-size: 21rpx;
+}
+
+.security-records {
+  margin-left: 16rpx;
+  color: var(--primary, #1d4e89);
+  flex-shrink: 0;
+  font-size: 23rpx;
+}
+
+.security-api {
+  min-height: 78rpx;
+  border-top: 1rpx solid #dceee8;
+}
+
+.security-api-name {
+  color: #24453c;
+  font-family: monospace;
+  font-size: 24rpx;
+}
+
+.security-status {
+  margin-left: 16rpx;
+  color: #8a8f8d;
+  flex-shrink: 0;
+  font-size: 22rpx;
+}
+
+.security-status--passed {
+  color: #17845f;
+}
+
 .form-section {
   margin-bottom: 16rpx;
   padding: 24rpx;

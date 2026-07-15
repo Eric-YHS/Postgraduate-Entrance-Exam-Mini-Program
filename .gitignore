@@ -9,12 +9,16 @@ test_*.sqlite
 test_*.sqlite-shm
 test_*.sqlite-wal
 backups/
+.deploy-sha
+.content-security-verified
 bug.md
 .claude/
 .codex-retest/
 .codex-server.err.log
 .codex-server.out.log
 .codex-test/
+.playwright-mcp/
+wechat-platform-login*.png
 deploy_upload.py
 ZtVqVx2EAC.txt
 public/uploads/

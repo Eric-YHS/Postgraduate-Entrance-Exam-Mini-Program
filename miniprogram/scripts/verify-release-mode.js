@@ -63,6 +63,7 @@ if (mode === 'restricted') {
     'pages/support/qa/qa',
     'pages/user/settings/settings',
     'pages/user/help/help',
+    'pages/user/content-security/content-security',
   ];
   const missingPages = requiredVisiblePages.filter((page) => !actual.pages.includes(page));
   if (missingPages.length > 0) {
@@ -74,6 +75,13 @@ if (mode === 'restricted') {
   const centerTs = fs.readFileSync(path.join(projectRoot, 'pages', 'user', 'center', 'center.ts'), 'utf8');
   const runtimeConfig = fs.readFileSync(path.join(projectRoot, 'config', 'runtime.ts'), 'utf8');
   const uploadSource = fs.readFileSync(path.join(projectRoot, 'utils', 'upload.ts'), 'utf8');
+  const postSource = fs.readFileSync(path.join(projectRoot, 'pages', 'forum', 'post', 'post.ts'), 'utf8');
+  const detailSource = fs.readFileSync(path.join(projectRoot, 'pages', 'forum', 'detail', 'detail.ts'), 'utf8');
+  const securityService = fs.readFileSync(path.join(projectRoot, 'services', 'content-security.service.ts'), 'utf8');
+  const securityPage = fs.readFileSync(
+    path.join(projectRoot, 'pages', 'user', 'content-security', 'content-security.wxml'),
+    'utf8'
+  );
   const guardedMarkers = [
     'class="feature-item" wx:if="{{ onlineCoursesVisible }}"',
     'class="recommend-card card" wx:if="{{ onlineCoursesVisible }}"',
@@ -104,6 +112,28 @@ if (mode === 'restricted') {
   }
   if (!uploadSource.includes('USE_MOCK_API') || /USE_MOCK\s*=\s*false/.test(uploadSource)) {
     throw new Error('媒体上传未与统一 Mock API 模式保持一致');
+  }
+
+  if (!runtimeConfig.includes("CONTENT_SECURITY_API_BASE_URL = 'https://xiaoeduhub.online'")) {
+    throw new Error('UGC 内容安全必须配置真实 HTTPS 后端，不能使用 Mock 或占位域名');
+  }
+  if (!postSource.includes('checkTextContent') || !postSource.includes('checkImageContent')) {
+    throw new Error('发帖流程必须调用微信文字及图片内容安全检测');
+  }
+  if (!detailSource.includes('checkTextContent')) {
+    throw new Error('回帖流程必须调用微信文字内容安全检测');
+  }
+  if (
+    !securityService.includes('wx.request') ||
+    !securityService.includes('wx.uploadFile') ||
+    !securityService.includes('/api/content-security/')
+  ) {
+    throw new Error('内容安全客户端必须绕过业务 Mock，调用真实后端');
+  }
+  for (const marker of ['msgSecCheck', 'imgSecCheck', 'mediaCheckAsync', 'errcode', 'trace_id']) {
+    if (!securityPage.includes(marker)) {
+      throw new Error(`内容安全检测记录页缺少审核核验字段: ${marker}`);
+    }
   }
 }
 

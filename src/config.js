@@ -22,6 +22,15 @@ if (fs.existsSync(envPath)) {
 const rootDir = path.join(__dirname, '..');
 const dbPath = process.env.DB_PATH || path.join(rootDir, 'data.sqlite');
 const uploadRootDir = process.env.UPLOAD_DIR || path.join(rootDir, 'public', 'uploads');
+const readDeploymentMarker = (fileName) => {
+  try {
+    return fs.readFileSync(path.join(rootDir, fileName), 'utf8').trim();
+  } catch (_) {
+    return '';
+  }
+};
+const deploymentSha = readDeploymentMarker('.deploy-sha');
+const contentSecurityVerifiedSha = readDeploymentMarker('.content-security-verified');
 const port = Number(process.env.PORT || 3000);
 // BUG-061: PORT 环境变量验证
 if (!Number.isInteger(port) || port < 1 || port > 65535) {
@@ -50,8 +59,25 @@ if (!rawSessionSecret) {
 
 const cookieSecure = process.env.COOKIE_SECURE === 'true';
 const trustProxy = process.env.TRUST_PROXY === 'true';
+const expectedWxAppId = 'wx27fca32a9ddfdc8e';
 const wxAppId = process.env.WX_APP_ID || '';
 const wxAppSecret = process.env.WX_APP_SECRET || '';
+const contentSecurityPublicBaseUrl = (process.env.CONTENT_SECURITY_PUBLIC_BASE_URL || 'https://xiaoeduhub.online').replace(/\/$/, '');
+const contentSecurityPublicBaseUrlValid = (() => {
+  try {
+    const parsed = new URL(contentSecurityPublicBaseUrl);
+    return (
+      parsed.protocol === 'https:' &&
+      !parsed.username &&
+      !parsed.password &&
+      !parsed.search &&
+      !parsed.hash &&
+      (parsed.pathname === '/' || parsed.pathname === '')
+    );
+  } catch (_) {
+    return false;
+  }
+})();
 
 // 企业微信配置
 const wecomCorpId = process.env.WECOM_CORP_ID || '';
@@ -114,7 +140,12 @@ module.exports = {
   aiApiUrl,
   aiModel,
   cookieSecure,
+  contentSecurityPublicBaseUrl,
+  contentSecurityPublicBaseUrlValid,
+  contentSecurityVerifiedSha,
   dbPath,
+  deploymentSha,
+  expectedWxAppId,
   freeAccessMode,
   iceServers,
   nodeEnv,

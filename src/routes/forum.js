@@ -1,9 +1,192 @@
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const dayjs = require('dayjs');
 const { sanitizeText, stripHtml } = require('../utils/sanitize');
 const { detectSensitiveWords } = require('../services/moderation');
+const {
+  ContentSecurityError,
+  msgSecCheck,
+  imgSecCheck,
+  mediaCheckAsync,
+  saveCheck
+} = require('../services/wechatContentSecurity');
+const { buildSignedForumMediaUrl } = require('./contentSecurity');
+
+const MAX_SECURITY_TEXT_LENGTH = 2500;
+const SECURITY_TEXT_OVERLAP = 50;
+const MAX_SECURITY_IMAGE_SIZE = 1024 * 1024;
+
+class ForumRequestError extends Error {
+  constructor(status, code, message) {
+    super(message);
+    this.name = 'ForumRequestError';
+    this.status = status;
+    this.code = code;
+  }
+}
+
+function getUploadedFiles(files) {
+  if (!files || typeof files !== 'object') return [];
+  return Object.values(files).flatMap((value) => (Array.isArray(value) ? value : [])).filter(Boolean);
+}
+
+function cleanupUploadedFiles(files) {
+  for (const file of getUploadedFiles(files)) {
+    if (!file.path) continue;
+    try {
+      fs.unlinkSync(file.path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') {
+        console.warn('[Forum] 清理未发布上传文件失败:', error.message);
+      }
+    }
+  }
+}
+
+function splitSecurityText(value) {
+  const characters = Array.from(String(value || ''));
+  if (characters.length <= MAX_SECURITY_TEXT_LENGTH) {
+    return characters.length ? [characters.join('')] : [];
+  }
+  const chunks = [];
+  let start = 0;
+  while (start < characters.length) {
+    const end = Math.min(start + MAX_SECURITY_TEXT_LENGTH, characters.length);
+    chunks.push(characters.slice(start, end).join(''));
+    if (end === characters.length) break;
+    start = end - SECURITY_TEXT_OVERLAP;
+  }
+  return chunks;
+}
+
+function detectImageContentType(buffer) {
+  if (!Buffer.isBuffer(buffer)) return '';
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return 'image/jpeg';
+  }
+  if (
+    buffer.length >= 8 &&
+    buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 &&
+    buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a
+  ) {
+    return 'image/png';
+  }
+  if (buffer.length >= 6) {
+    const signature = buffer.subarray(0, 6).toString('ascii');
+    if (signature === 'GIF87a' || signature === 'GIF89a') return 'image/gif';
+  }
+  return '';
+}
+
+function checkFailure(summary, expectedStatus, contentLabel) {
+  if (summary.status === expectedStatus) return;
+  if (summary.status === 'review' || summary.status === 'rejected') {
+    throw new ForumRequestError(422, 'CONTENT_SECURITY_REJECTED', `${contentLabel}未通过微信内容安全检测，请修改后重试。`);
+  }
+  throw new ForumRequestError(503, 'CONTENT_SECURITY_UNAVAILABLE', '微信内容安全检测返回异常，请稍后重试。');
+}
+
+async function checkForumText({ config, db, openid, requestId, text }) {
+  const chunks = splitSecurityText(text);
+  for (const chunk of chunks) {
+    const raw = await msgSecCheck(config, { content: chunk, openid, scene: 3 });
+    const summary = saveCheck(db, {
+      requestId,
+      openid,
+      apiName: 'msgSecCheck',
+      contentType: 'text',
+      input: chunk,
+      response: raw
+    });
+    checkFailure(summary, 'passed', '文字内容');
+  }
+}
+
+async function checkForumImages({ config, db, openid, requestId, imageFiles }) {
+  for (const file of imageFiles) {
+    if (Number(file.size) > MAX_SECURITY_IMAGE_SIZE) {
+      throw new ForumRequestError(400, 'IMAGE_TOO_LARGE', '图片不能超过 1 MB，请压缩后重试。');
+    }
+    const buffer = fs.readFileSync(file.path);
+    if (buffer.length > MAX_SECURITY_IMAGE_SIZE) {
+      throw new ForumRequestError(400, 'IMAGE_TOO_LARGE', '图片不能超过 1 MB，请压缩后重试。');
+    }
+    const contentType = detectImageContentType(buffer);
+    if (!contentType) {
+      throw new ForumRequestError(400, 'INVALID_IMAGE', '仅支持有效的 JPG、PNG 或 GIF 图片。');
+    }
+
+    const filename = path.basename(String(file.filename || ''));
+    if (!filename || filename !== file.filename) {
+      throw new ForumRequestError(400, 'INVALID_IMAGE', '图片文件名无效。');
+    }
+
+    const syncRaw = await imgSecCheck(config, {
+      buffer,
+      filename: file.originalname || filename,
+      contentType
+    });
+    const syncCheck = saveCheck(db, {
+      requestId,
+      openid,
+      apiName: 'imgSecCheck',
+      contentType: 'image',
+      input: buffer,
+      response: syncRaw
+    });
+    checkFailure(syncCheck, 'passed', '图片');
+
+    const mediaUrl = buildSignedForumMediaUrl(config, filename);
+    const asyncRaw = await mediaCheckAsync(config, {
+      mediaUrl,
+      openid,
+      mediaType: 2,
+      scene: 3
+    });
+    const asyncCheck = saveCheck(db, {
+      requestId,
+      openid,
+      apiName: 'mediaCheckAsync',
+      contentType: 'image',
+      input: buffer,
+      response: asyncRaw
+    });
+    checkFailure(asyncCheck, 'submitted', '图片异步检测任务');
+  }
+}
+
+async function enforceForumContentSecurity({ config, db, user, text, imageFiles }) {
+  const openid = String(user && user.openid || '').trim();
+  if (!openid) {
+    throw new ForumRequestError(403, 'WECHAT_IDENTITY_REQUIRED', '当前账号缺少微信身份，请通过小程序重新登录后再发布。');
+  }
+  const requestId = crypto.randomUUID();
+  await checkForumText({ config, db, openid, requestId, text });
+  await checkForumImages({ config, db, openid, requestId, imageFiles });
+  return requestId;
+}
+
+function sendForumError(response, error) {
+  if (error instanceof ForumRequestError) {
+    response.status(error.status).json({ ok: false, code: error.code, error: error.message });
+    return;
+  }
+  if (error instanceof ContentSecurityError) {
+    console.warn('[Forum] 微信内容安全服务调用失败:', error.code);
+    response.status(503).json({
+      ok: false,
+      code: error.code,
+      error: '微信内容安全服务暂不可用，本次内容未发布，请稍后重试。'
+    });
+    return;
+  }
+  console.error('[Forum] 发布处理失败:', error);
+  response.status(500).json({ ok: false, code: 'FORUM_PUBLISH_FAILED', error: '发布失败，请稍后重试。' });
+}
 
 module.exports = function registerForumRoutes(app, shared) {
-  const { db, requireAuth, safeJsonParse, toPublicPath, forumUpload, serializeForumTopic, batchLoadForumReplies, batchLoadForumLikes, checkAndUnlockAchievements, sendMentionNotifications } = shared;
+  const { config, db, requireAuth, safeJsonParse, toPublicPath, forumUpload, serializeForumTopic, batchLoadForumReplies, batchLoadForumLikes, checkAndUnlockAchievements, sendMentionNotifications } = shared;
 
   function isModerator(user) {
     return user && ['admin', 'teacher', 'customer_service'].includes(user.role);
@@ -61,75 +244,128 @@ module.exports = function registerForumRoutes(app, shared) {
   });
 
   app.post('/api/forum/topics', requireAuth, (request, response) => {
-    forumUpload(request, response, (error) => {
-      if (error) {
-        response.status(400).json({ error: '上传失败。' });
+    forumUpload(request, response, async (uploadError) => {
+      if (uploadError) {
+        cleanupUploadedFiles(request.files);
+        response.status(400).json({ ok: false, code: 'UPLOAD_FAILED', error: '上传失败。' });
         return;
       }
 
-      const title = stripHtml(request.body.title);
-      const content = stripHtml(request.body.content);
+      let contentStored = false;
+      try {
+        const title = stripHtml(request.body.title);
+        const content = stripHtml(request.body.content);
+        const category = sanitizeText(request.body.category || '考研交流');
+        if (!title || !content) {
+          throw new ForumRequestError(400, 'INVALID_TOPIC', '帖子标题和内容都不能为空。');
+        }
+        if (title.length > 200) throw new ForumRequestError(400, 'INVALID_TOPIC', '标题不能超过200字。');
+        if (content.length > 10000) throw new ForumRequestError(400, 'INVALID_TOPIC', '内容不能超过10000字。');
+        if (category.length > 100) throw new ForumRequestError(400, 'INVALID_TOPIC', '分类名称不能超过100字。');
 
-      if (!title || !content) {
-        response.status(400).json({ error: '帖子标题和内容都不能为空。' });
-        return;
-      }
-      if (title.length > 200) { response.status(400).json({ error: '标题不能超过200字。' }); return; }
-      if (content.length > 10000) { response.status(400).json({ error: '内容不能超过10000字。' }); return; }
+        const imageFiles = request.files?.images || [];
+        const videoFiles = request.files?.videos || [];
+        const attachmentFiles = request.files?.attachments || [];
+        const imagePaths = imageFiles.map((file) => toPublicPath(file.path));
+        const videoPaths = videoFiles.map((file) => toPublicPath(file.path));
+        const attachmentPaths = attachmentFiles.map((file) => toPublicPath(file.path));
+        const links = safeJsonParse(request.body.links || '[]', []);
+        const linksJson = JSON.stringify(links);
+        if (linksJson.length > 5000) {
+          throw new ForumRequestError(400, 'INVALID_TOPIC', '链接信息过长。');
+        }
 
-      const moderation = detectSensitiveWords(db, title + ' ' + content);
-      if (moderation.blocked) {
-        response.status(400).json({ error: '内容包含敏感词：' + moderation.matched.join(', ') });
-        return;
-      }
-      const moderationStatus = moderation.review ? 'pending' : 'approved';
+        // 解析 #话题# 标签
+        const hashtagRegex = /#([^#\s]+)#/g;
+        const extractedTags = [];
+        let tagMatch;
+        while ((tagMatch = hashtagRegex.exec(content)) !== null) {
+          extractedTags.push(tagMatch[1]);
+        }
 
-      const imagePaths = (request.files?.images || []).map((f) => toPublicPath(f.path));
-      const videoPaths = (request.files?.videos || []).map((f) => toPublicPath(f.path));
-      const attachmentPaths = (request.files?.attachments || []).map((f) => toPublicPath(f.path));
-      const links = safeJsonParse(request.body.links || '[]', []);
+        const uploadedNames = getUploadedFiles(request.files)
+          .map((file) => stripHtml(file.originalname || ''))
+          .filter(Boolean);
+        const securityText = [
+          `标题：${title}`,
+          `正文：${content}`,
+          `分类：${category}`,
+          extractedTags.length ? `话题：${extractedTags.join(' ')}` : '',
+          uploadedNames.length ? `文件名：${uploadedNames.join(' ')}` : '',
+          linksJson !== '[]' ? `链接：${linksJson}` : ''
+        ].filter(Boolean).join('\n');
 
-      // 解析 #话题# 标签
-      const hashtagRegex = /#([^#\s]+)#/g;
-      const extractedTags = [];
-      let tagMatch;
-      while ((tagMatch = hashtagRegex.exec(content)) !== null) {
-        extractedTags.push(tagMatch[1]);
-      }
+        await enforceForumContentSecurity({
+          config,
+          db,
+          user: request.currentUser,
+          text: securityText,
+          imageFiles
+        });
 
-      const topicResult = db.prepare(
-        `
-          INSERT INTO forum_topics (user_id, title, content, category, hashtags, image_paths, attachment_paths, video_paths, links, moderation_status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
-      ).run(
-        request.currentUser.id, title, content,
-        sanitizeText(request.body.category || '考研交流'),
-        JSON.stringify(extractedTags),
-        JSON.stringify(imagePaths), JSON.stringify(attachmentPaths),
-        JSON.stringify(videoPaths), JSON.stringify(links),
-        moderationStatus,
-        dayjs().toISOString()
-      );
+        const moderation = detectSensitiveWords(db, `${title} ${content}`);
+        if (moderation.blocked) {
+          throw new ForumRequestError(422, 'LOCAL_CONTENT_REJECTED', '内容包含敏感词：' + moderation.matched.join(', '));
+        }
+        const pendingReasons = [];
+        if (moderation.review) pendingReasons.push('命中本地复核词：' + moderation.matched.join(', '));
+        if (videoFiles.length > 0) pendingReasons.push('包含视频，需人工复核');
+        if (attachmentFiles.length > 0) pendingReasons.push('包含普通附件，需人工复核');
+        const moderationStatus = pendingReasons.length > 0 ? 'pending' : 'approved';
+        const now = dayjs().toISOString();
 
-      // 检查成就 — B-18: 异步执行，避免阻塞响应
-      setImmediate(() => checkAndUnlockAchievements(request.currentUser.id));
+        const topicId = db.transaction(() => {
+          const topicResult = db.prepare(
+            `INSERT INTO forum_topics
+              (user_id, title, content, category, hashtags, image_paths, attachment_paths,
+               video_paths, links, moderation_status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            request.currentUser.id,
+            title,
+            content,
+            category,
+            JSON.stringify(extractedTags),
+            JSON.stringify(imagePaths),
+            JSON.stringify(attachmentPaths),
+            JSON.stringify(videoPaths),
+            linksJson,
+            moderationStatus,
+            now
+          );
+          if (moderationStatus === 'pending') {
+            db.prepare(
+              `INSERT INTO content_reports
+                (reporter_id, target_type, target_id, reason, status, created_at)
+               VALUES (?, 'topic', ?, ?, 'pending', ?)`
+            ).run(
+              request.currentUser.id,
+              topicResult.lastInsertRowid,
+              '自动审核：' + pendingReasons.join('；'),
+              now
+            );
+          }
+          return topicResult.lastInsertRowid;
+        })();
+        contentStored = true;
 
-      // @提及通知
-      sendMentionNotifications(content, request.currentUser.id, title);
+        if (moderationStatus === 'approved') {
+          setImmediate(() => {
+            try { checkAndUnlockAchievements(request.currentUser.id); } catch (error) {
+              console.warn('[Forum] 成就检查失败:', error.message);
+            }
+          });
+          try {
+            sendMentionNotifications(content, request.currentUser.id, title);
+          } catch (error) {
+            console.warn('[Forum] 提及通知发送失败:', error.message);
+          }
+        }
 
-      response.json({ ok: true, id: topicResult.lastInsertRowid, moderationStatus });
-
-      // 自动审核：命中敏感词且进入待审核时，创建 content_reports 记录
-      if (moderationStatus === 'pending') {
-        db.prepare(
-          `INSERT INTO content_reports (content_type, content_id, reason, reported_by, status, created_at)
-           VALUES ('forum_topic', ?, ?, 0, 'pending', ?)`
-        ).run(
-          topicResult.lastInsertRowid,
-          '自动审核: 命中敏感词 ' + moderation.matched.join(', '),
-          dayjs().toISOString()
-        );
+        response.json({ ok: true, id: topicId, moderationStatus });
+      } catch (error) {
+        if (!contentStored) cleanupUploadedFiles(request.files);
+        sendForumError(response, error);
       }
     });
   });
@@ -137,81 +373,124 @@ module.exports = function registerForumRoutes(app, shared) {
   app.post('/api/forum/topics/:id/replies', requireAuth, (request, response) => {
     const id = Number(request.params.id);
     if (!Number.isInteger(id) || id <= 0) return response.status(400).json({ error: '无效的 ID。' });
-    forumUpload(request, response, (error) => {
-      if (error) {
-        response.status(400).json({ error: '上传失败。' });
+    forumUpload(request, response, async (uploadError) => {
+      if (uploadError) {
+        cleanupUploadedFiles(request.files);
+        response.status(400).json({ ok: false, code: 'UPLOAD_FAILED', error: '上传失败。' });
         return;
       }
 
-      const content = stripHtml(request.body.content);
-      if (!content) {
-        response.status(400).json({ error: '回复内容不能为空。' });
-        return;
-      }
+      let contentStored = false;
+      try {
+        const content = stripHtml(request.body.content);
+        if (!content) throw new ForumRequestError(400, 'INVALID_REPLY', '回复内容不能为空。');
+        if (content.length > 10000) throw new ForumRequestError(400, 'INVALID_REPLY', '回复内容不能超过10000字。');
 
-      const moderation = detectSensitiveWords(db, content);
-      if (moderation.blocked) {
-        response.status(400).json({ error: '内容包含敏感词：' + moderation.matched.join(', ') });
-        return;
-      }
-      const moderationStatus = moderation.review ? 'pending' : 'approved';
+        const topic = db.prepare('SELECT id, title FROM forum_topics WHERE id = ?').get(id);
+        if (!topic) throw new ForumRequestError(404, 'TOPIC_NOT_FOUND', '帖子不存在。');
 
-      const topic = db.prepare('SELECT id FROM forum_topics WHERE id = ?').get(id);
-      if (!topic) {
-        response.status(404).json({ error: '帖子不存在。' });
-        return;
-      }
-
-      const imagePaths = (request.files?.images || []).map((f) => toPublicPath(f.path));
-      const videoPaths = (request.files?.videos || []).map((f) => toPublicPath(f.path));
-      const attachmentPaths = (request.files?.attachments || []).map((f) => toPublicPath(f.path));
-      const links = safeJsonParse(request.body.links || '[]', []);
-
-      // 楼中楼回复支持
-      let replyToId = null;
-      let replyToUser = '';
-      const replyToIdRaw = request.body.replyToId;
-      if (replyToIdRaw) {
-        const parentReply = db.prepare(
-          'SELECT forum_replies.id, users.display_name FROM forum_replies LEFT JOIN users ON users.id = forum_replies.user_id WHERE forum_replies.id = ? AND forum_replies.topic_id = ?'
-        ).get(Number(replyToIdRaw), id);
-        if (parentReply) {
-          replyToId = parentReply.id;
-          replyToUser = parentReply.display_name || '';
+        const imageFiles = request.files?.images || [];
+        const videoFiles = request.files?.videos || [];
+        const attachmentFiles = request.files?.attachments || [];
+        const imagePaths = imageFiles.map((file) => toPublicPath(file.path));
+        const videoPaths = videoFiles.map((file) => toPublicPath(file.path));
+        const attachmentPaths = attachmentFiles.map((file) => toPublicPath(file.path));
+        const links = safeJsonParse(request.body.links || '[]', []);
+        const linksJson = JSON.stringify(links);
+        if (linksJson.length > 5000) {
+          throw new ForumRequestError(400, 'INVALID_REPLY', '链接信息过长。');
         }
+
+        // 楼中楼回复支持
+        let replyToId = null;
+        let replyToUser = '';
+        const replyToIdRaw = request.body.replyToId;
+        if (replyToIdRaw) {
+          const parentReply = db.prepare(
+            'SELECT forum_replies.id, users.display_name FROM forum_replies LEFT JOIN users ON users.id = forum_replies.user_id WHERE forum_replies.id = ? AND forum_replies.topic_id = ?'
+          ).get(Number(replyToIdRaw), id);
+          if (parentReply) {
+            replyToId = parentReply.id;
+            replyToUser = parentReply.display_name || '';
+          }
+        }
+
+        const uploadedNames = getUploadedFiles(request.files)
+          .map((file) => stripHtml(file.originalname || ''))
+          .filter(Boolean);
+        const securityText = [
+          `回复：${content}`,
+          uploadedNames.length ? `文件名：${uploadedNames.join(' ')}` : '',
+          linksJson !== '[]' ? `链接：${linksJson}` : ''
+        ].filter(Boolean).join('\n');
+
+        await enforceForumContentSecurity({
+          config,
+          db,
+          user: request.currentUser,
+          text: securityText,
+          imageFiles
+        });
+
+        const moderation = detectSensitiveWords(db, content);
+        if (moderation.blocked) {
+          throw new ForumRequestError(422, 'LOCAL_CONTENT_REJECTED', '内容包含敏感词：' + moderation.matched.join(', '));
+        }
+        const pendingReasons = [];
+        if (moderation.review) pendingReasons.push('命中本地复核词：' + moderation.matched.join(', '));
+        if (videoFiles.length > 0) pendingReasons.push('包含视频，需人工复核');
+        if (attachmentFiles.length > 0) pendingReasons.push('包含普通附件，需人工复核');
+        const moderationStatus = pendingReasons.length > 0 ? 'pending' : 'approved';
+        const now = dayjs().toISOString();
+
+        const replyId = db.transaction(() => {
+          const replyResult = db.prepare(
+            `INSERT INTO forum_replies
+              (topic_id, user_id, content, image_paths, attachment_paths, video_paths,
+               links, reply_to_id, reply_to_user, moderation_status, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          ).run(
+            id,
+            request.currentUser.id,
+            content,
+            JSON.stringify(imagePaths),
+            JSON.stringify(attachmentPaths),
+            JSON.stringify(videoPaths),
+            linksJson,
+            replyToId,
+            replyToUser,
+            moderationStatus,
+            now
+          );
+          if (moderationStatus === 'pending') {
+            db.prepare(
+              `INSERT INTO content_reports
+                (reporter_id, target_type, target_id, reason, status, created_at)
+               VALUES (?, 'reply', ?, ?, 'pending', ?)`
+            ).run(
+              request.currentUser.id,
+              replyResult.lastInsertRowid,
+              '自动审核：' + pendingReasons.join('；'),
+              now
+            );
+          }
+          return replyResult.lastInsertRowid;
+        })();
+        contentStored = true;
+
+        if (moderationStatus === 'approved') {
+          try {
+            sendMentionNotifications(content, request.currentUser.id, topic.title || '回复');
+          } catch (error) {
+            console.warn('[Forum] 提及通知发送失败:', error.message);
+          }
+        }
+
+        response.json({ ok: true, id: replyId, moderationStatus });
+      } catch (error) {
+        if (!contentStored) cleanupUploadedFiles(request.files);
+        sendForumError(response, error);
       }
-
-      const replyResult = db.prepare(
-        `
-          INSERT INTO forum_replies (topic_id, user_id, content, image_paths, attachment_paths, video_paths, links, reply_to_id, reply_to_user, moderation_status, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `
-      ).run(
-        id, request.currentUser.id, content,
-        JSON.stringify(imagePaths), JSON.stringify(attachmentPaths),
-        JSON.stringify(videoPaths), JSON.stringify(links),
-        replyToId, replyToUser,
-        moderationStatus,
-        dayjs().toISOString()
-      );
-
-      // 自动审核：命中敏感词且进入待审核时，创建 content_reports 记录
-      if (moderationStatus === 'pending') {
-        db.prepare(
-          `INSERT INTO content_reports (content_type, content_id, reason, reported_by, status, created_at)
-           VALUES ('forum_reply', ?, ?, 0, 'pending', ?)`
-        ).run(
-          replyResult.lastInsertRowid,
-          '自动审核: 命中敏感词 ' + moderation.matched.join(', '),
-          dayjs().toISOString()
-        );
-      }
-
-      // @提及通知
-      const topicTitle = db.prepare('SELECT title FROM forum_topics WHERE id = ?').get(id);
-      sendMentionNotifications(content, request.currentUser.id, topicTitle ? topicTitle.title : '回复');
-
-      response.json({ ok: true, moderationStatus });
     });
   });
 
@@ -416,4 +695,11 @@ module.exports = function registerForumRoutes(app, shared) {
       level: moderation.level
     });
   });
+};
+
+module.exports._private = {
+  cleanupUploadedFiles,
+  splitSecurityText,
+  detectImageContentType,
+  enforceForumContentSecurity
 };

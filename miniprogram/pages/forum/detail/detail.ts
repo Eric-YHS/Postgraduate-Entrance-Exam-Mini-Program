@@ -1,4 +1,5 @@
 import { createReply, getTopicById, toggleFavorite } from '../../../services/forum.service';
+import { checkTextContent, formatContentSecurityError } from '../../../services/content-security.service';
 import { formatDateTime } from '../../../utils/date';
 import { auditText } from '../../../utils/content-audit';
 import type { Reply, Topic } from '../../../types/forum';
@@ -18,6 +19,7 @@ Page({
     replyContent: '',
     replyTarget: null as { replyId: string; authorName: string } | null,
     submitting: false,
+    replySecurityStatus: '回复发送前将调用 msgSecCheck',
   },
 
   topicId: '',
@@ -75,7 +77,7 @@ Page({
   },
 
   onReplyInput(e: WechatMiniprogram.Input) {
-    this.setData({ replyContent: e.detail.value });
+    this.setData({ replyContent: e.detail.value, replySecurityStatus: '内容已变更，发送时重新检测' });
   },
 
   onCancelTarget() {
@@ -98,18 +100,29 @@ Page({
 
     this.setData({ submitting: true });
     try {
+      this.setData({ replySecurityStatus: '正在调用 msgSecCheck...' });
+      const securityResult = await checkTextContent(replyContent.trim());
+      if (!securityResult.allowed) {
+        throw new Error('回复内容未通过微信安全检测，请修改后重试。');
+      }
       await createReply(topic.id, {
         content: replyContent.trim(),
         replyToId: replyTarget?.replyId,
-        auditStatus: audit.status,
+        auditStatus: 'passed',
       });
       wx.showToast({ title: '回复成功', icon: 'success' });
-      this.setData({ replyContent: '', replyTarget: null, submitting: false });
+      this.setData({
+        replyContent: '',
+        replyTarget: null,
+        submitting: false,
+        replySecurityStatus: 'msgSecCheck 已通过，返回值已保存',
+      });
       this.loadTopic();
     } catch (err) {
       console.error('[ForumDetail] 回复失败', err);
-      wx.showToast({ title: '回复失败', icon: 'none' });
-      this.setData({ submitting: false });
+      const message = err instanceof Error ? err.message : formatContentSecurityError(err);
+      this.setData({ submitting: false, replySecurityStatus: message });
+      wx.showModal({ title: '内容安全检测未通过', content: message, showCancel: false });
     }
   },
 

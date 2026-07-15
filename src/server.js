@@ -177,6 +177,10 @@ function csrfCheck(request, response, next) {
   if (request.path === '/api/wecom/callback') {
     return next();
   }
+  // 小程序内容安全会话使用一次性 wx.login code 建立，随后请求均校验专用 Bearer Token。
+  if (request.path === '/api/content-security/session') {
+    return next();
+  }
   // 测试环境跳过 CSRF 校验，便于自动化测试
   if (config.nodeEnv === 'test') {
     return next();
@@ -1606,6 +1610,7 @@ if (config.freeAccessMode) {
 }
 
 require('./routes/auth')(app, shared);
+require('./routes/contentSecurity')(app, shared);
 require('./routes/admin')(app, shared);
 require('./routes/students')(app, shared);
 require('./routes/teachers')(app, shared);

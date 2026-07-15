@@ -46,7 +46,8 @@ export function mockGetTopics(data: Record<string, unknown>): Promise<Pagination
   const hashtag = String(data.hashtag || '');
   const keyword = String(data.keyword || '');
 
-  let list = mockTopics.map(enrichTopic);
+  // 待人工复核或未通过的内容不会进入公开列表。
+  let list = mockTopics.filter((topic) => !topic.auditStatus || topic.auditStatus === 'passed').map(enrichTopic);
 
   if (hashtag) {
     list = list.filter((t) => t.hashtags.includes(hashtag));
@@ -128,7 +129,7 @@ export function mockCreateTopic(data: Record<string, unknown>): Promise<Topic> {
     replyCount: 0,
     likeCount: 0,
     favoritedByMe: false,
-    auditStatus: 'passed',
+    auditStatus: params.auditStatus || 'passed',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

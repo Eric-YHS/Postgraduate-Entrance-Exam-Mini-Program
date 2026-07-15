@@ -56,9 +56,14 @@ Page({
   onPrivacy() {
     wx.showModal({
       title: '隐私与数据',
-      content: '练习进度、错题和学习计划默认保存在当前设备。发布帖子时，只有你主动选择的内容和媒体会用于发布。',
+      content:
+        '练习进度、错题和学习计划默认保存在当前设备。发布帖子或回复时，你主动提交的文字和图片会发送至微信官方内容安全接口进行检测，接口返回值会保存用于安全核验。',
       showCancel: false,
       confirmText: '知道了',
     });
+  },
+
+  onContentSecurity() {
+    wx.navigateTo({ url: '/pages/user/content-security/content-security' });
   },
 });
