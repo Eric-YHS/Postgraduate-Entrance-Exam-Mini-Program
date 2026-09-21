@@ -258,20 +258,29 @@ async function inviteChatMembers(params, retry = true) {
   if (!params || typeof params !== 'object') {
     throw new Error('inviteChatMembers 需要有效的 params 对象');
   }
-  const { chatid, userlist, invitelist } = params;
+  const { chatid, userlist, invitelist, add_user_list: addUserList, del_user_list: delUserList } = params;
   if (!chatid) {
     throw new Error('inviteChatMembers 缺少 chatid');
   }
-  if (!Array.isArray(userlist) && !Array.isArray(invitelist)) {
-    throw new Error('inviteChatMembers 至少需要 userlist 或 invitelist 之一');
+  if (![userlist, invitelist, addUserList, delUserList].some(Array.isArray)) {
+    throw new Error('inviteChatMembers 至少需要新增或移除成员列表之一');
   }
 
   const token = await getWecomAccessToken();
   if (!token) return null;
 
   const body = { chatid };
-  if (Array.isArray(userlist) && userlist.length > 0) body.userlist = userlist;
-  if (Array.isArray(invitelist) && invitelist.length > 0) body.invitelist = invitelist;
+  const usersToAdd = Array.isArray(addUserList)
+    ? addUserList
+    : Array.isArray(userlist)
+      ? userlist
+      : invitelist;
+  if (Array.isArray(usersToAdd) && usersToAdd.length > 0) {
+    body.add_user_list = [...new Set(usersToAdd)].slice(0, 2000);
+  }
+  if (Array.isArray(delUserList) && delUserList.length > 0) {
+    body.del_user_list = [...new Set(delUserList)].slice(0, 2000);
+  }
 
   const url = `https://qyapi.weixin.qq.com/cgi-bin/appchat/update?access_token=${token}`;
 
@@ -289,6 +298,51 @@ async function inviteChatMembers(params, retry = true) {
     console.error('[wecom] 邀请成员异常:', error.message);
     throw error;
   }
+}
+
+/**
+ * 获取自建应用可见范围内的企业微信成员，供管理后台可视化选人。
+ */
+async function listVisibleUsers(departmentId = 1, fetchChild = true, retry = true) {
+  const token = await getWecomAccessToken();
+  if (!token) return null;
+
+  const department = Number(departmentId) > 0 ? Number(departmentId) : 1;
+  const url =
+    `https://qyapi.weixin.qq.com/cgi-bin/user/list?access_token=${token}` +
+    `&department_id=${department}&fetch_child=${fetchChild ? 1 : 0}`;
+  const result = await httpsGet(url);
+
+  if (isTokenError(result.errcode) && retry) {
+    clearWecomTokenCache();
+    return listVisibleUsers(department, fetchChild, false);
+  }
+  if (Number(result.errcode) !== 0) {
+    console.error('[wecom] 获取企业成员失败:', result.errmsg || result.errcode);
+  }
+  return result;
+}
+
+/**
+ * 查询应用群聊详情。
+ */
+async function getAppChat(chatid, retry = true) {
+  if (!chatid) throw new Error('getAppChat 缺少 chatid');
+  const token = await getWecomAccessToken();
+  if (!token) return null;
+
+  const url =
+    `https://qyapi.weixin.qq.com/cgi-bin/appchat/get?access_token=${token}` +
+    `&chatid=${encodeURIComponent(chatid)}`;
+  const result = await httpsGet(url);
+  if (isTokenError(result.errcode) && retry) {
+    clearWecomTokenCache();
+    return getAppChat(chatid, false);
+  }
+  if (Number(result.errcode) !== 0) {
+    console.error('[wecom] 查询应用群聊失败:', result.errmsg || result.errcode);
+  }
+  return result;
 }
 
 /**
@@ -491,6 +545,8 @@ module.exports = {
   sendWebhookMessage,
   createAppChat,
   inviteChatMembers,
+  listVisibleUsers,
+  getAppChat,
   computeSignature,
   decryptMessage,
   encryptMessage,

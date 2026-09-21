@@ -1,3 +1,9 @@
 {
-  "navigationBarTitleText": "学习计划"
+  "usingComponents": {
+    "ky-loading": "/components/ky-loading/ky-loading",
+    "ky-empty": "/components/ky-empty/ky-empty",
+    "ky-error": "/components/ky-error/ky-error"
+  },
+  "navigationBarTitleText": "学习计划",
+  "enablePullDownRefresh": true
 }

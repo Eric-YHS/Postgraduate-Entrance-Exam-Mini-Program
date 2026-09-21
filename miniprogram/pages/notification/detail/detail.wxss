@@ -1,0 +1,68 @@
+.detail-page {
+  padding-top: 32rpx;
+}
+
+.state-message {
+  padding: 120rpx 32rpx;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.detail-panel {
+  padding: 32rpx 28rpx;
+  border-top: 6rpx solid var(--primary);
+  background: #fff;
+}
+
+.detail-heading {
+  color: var(--text-primary);
+  font-size: 38rpx;
+  font-weight: 700;
+}
+
+.detail-status {
+  margin-top: 10rpx;
+  color: var(--success);
+  font-size: 25rpx;
+}
+
+.detail-content {
+  margin-top: 28rpx;
+  padding: 28rpx 24rpx;
+  border-left: 6rpx solid var(--primary);
+  background: #f7f8fa;
+  color: var(--text-primary);
+  font-size: 29rpx;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.detail-list {
+  margin-top: 32rpx;
+  border-top: 1rpx solid var(--border);
+}
+
+.detail-row {
+  display: grid;
+  grid-template-columns: 150rpx minmax(0, 1fr);
+  gap: 20rpx;
+  padding: 26rpx 0;
+  border-bottom: 1rpx solid var(--border);
+}
+
+.detail-row--last {
+  border-bottom: 0;
+}
+
+.detail-label {
+  color: var(--text-secondary);
+  font-size: 26rpx;
+}
+
+.detail-value {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 28rpx;
+  overflow-wrap: anywhere;
+}

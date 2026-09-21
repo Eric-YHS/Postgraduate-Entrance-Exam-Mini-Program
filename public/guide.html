@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>使用指导｜研途总控台</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/guide.css" />
+  </head>
+  <body class="guide-page">
+    <nav class="top-nav guide-top-nav" aria-label="使用指导导航">
+      <a class="nav-brand guide-brand-link" id="guide-brand-link" href="/" aria-label="返回工作台">研</a>
+      <div class="guide-nav-heading">
+        <strong>使用指导</strong>
+        <span id="guide-role-label">正在识别账号</span>
+      </div>
+      <div class="guide-nav-actions">
+        <a class="ghost-button guide-home-link" id="guide-home-link" href="/">返回工作台</a>
+        <button class="ghost-button" id="guide-logout-button" type="button">退出登录</button>
+      </div>
+    </nav>
+
+    <main class="guide-shell" id="guide-root" hidden>
+      <header class="guide-intro">
+        <div>
+          <p class="guide-kicker" id="guide-kicker">角色使用手册</p>
+          <h1 id="guide-title">使用指导</h1>
+          <p class="guide-intro-copy" id="guide-intro"></p>
+        </div>
+        <div class="guide-intro-meta" aria-label="指导页概览">
+          <div><span>功能模块</span><strong id="guide-module-count">0</strong></div>
+          <div><span>建议顺序</span><strong>从上到下</strong></div>
+          <div><span>内容依据</span><strong>当前系统</strong></div>
+        </div>
+      </header>
+
+      <section class="guide-quickstart" aria-labelledby="guide-quickstart-title">
+        <div class="guide-section-heading">
+          <p class="guide-section-number">00</p>
+          <div>
+            <h2 id="guide-quickstart-title">第一次体验建议</h2>
+            <p>先走通最短闭环，再按左侧目录逐项体验。</p>
+          </div>
+        </div>
+        <ol class="guide-sequence" id="guide-quickstart-list"></ol>
+      </section>
+
+      <section class="guide-search-band" aria-label="筛选使用指导">
+        <label for="guide-search">查找功能或操作</label>
+        <div class="guide-search-control">
+          <input id="guide-search" type="search" placeholder="例如：错题、直播、机器人、退款" autocomplete="off" />
+          <button id="guide-search-clear" type="button" aria-label="清除搜索" title="清除搜索">×</button>
+        </div>
+        <p id="guide-search-status" aria-live="polite">显示全部功能</p>
+      </section>
+
+      <div class="guide-layout">
+        <aside class="guide-toc" aria-label="功能目录">
+          <p>功能目录</p>
+          <nav id="guide-toc-list"></nav>
+        </aside>
+
+        <div class="guide-content">
+          <div id="guide-sections"></div>
+          <div class="guide-empty" id="guide-empty" hidden>
+            <h2>没有找到对应功能</h2>
+            <p>换一个关键词，或清除搜索查看全部指导。</p>
+          </div>
+
+          <section class="guide-help-footer" aria-labelledby="guide-help-footer-title">
+            <div>
+              <p class="guide-section-number">最后检查</p>
+              <h2 id="guide-help-footer-title">遇到问题时先看这里</h2>
+            </div>
+            <ul id="guide-troubleshooting"></ul>
+          </section>
+        </div>
+      </div>
+    </main>
+
+    <script src="/common.js"></script>
+    <script src="/guide.js"></script>
+  </body>
+</html>

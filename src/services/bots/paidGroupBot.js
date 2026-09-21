@@ -1,5 +1,6 @@
 const dayjs = require('dayjs');
-const { createAppChat, inviteChatMembers, sendAppChatMessage } = require('../wecom');
+const crypto = require('crypto');
+const { createAppChat, sendAppChatMessage } = require('../wecom');
 const { getBotByCode, assignBotToGroup } = require('../botManager');
 const { renderTemplate } = require('../messageTemplate');
 
@@ -43,7 +44,7 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
   try {
     // 1. 查询学生信息
     const student = db.prepare(`
-      SELECT id, username, display_name, openid
+      SELECT id, username, display_name, wecom_userid
       FROM users
       WHERE id = ? AND role = 'student'
     `).get(studentId);
@@ -70,9 +71,9 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
 
     // 4. 查询所有老师（role='teacher'）
     const teachers = db.prepare(`
-      SELECT id, username, display_name, openid
+      SELECT id, username, display_name, wecom_userid
       FROM users
-      WHERE role = 'teacher'
+      WHERE role = 'teacher' AND wecom_userid != ''
       ORDER BY id ASC
     `).all();
 
@@ -81,9 +82,12 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
     }
 
     // 5. 构建群成员列表（企业微信 userId 使用 openid 或 username）
-    const ownerUserId = options.ownerUserId || teachers[0].openid || teachers[0].username;
-    const studentUserId = student.openid || student.username;
-    const teacherUserIds = teachers.map(t => t.openid || t.username);
+    if (!student.wecom_userid) {
+      throw new Error('该学生尚未绑定企业微信成员账号，不能加入内部应用群');
+    }
+    const ownerUserId = options.ownerUserId || teachers[0].wecom_userid;
+    const studentUserId = student.wecom_userid;
+    const teacherUserIds = teachers.map((teacher) => teacher.wecom_userid);
 
     // 去重并确保群主在列表中
     const userlist = [ownerUserId, studentUserId, ...teacherUserIds]
@@ -106,11 +110,16 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
 
     // 7. 将群信息存入 wecom_groups 表（携带 student_id / order_id 便于后续关联）
     const now = dayjs().toISOString();
+    const bindingToken = crypto.randomBytes(12).toString('hex');
     const groupInsert = db.prepare(`
-      INSERT INTO wecom_groups (chat_id, name, owner, student_id, order_id, created_at)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO wecom_groups
+        (chat_id, name, owner, student_id, order_id, reply_enabled, reply_all_text,
+         reply_delay_seconds, binding_token, created_at)
+      VALUES (?, ?, ?, ?, ?, 1, 1, 5, ?, ?)
     `);
-    const groupResult = groupInsert.run(chatId, groupName, ownerUserId, studentId, orderId, now);
+    const groupResult = groupInsert.run(
+      chatId, groupName, ownerUserId, studentId, orderId, bindingToken, now
+    );
     const groupDbId = groupResult.lastInsertRowid;
 
     // 8. 将成员关系存入 wecom_group_members 表
@@ -123,35 +132,27 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
     }
 
     // 9. 邀请5大机器人入群：从 bot 配置读取企微 userId，调用 appchat/update 真正邀请入群
-    const botWecomUserIds = [];
+    let assignedBotCount = 0;
     for (const botCode of REQUIRED_BOT_CODES) {
       const bot = getBotByCode(botCode);
       if (bot && bot.is_active) {
         // 建立机器人与群组的分配关系
         try {
           assignBotToGroup(bot.id, groupDbId);
+          if (botCode === 'answer') {
+            db.prepare('UPDATE bot_group_assignments SET is_default = 0 WHERE group_id = ?')
+              .run(groupDbId);
+            db.prepare(`
+              UPDATE bot_group_assignments SET is_default = 1
+              WHERE group_id = ? AND bot_id = ?
+            `).run(groupDbId, bot.id);
+          }
+          assignedBotCount++;
         } catch (assignErr) {
           console.warn(`[paidGroupBot] 分配机器人 ${botCode} 到群组失败:`, assignErr.message);
         }
-        const botWecomId = bot.config && bot.config.wecomUserId;
-        if (botWecomId) {
-          botWecomUserIds.push(botWecomId);
-        } else {
-          console.warn(`[paidGroupBot] 机器人 ${botCode} 未配置企微 userId，无法邀请入群`);
-        }
       } else {
         console.warn(`[paidGroupBot] 机器人 ${botCode} 不存在或未激活`);
-      }
-    }
-
-    if (botWecomUserIds.length > 0) {
-      try {
-        const inviteResult = await inviteChatMembers({ chatid: chatId, userlist: botWecomUserIds });
-        if (!inviteResult || inviteResult.errcode !== 0) {
-          console.warn(`[paidGroupBot] 邀请机器人入群部分失败:`, inviteResult?.errmsg);
-        }
-      } catch (inviteErr) {
-        console.error(`[paidGroupBot] 邀请机器人入群失败:`, inviteErr.message);
       }
     }
 
@@ -170,7 +171,9 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
       await sendAppChatMessage({
         chatid: chatId,
         msgtype: 'text',
-        text: { content: welcomeMessage }
+        text: {
+          content: `${welcomeMessage}\n\n[机器人绑定:${bindingToken}]`
+        }
       });
     } catch (welcomeErr) {
       console.error('[paidGroupBot] 发送群欢迎消息失败:', welcomeErr.message);
@@ -187,7 +190,7 @@ async function createPaidServiceGroup(db, studentId, orderId, options = {}) {
       studentId,
       orderId,
       memberCount: userlist.length,
-      botCount: botIds.length
+      botCount: assignedBotCount
     };
 
   } catch (error) {

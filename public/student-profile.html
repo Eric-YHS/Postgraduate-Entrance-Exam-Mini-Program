@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>考研学员信息登记</title>
+    <style>
+      :root { color-scheme: light; font-family: Inter, "Microsoft YaHei", sans-serif; background:#f4f7fb; color:#172033; }
+      * { box-sizing:border-box; }
+      body { margin:0; }
+      main { width:min(980px, calc(100% - 28px)); margin:28px auto 56px; }
+      header { padding:28px; border-radius:18px; background:linear-gradient(135deg,#183f73,#2f75b5); color:white; box-shadow:0 16px 40px rgba(24,63,115,.18); }
+      header h1 { margin:0 0 8px; font-size:clamp(24px,4vw,36px); }
+      header p { margin:0; opacity:.84; line-height:1.7; }
+      form { margin-top:18px; display:grid; gap:16px; }
+      section { background:white; border:1px solid #dbe4ef; border-radius:16px; padding:22px; box-shadow:0 8px 24px rgba(24,63,115,.06); }
+      h2 { margin:0 0 16px; font-size:19px; color:#234f84; }
+      .grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:14px; }
+      label { display:grid; gap:7px; font-size:14px; color:#49576b; }
+      .full { grid-column:1 / -1; }
+      input, select, textarea { width:100%; border:1px solid #cbd7e5; border-radius:10px; padding:11px 12px; font:inherit; color:#172033; background:#fff; }
+      textarea { min-height:92px; resize:vertical; }
+      input:focus, select:focus, textarea:focus { outline:3px solid rgba(47,117,181,.14); border-color:#2f75b5; }
+      button { border:0; border-radius:12px; padding:13px 24px; background:#1d5f99; color:white; font:inherit; font-weight:700; cursor:pointer; }
+      button:disabled { opacity:.55; cursor:wait; }
+      #status { min-height:24px; color:#b42318; }
+      .success { color:#147a55 !important; }
+      @media (max-width:680px) { .grid { grid-template-columns:1fr; } .full { grid-column:auto; } section, header { padding:18px; } }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>考研学员信息登记</h1>
+        <p>这些信息用于制定复习规划、调整每日任务和生成周报。请按真实情况填写；小程序端不会展示本登记页。</p>
+      </header>
+      <form id="profile-form">
+        <section>
+          <h2>基本信息</h2>
+          <div class="grid">
+            <label>姓名<input name="name" required /></label>
+            <label>性别<select name="gender"><option value="">请选择</option><option>男</option><option>女</option><option>不便透露</option></select></label>
+            <label>目标院校<input name="targetSchool" /></label>
+            <label>目标专业<input name="targetMajor" /></label>
+            <label>当前阶段<select name="currentStage"><option>基础</option><option>强化</option><option>冲刺</option></select></label>
+            <label>班主任姓名<input name="headTeacherName" /></label>
+            <label>接收周报邮箱<input name="email" type="email" /></label>
+          </div>
+        </section>
+        <section>
+          <h2>英语与数学基础</h2>
+          <div class="grid">
+            <label>高考英语分数<input name="gaokaoEnglishScore" type="number" min="0" max="150" /></label>
+            <label>英语四级分数<input name="cet4Score" type="number" min="0" max="710" /></label>
+            <label>专升本英语分数<input name="upgradeEnglishScore" type="number" min="0" /></label>
+            <label>词汇量情况<input name="vocabularyLevel" placeholder="如：约 3500，遗忘较多" /></label>
+            <label class="full">之前自己复习的情况<textarea name="previousReview"></textarea></label>
+            <label class="full">英语最害怕的板块<textarea name="weakestEnglishSection" placeholder="单词、阅读、语法、作文、听力等"></textarea></label>
+            <label>高考数学分数<input name="gaokaoMathScore" type="number" min="0" max="150" /></label>
+            <label>专升本数学分数<input name="upgradeMathScore" type="number" min="0" /></label>
+            <label>考英语一还是英语二<select name="englishPaper"><option value="">待定</option><option>英语一</option><option>英语二</option></select></label>
+            <label>考数学一还是数学二<select name="mathPaper"><option value="">待定</option><option>数学一</option><option>数学二</option><option>数学三</option><option>不考数学</option></select></label>
+          </div>
+        </section>
+        <section>
+          <h2>收货与个性化要求</h2>
+          <div class="grid">
+            <label>收货人<input name="shippingName" /></label>
+            <label>联系电话<input name="shippingPhone" inputmode="tel" /></label>
+            <label class="full">收货地址<textarea name="shippingAddress"></textarea></label>
+            <label class="full">要求和自我评价<textarea name="requirements"></textarea></label>
+          </div>
+        </section>
+        <div id="status" role="status"></div>
+        <button id="submit-button" type="submit">提交登记</button>
+      </form>
+    </main>
+    <script src="/student-profile.js"></script>
+  </body>
+</html>

@@ -107,9 +107,73 @@
       @media (max-width: 900px) {
         .admin-shell {
           grid-template-columns: 1fr;
+          gap: 14px;
+          padding: 0;
         }
         .admin-nav {
-          position: static;
+          position: sticky;
+          top: 0;
+          z-index: 50;
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
+          padding: 10px 0;
+          background: rgba(240, 245, 255, 0.96);
+          backdrop-filter: blur(12px);
+          border-bottom: 1px solid var(--line);
+        }
+        .admin-nav .brand-block {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 8px;
+        }
+        .admin-nav .brand-mark,
+        .admin-nav .brand-block > .muted {
+          display: none;
+        }
+        .admin-nav .brand-block h2 {
+          margin: 0;
+          font-size: 18px;
+        }
+        .admin-nav .inline-actions {
+          margin: 0;
+          flex-wrap: nowrap;
+          gap: 6px;
+        }
+        .admin-nav .inline-actions .button,
+        .admin-nav .inline-actions .ghost-button {
+          padding: 7px 10px;
+          white-space: nowrap;
+        }
+        .admin-nav nav {
+          width: 100%;
+          min-width: 0;
+          max-width: 100%;
+          overflow-x: auto;
+          overscroll-behavior-inline: contain;
+          scrollbar-width: thin;
+        }
+        .admin-menu {
+          display: flex;
+          gap: 6px;
+          min-width: max-content;
+        }
+        .admin-menu li {
+          margin: 0;
+        }
+        .admin-menu button {
+          width: auto;
+          padding: 8px 10px;
+          border-radius: 8px;
+          white-space: nowrap;
+        }
+        .admin-menu .menu-icon {
+          width: auto;
+        }
+        .admin-main .hero {
+          margin-bottom: 14px;
         }
       }
     </style>
@@ -125,6 +189,7 @@
             <div class="inline-actions">
               <button class="button" id="logout-button" type="button">退出登录</button>
               <a class="ghost-button" href="/" style="text-decoration: none;">返回首页</a>
+              <a class="ghost-button" href="/guide" style="text-decoration: none;">使用指导</a>
             </div>
           </section>
           <nav>
@@ -237,6 +302,14 @@
           <!-- 4. 题库管理 -->
           <section class="admin-section" id="section-questions">
             <h2>题库管理</h2>
+            <div class="paper-card" style="padding:14px;margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:end;">
+              <label style="display:grid;gap:6px;"><span>表 5 政治题目</span><input id="question-import-file" class="input" type="file" accept=".xls,.xlsx,.csv" /></label>
+              <button class="button" id="question-import-button" type="button">导入题目</button>
+              <a class="ghost-button" href="/api/templates/question">下载题目模板</a>
+              <label style="display:grid;gap:6px;"><span>表 4 英语单词</span><input id="vocabulary-import-file" class="input" type="file" accept=".xls,.xlsx,.csv" /></label>
+              <button class="button" id="vocabulary-import-button" type="button">导入单词</button>
+              <a class="ghost-button" href="/api/templates/flashcard">下载单词模板</a>
+            </div>
             <div style="margin-bottom: 16px; padding: 12px; background: #f8fafc; border-radius: 12px; border: 1px solid var(--border);">
               <div style="display: flex; gap: 8px; flex-wrap: wrap; align-items: flex-end;">
                 <div>
@@ -426,11 +499,69 @@
           <!-- 8. 机器人管理 -->
           <section class="admin-section" id="section-robots">
             <h2>机器人管理</h2>
-            <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
-              <input id="bot-search" class="input" placeholder="搜索机器人编码或名称" style="flex: 1; min-width: 200px;" />
-              <button class="button" id="add-bot-btn" type="button">新增机器人</button>
+            <div class="paper-card" style="padding:16px;margin-bottom:16px;background:#eff6ff;">
+              <strong>可视化配置说明</strong>
+              <p class="muted" style="margin:6px 0 0;line-height:1.7;">本功能只在管理员账号的 <code>/admin</code> 页面显示，教师工作台没有管理权限。先创建机器人角色，再把角色分配给“企业微信群”或“微信客服”。连续发送的文字、图片题目、语音和常见文档会在最后一条消息后等待指定秒数，并合并为一次回复；图片使用 MiniMax-M3 的 high 精度多模态理解，语音使用火山引擎 Seed-ASR 2.0 高精度转写。微信客服面向普通微信用户，是一对一咨询渠道。</p>
             </div>
-            <div id="robots-list"></div>
+            <div class="sub-nav" id="robot-tabs">
+              <button class="active" data-robot-tab="robot-roles-panel">机器人角色</button>
+              <button data-robot-tab="wecom-groups-panel">企业微信群</button>
+              <button data-robot-tab="wecom-kf-panel">微信客服（普通微信）</button>
+              <button data-robot-tab="student-plans-panel">学员档案与计划</button>
+              <button data-robot-tab="robot-operations-panel">工单 / 审计 / 灰度</button>
+            </div>
+
+            <div id="robot-roles-panel" class="robot-tab-panel">
+              <div style="margin-bottom: 16px; display: flex; gap: 12px; flex-wrap: wrap;">
+                <input id="bot-search" class="input" placeholder="搜索机器人编码或名称" style="flex: 1; min-width: 200px;" />
+                <button class="button" id="add-bot-btn" type="button">新增机器人角色</button>
+              </div>
+              <div id="robots-list"></div>
+            </div>
+
+            <div id="wecom-groups-panel" class="robot-tab-panel" style="display:none;">
+              <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+                <button class="button" id="add-wecom-group-btn" type="button">创建企业微信群</button>
+                <button class="ghost-button" id="refresh-wecom-groups-btn" type="button">刷新状态</button>
+                <span class="muted" style="font-size:13px;">只有企业微信内部成员可加入当前类型的应用群。</span>
+              </div>
+              <div id="wecom-groups-list"></div>
+            </div>
+
+            <div id="wecom-kf-panel" class="robot-tab-panel" style="display:none;">
+              <div id="wecom-kf-status" class="paper-card" style="padding:16px;margin-bottom:16px;"></div>
+              <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+                <button class="button" id="sync-wecom-kf-accounts-btn" type="button">同步微信客服账号</button>
+                <button class="ghost-button" id="refresh-wecom-kf-btn" type="button">刷新本页</button>
+                <span class="muted" style="font-size:13px;">授权完成后，客服入口链接可直接发给普通微信用户。</span>
+              </div>
+              <div id="wecom-kf-accounts-list"></div>
+            </div>
+
+            <div id="student-plans-panel" class="robot-tab-panel" style="display:none;">
+              <div class="paper-card" style="padding:16px;margin-bottom:16px;background:#f0fdf4;">
+                <strong>表 1 / 表 2 / 表 3 闭环</strong>
+                <p class="muted" style="margin:6px 0 0;line-height:1.7;">为学员生成登记链接后，可通过企微首次招呼发送。展开学员卡片可录入表 2 的目标分数、长期/阶段及各科任务。每天早上推送计划，晚上登记完成情况；半自动模式在表 2 基线上回炉未完成任务，全自动模式结合表 1 档案与表 2 目标生成次日任务。小程序只展示未来 7 天计划，不展示登记页。</p>
+              </div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;">
+                <input id="student-profile-user-id" class="input" type="number" min="1" placeholder="站内学生 ID" style="max-width:220px;" />
+                <input id="student-profile-wecom-id" class="input" placeholder="或企业微信 UserID" style="max-width:260px;" />
+                <button class="button" id="create-student-profile-invite" type="button">生成登记链接</button>
+                <button class="ghost-button" id="refresh-student-profiles" type="button">刷新</button>
+              </div>
+              <div id="student-profiles-list"></div>
+            </div>
+
+            <div id="robot-operations-panel" class="robot-tab-panel" style="display:none;">
+              <div id="robot-platform-overview" style="margin-bottom:16px;"></div>
+              <div class="paper-card" style="padding:16px;">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                  <h3 style="margin:0;">转人工工单池</h3>
+                  <button class="ghost-button" id="refresh-robot-operations" type="button">刷新</button>
+                </div>
+                <div id="robot-handoff-tickets" style="margin-top:14px;"></div>
+              </div>
+            </div>
 
             <div id="bot-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
               <div style="background: var(--bg); border-radius: 16px; max-width: 700px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
@@ -449,10 +580,38 @@
             <div id="bot-conversations-modal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center; padding: 24px;">
               <div style="background: var(--bg); border-radius: 16px; max-width: 900px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3);">
                 <div style="display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; border-bottom: 1px solid var(--border);">
-                  <h3 style="margin: 0;">对话记录</h3>
+                  <h3 id="bot-conversations-title" style="margin: 0;">对话记录</h3>
                   <button class="ghost-button" id="close-bot-conversations" type="button" style="font-size: 18px;">&times;</button>
                 </div>
                 <div id="bot-conversations-body" style="padding: 24px;"></div>
+              </div>
+            </div>
+
+            <div id="wecom-group-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;padding:24px;">
+              <div style="background:var(--bg);border-radius:16px;max-width:820px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);">
+                  <h3 id="wecom-group-modal-title" style="margin:0;">企业微信群</h3>
+                  <button class="ghost-button" id="close-wecom-group-modal" type="button" style="font-size:18px;">&times;</button>
+                </div>
+                <div id="wecom-group-modal-body" style="padding:24px;"></div>
+                <div style="display:flex;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-wecom-group-btn" type="button">取消</button>
+                  <button class="button" id="save-wecom-group-btn" type="button">保存</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="wecom-kf-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center;padding:24px;">
+              <div style="background:var(--bg);border-radius:16px;max-width:900px;width:100%;max-height:92vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,0.3);">
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 24px;border-bottom:1px solid var(--border);">
+                  <h3 id="wecom-kf-modal-title" style="margin:0;">微信客服</h3>
+                  <button class="ghost-button" id="close-wecom-kf-modal" type="button" style="font-size:18px;">&times;</button>
+                </div>
+                <div id="wecom-kf-modal-body" style="padding:24px;"></div>
+                <div id="wecom-kf-modal-footer" style="display:flex;justify-content:flex-end;gap:12px;padding:16px 24px;border-top:1px solid var(--border);">
+                  <button class="ghost-button" id="cancel-wecom-kf-btn" type="button">取消</button>
+                  <button class="button" id="save-wecom-kf-btn" type="button">保存</button>
+                </div>
               </div>
             </div>
           </section>

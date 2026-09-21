@@ -19,7 +19,7 @@ const DEFAULT_TEMPLATES = [
   {
     code: 'evening_check',
     name: '晚间检查',
-    content: '晚上好，{name}！\n今日学习总结：\n- 已完成：{completed}\n- 待完成：{pending}\n记得早点休息，明天继续加油！',
+    content: '晚上好，{name}。\n今日学习总结：\n- 已完成：{completed}\n- 待完成：{pending}\n把实际情况回我，明天的计划会跟着调整。',
     channels: JSON.stringify(['wx_subscribe', 'push']),
     isActive: 1
   },

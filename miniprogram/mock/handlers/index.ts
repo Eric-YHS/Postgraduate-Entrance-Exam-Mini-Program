@@ -15,6 +15,8 @@ import {
   mockGetHashtags,
 } from './forum.handler';
 import { mockAnswerQuestion } from './support.handler';
+import { mockGetFuturePlans, mockUpdatePlanItem } from './plan.handler';
+import { mockGetVocabularyCards, mockReviewVocabularyCard } from './vocabulary.handler';
 
 /** Mock 处理器注册表 */
 export interface MockRegistry {
@@ -47,6 +49,10 @@ export const mockRegistry: MockRegistry = {
     const result = await mockAnswerQuestion(data || {});
     return { explanation: result.answer };
   },
+  '/api/student/plans': () => mockGetFuturePlans(),
+  '/api/student/plans/update': (data) => mockUpdatePlanItem(data || {}),
+  '/api/student/vocabulary': () => mockGetVocabularyCards(),
+  '/api/student/vocabulary/review': (data) => mockReviewVocabularyCard(data || {}),
 };
 
 export { mockLogin, mockGetUserProfile } from './user.handler';

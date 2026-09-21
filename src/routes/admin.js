@@ -15,6 +15,7 @@ module.exports = function registerAdminRoutes(app, shared) {
     downgradeExpiredTrials,
     downgradeExpiredPaid,
     createTaskRecord,
+    getSetting,
     serializeTask,
     serializeOrder,
     serializeSummary,
@@ -1076,13 +1077,18 @@ module.exports = function registerAdminRoutes(app, shared) {
 
     // B-07: 课程完成率 = 已完成课程数 / 总课程数
     const totalCourses = db.prepare('SELECT COUNT(*) AS cnt FROM courses').get().cnt;
-    const completedCourses = db.prepare('SELECT COUNT(DISTINCT course_id) AS cnt FROM course_progress WHERE progress >= 100').get().cnt;
+    const completedCourses = db.prepare(`
+      SELECT COUNT(DISTINCT course_id) AS cnt
+      FROM course_progress
+      WHERE duration_seconds > 0
+        AND position_seconds >= duration_seconds * 0.95
+    `).get().cnt;
     const courseCompletionRate = totalCourses > 0 ? Math.round((completedCourses / totalCourses) * 100) : 0;
 
     // B-07: 平均学习时长（当日有学习记录的用户人均学习分钟数）
     const avgStudyMinutesRow = db.prepare(`
       SELECT COALESCE(AVG(duration), 0) AS avg_min FROM (
-        SELECT SUM(progress_seconds) / 60.0 AS duration
+        SELECT SUM(position_seconds) / 60.0 AS duration
         FROM course_progress WHERE DATE(updated_at) = ?
         GROUP BY student_id
       )

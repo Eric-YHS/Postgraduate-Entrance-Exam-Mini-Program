@@ -85,6 +85,10 @@ Page({
     });
   },
 
+  onVocabularyTap() {
+    wx.navigateTo({ url: '/pages/vocabulary/index/index' });
+  },
+
   onWrongBookTap() {
     wx.navigateTo({
       url: '/pages/question/wrong-book/wrong-book',

@@ -1,0 +1,201 @@
+5600	    notify(`已确认导入 ${draft.changes.length} 项后续任务调整`);
+5601	  };
+5602	  const togglePlanAutoCalibrate = () => {
+5603	    if (!automation.enabled) return notify('请先开启任务监管机器人');
+5604	    const nextAutomation = {...automation, autoCalibrate:!automation.autoCalibrate};
+5605	    const nextStudent = {...selectedStudent, planAdjustmentAutomation:nextAutomation};
+5606	    setStudents(current => current.map(item => item.id === selectedStudent.id ? nextStudent : item));
+5607	    setSelectedStudent(nextStudent);
+5608	    notify(nextAutomation.autoCalibrate ? 'AI 自动校准已开启：后续符合条件的方案将自动导入' : 'AI 自动校准已关闭：后续方案需教师确认导入');
+5609	  };
+5610	  const undoLatestPlanAdjustment = () => {
+5611	    const history = selectedStudent?.taskAdjustmentHistory || [];
+5612	    const latest = history[history.length - 1];
+5613	    if (!latest) return notify('暂无可撤销的任务调整');
+5614	    const nextPlans = assignedPlans.map(plan => ({...plan, rows:(plan.rows || []).map((row, rowIndex) => ({...row, tasks:(row.tasks || []).map((text, taskIndex) => {
+5615	      const change = latest.changes.find(item => item.planId === plan.id && item.rowIndex === rowIndex && item.taskIndex === taskIndex && item.after === text);
+5616	      return change ? change.before : text;
+5617	    })}))}));
+5618	    setAssignedPlans(nextPlans);
+5619	    const nextStudent = {...selectedStudent, assignedPlans:nextPlans, taskAdjustmentHistory:history.slice(0, -1)};
+5620	    setStudents(students.map(student => student.id === selectedStudent.id ? nextStudent : student));
+5621	    setSelectedStudent(nextStudent);
+5622	    notify('已撤销最近一次自动任务调整');
+5623	  };
+5624	  const hasConcreteTaskContent = task => Boolean((task.tasks || []).some(item => String(item || '').trim()) || String(task.note || '').trim());
+5625	  const getAiSuggestion = () => null;
+5626	  const assessmentArchiveRecords = getStudentAssessmentArchive(selectedStudent, entranceState);
+5627	  const planAssistantReady = isAiSlotReady(aiSettings, 'plan_assistant');
+5628	  const reportReady = isAiSlotReady(aiSettings, 'learning_report');
+5629	  const coachSlotReady = planAssistantReady || reportReady;
+5630	  const coachSlotConfig = planAssistantReady
+5631	    ? getAiSlotConfig(aiSettings, 'plan_assistant')
+5632	    : getAiSlotConfig(aiSettings, 'learning_report');
+5633	  const aiReviewCoach = buildAiReviewCoachSuggestions({
+5634	    student: selectedStudent,
+5635	    futureDays,
+5636	    completedCount: completedFutureDays,
+5637	    totalCount: futureDays.length,
+5638	    archiveRecords: assessmentArchiveRecords,
+5639	    slotReady: coachSlotReady,
+5640	    slotConfig: coachSlotConfig,
+5641	    aiSettings,
+5642	  });
+5643	  const automation = getPlanAdjustmentAutomation(selectedStudent);
+5644	  const renderFutureTaskAdjustmentControls = () => (
+5645	    <section className="future-ai-adjustment-controls">
+5646	      <div className="future-ai-adjustment-head">
+5647	        <div><span className="eyebrow">计划助手机器人</span><h3>AI 任务调整</h3><p>{automation.enabled ? '正在读取学生完成反馈，调整建议只作用于未来 30 天未执行任务。' : '机器人已关闭。开启后会读取学生反馈并生成未来任务调整建议。'}</p></div>
+5648	        <span className={`badge ${automation.enabled ? 'ok' : 'pending'}`}>{automation.enabled ? '运行中' : '已关闭'}</span>
+5649	      </div>
+5650	      <div className="future-ai-adjustment-actions">
+5651	        <button type="button" className={!automation.enabled ? 'primary' : 'secondary'} onClick={() => togglePlanAdjustmentAutomation(false)}>关闭</button>
+5652	        <button type="button" className={automation.enabled ? 'primary' : 'secondary'} onClick={() => togglePlanAdjustmentAutomation(true)}>开启</button>
+5653	        <button type="button" className={automation.autoCalibrate ? 'primary' : 'secondary'} onClick={togglePlanAutoCalibrate} disabled={!automation.enabled}>{automation.autoCalibrate ? '自动落实已开启' : '自动落实'}</button>
+5654	      </div>
+5655	      <div className="future-ai-adjustment-status"><span>学生反馈：{(selectedStudent?.taskCheckins || []).length} 条</span><span>{automation.autoCalibrate ? '实时监控并自动替换' : '生成建议后逐条落实'}</span><small>{automation.lastCheckedAt ? `最近分析：${formatAccountLogin(automation.lastCheckedAt)}` : '暂无完成反馈，机器人待机'}</small></div>
+5656	    </section>
+5657	  );
+5658	
+5659	  const renderTaskDayList = (days, emptyMessage, showAdjustment = false) => {
+5660	    const draftChanges = selectedStudent?.taskAdjustmentDraft?.changes || [];
+5661	    const showAiSuggestion = showAdjustment;
+5662	    const suggestionWaitingText = !automation.enabled
+5663	      ? 'AI 已关闭'
+5664	      : (selectedStudent?.taskCheckins || []).length
+5665	        ? '正在根据反馈分析'
+5666	        : '等待学生反馈';
+5667	
+5668	    if (!days.length) {
+5669	      return <div className="empty-line"><ClipboardCheck size={20}/><span>{emptyMessage}</span></div>;
+5670	    }
+5671	
+5672	    return (
+5673	      <div className={`daily-combined-list ${showAiSuggestion ? 'has-ai-suggestion' : ''}`}>
+5674	        {days.map(day => {
+5675	          const lanes = [...new Set(day.tasks.map(task => task.lane))];
+5676	          const completedCount = day.tasks.filter(task => task.completed).length;
+5677	
+5678	          return (
+5679	            <section className="daily-combined-day" key={day.dayNumber}>
+5680	              <header className="daily-day-header">
+5681	                <span className="daily-day-index">{String(day.dayNumber).padStart(2, '0')}</span>
+5682	                <div>
+5683	                  <h4>第 {day.dayNumber} 天</h4>
+5684	                  <p>{day.tasks.length} 项任务 · {lanes.map(lane => `轨道 ${lane}`).join('、')}</p>
+5685	                </div>
+5686	                <span className={`daily-day-status ${completedCount === day.tasks.length ? 'is-done' : ''}`}>
+5687	                  {completedCount === day.tasks.length ? '已完成' : completedCount ? `已完成 ${completedCount}/${day.tasks.length}` : '待执行'}
+5688	                </span>
+5689	              </header>
+5690	              <div className="daily-task-table">
+5691	                <div className="daily-task-table-head">
+5692	                  <span>状态</span><span>轨道</span><span>类型</span><span>基础任务</span><span>当天内容</span>
+5693	                  {showAiSuggestion && <span>AI 建议调整</span>}
+5694	                  <span>操作</span>
+5695	                </div>
+5696	                {day.tasks.map(task => {
+5697	                  const changes = draftChanges.filter(change =>
+5698	                    change.planId === task.planId && change.rowIndex === task.rowIndex
+5699	                  );
+5700	
+5701	                  return (
+5702	                    <div className={`daily-task-table-row ${task.completed ? 'is-complete' : ''}`} key={`${task.planId}-${task.dayNumber}-${task.rowIndex}`}>
+5703	                      <button className="daily-task-check" onClick={() => toggleFutureDay(task.planId, task.rowIndex)} aria-label={task.completed ? '标记为未完成' : '标记为已完成'}>
+5704	                        {task.completed && <Check size={14}/>}
+5705	                      </button>
+5706	                      <span className={`lane-tag lane-${task.lane}`}>轨道 {task.lane}</span>
+5707	                      <span className={`task-type-tag ${task.taskType === '长期' ? 'is-long' : 'is-stage'}`}>{task.taskType === '长期' ? '长期' : '阶段'}</span>
+5708	                      <button className="daily-task-name" onClick={() => setSelectedPersonalPlanId(task.planId)}>{task.planName}</button>
+5709	                      <span className="daily-task-detail">{task.tasks.filter(Boolean).join(' · ') || task.note || '当天暂未填写任务'}</span>
+5710	                      {showAiSuggestion && (
+5711	                        <span className="ai-task-suggestion">
+5712	                          {changes.length ? changes.map(change => (
+5713	                            <span className="ai-task-suggestion-item" key={`${change.planId}-${change.rowIndex}-${change.taskIndex}`}>
+5714	                              <b>AI 建议</b>
+5715	                              <span>建议替换为：{change.after}</span>
+5716	                              <button type="button" className="secondary" onClick={() => applySinglePlanAdjustment(change)}>落实</button>
+5717	                            </span>
+5718	                          )) : (
+5719	                            <span className="ai-task-suggestion-item ai-task-suggestion-idle">
+5720	                              <b>AI 建议</b>
+5721	                              <span>{suggestionWaitingText}</span>
+5722	                              <button type="button" className="secondary" disabled>落实</button>
+5723	                            </span>
+5724	                          )}
+5725	                        </span>
+5726	                      )}
+5727	                      <button className="daily-task-open" onClick={() => setSelectedPersonalPlanId(task.planId)}>查看<ChevronRight size={14}/></button>
+5728	                    </div>
+5729	                  );
+5730	                })}
+5731	              </div>
+5732	            </section>
+5733	          );
+5734	        })}
+5735	      </div>
+5736	    );
+5737	  };
+5738	  const updatePersonalPlanById = (planId, updater) => {
+5739	    const nextPlans = assignedPlans.map(plan => plan.id === planId ? updater(plan) : plan);
+5740	    setAssignedPlans(nextPlans);
+5741	    setStudents(students.map(student => student.id === selectedStudent.id ? {...student, assignedPlans:nextPlans} : student));
+5742	    setSelectedStudent({...selectedStudent, assignedPlans:nextPlans});
+5743	  };
+5744	  const setPlanStartDate = async (plan, startDate) => {
+5745	    const normalized = startDate || null;
+5746	    if (isApiConfigured() && selectedStudent?.id && !selectedStudent.isTestAccount) {
+5747	      try {
+5748	        const updated = await apiRequest(`/api/students/${selectedStudent.id}/plans/${plan.id}/start-date`, {
+5749	          method: 'PATCH',
+5750	          body: { startDate:normalized }
+5751	        });
+5752	        const savedStartDate = normalizeDateOnly(updated?.start_date || updated?.startDate) || normalized;
+5753	        updatePersonalPlanById(plan.id, item => ({ ...item, startDate:savedStartDate, start_date:savedStartDate }));
+5754	        notify(normalized ? `已设置「${plan.name}」于 ${formatPlanStartDate(normalized)} 当日解锁` : `已取消「${plan.name}」的日期限制`);
+5755	      } catch (error) {
+5756	        notify(error?.message || '保存任务开始日期失败，请稍后重试');
+5757	      }
+5758	      return;
+5759	    }
+5760	    updatePersonalPlanById(plan.id, item => ({ ...item, startDate:normalized, start_date:normalized }));
+5761	    notify(normalized ? `已设置「${plan.name}」于 ${formatPlanStartDate(normalized)} 当日解锁` : `已取消「${plan.name}」的日期限制`);
+5762	  };
+5763	  const selectedPersonalPlan = assignedPlans.find(plan => plan.id === selectedPersonalPlanId);
+5764	  const updatePersonalPlan = updater => {
+5765	    const nextPlans = assignedPlans.map(plan => plan.id === selectedPersonalPlanId ? updater(plan) : plan);
+5766	    setAssignedPlans(nextPlans);
+5767	    setStudents(students.map(student => student.id === selectedStudent.id ? {...student, assignedPlans:nextPlans} : student));
+5768	    setSelectedStudent({...selectedStudent, assignedPlans:nextPlans});
+5769	  };
+5770	  const removePersonalPlanAttachment = (rowIndex, attachmentId) => {
+5771	    const attachment = selectedPersonalPlan?.rows?.[rowIndex]?.attachments?.find(item => item.id === attachmentId);
+5772	    if (attachment?.objectUrl) URL.revokeObjectURL(attachment.objectUrl);
+5773	    updatePersonalPlan(plan => ({
+5774	      ...plan,
+5775	      rows: plan.rows.map((row, index) => index === rowIndex ? {
+5776	        ...row,
+5777	        attachments: (row.attachments || []).filter(item => item.id !== attachmentId)
+5778	      } : row)
+5779	    }));
+5780	    notify('已移除该学员任务附件');
+5781	  };
+5782	  const addPersonalPlanAttachment = (rowIndex, file) => {
+5783	    if (isApiConfigured()) return notify('个人计划附件接口尚未部署；未保存浏览器临时文件。');
+5784	    if (!file) return;
+5785	    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) return notify('任务附件仅支持 PDF 文件');
+5786	    if (file.size > 100 * 1024 * 1024) return notify('单个 PDF 附件请控制在 100MB 以内');
+5787	    const attachment = {id:`student-task-file-${Date.now()}-${file.name}`, fileName:file.name, fileSize:file.size, fileType:'application/pdf', objectUrl:URL.createObjectURL(file), temporary:true, uploadedAt:new Date().toISOString()};
+5788	    updatePersonalPlan(plan => ({
+5789	      ...plan,
+5790	      rows: plan.rows.map((row, index) => index === rowIndex ? {
+5791	        ...row,
+5792	        attachments: [...(row.attachments || []), attachment]
+5793	      } : row)
+5794	    }));
+5795	    notify(`已为 ${selectedStudent.name} 的个人任务添加附件「${file.name}」`);
+5796	  };
+5797	  const deletePersonalPlan = async () => {
+5798	    if (!selectedPersonalPlanId) return;
+5799	    if (isApiConfigured() && selectedStudent?.id && !selectedStudent.isTestAccount) {
+5800	      try {

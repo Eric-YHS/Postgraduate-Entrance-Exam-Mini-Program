@@ -1,0 +1,22 @@
+<view class="container vocabulary-page">
+  <view class="progress card">今日已复习 {{ reviewed }} 个 · 待复习 {{ cards.length }} 个</view>
+  <ky-loading wx:if="{{ loading }}" />
+  <ky-empty wx:elif="{{ !current }}" description="今天的词汇已经复习完了" />
+  <view wx:else>
+    <view class="word-card card" bindtap="reveal">
+      <view class="word">{{ current.word }}</view>
+      <view class="phonetic">{{ current.phonetic }}</view>
+      <view class="tap-tip" wx:if="{{ !revealed }}">点卡片查看释义和助记</view>
+      <view class="answer" wx:else>
+        <view class="meaning">{{ current.meaning }}</view>
+        <view class="mnemonic" wx:if="{{ current.mnemonic }}">{{ current.mnemonic }}</view>
+      </view>
+    </view>
+    <view class="ratings" wx:if="{{ revealed }}">
+      <button data-quality="0" bindtap="rate">重来</button>
+      <button data-quality="1" bindtap="rate">困难</button>
+      <button data-quality="2" bindtap="rate">记得</button>
+      <button data-quality="3" bindtap="rate">熟练</button>
+    </view>
+  </view>
+</view>

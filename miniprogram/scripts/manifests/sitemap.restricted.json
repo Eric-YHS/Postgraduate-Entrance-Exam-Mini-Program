@@ -35,11 +35,19 @@
     },
     {
       "action": "allow",
+      "page": "pages/vocabulary/index/index"
+    },
+    {
+      "action": "allow",
       "page": "pages/support/qa/qa"
     },
     {
       "action": "allow",
       "page": "pages/user/settings/settings"
+    },
+    {
+      "action": "allow",
+      "page": "pages/notification/detail/detail"
     },
     {
       "action": "allow",

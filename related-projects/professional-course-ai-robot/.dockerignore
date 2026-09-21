@@ -1,0 +1,44 @@
+# Secrets and runtime state
+.env
+.env.*
+!.env.example
+data/
+logs/
+*.log
+
+# Internal documentation and local-only material
+*.md
+*.txt
+!requirements.txt
+# Runtime prompt/spec inputs explicitly copied by the production image
+!PROMPT_SPEC.md
+!SCHOOL_SUBJECT_PROFILE_SPEC.md
+!SUBJECT_PROMPT_CATALOG.json
+
+# Local tooling, tests and generated artifacts
+.git/
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.db
+*.sqlite3
+*.sqlite3-*
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.cjs
+*.py
+!server.py
+*.bat
+*.cmd
+*.ps1
+*.sh
+*.vbs
+.tmp_*
+
+# Bundled public assets used by both pages
+!assets/
+!assets/**/*

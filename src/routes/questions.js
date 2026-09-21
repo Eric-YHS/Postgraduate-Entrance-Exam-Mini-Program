@@ -3,7 +3,8 @@ const dayjs = require('dayjs');
 const { sanitizeText } = require('../utils/sanitize');
 
 module.exports = function registerQuestionRoutes(app, shared) {
-  const { db, config, requireAuth, requireStudent, requireTeacher, requireAdmin, safeJsonParse, toPublicPath, questionUpload, taskImportUpload, serializeQuestionForTeacher, serializeQuestionForStudent, updateStudyStreak, checkAndUnlockAchievements, readWorkbookRows, getFieldValue, stripHtml, canAccessContent } = shared;
+  const { db, config, requireAuth, requireStudent, requireTeacher, requireAdmin, requireRole, safeJsonParse, toPublicPath, questionUpload, taskImportUpload, serializeQuestionForTeacher, serializeQuestionForStudent, updateStudyStreak, checkAndUnlockAchievements, readWorkbookRows, getFieldValue, stripHtml, canAccessContent } = shared;
+  const subjectAliases = { politics: '政治', english: '英语', math: '数学' };
 
   function questionIsAccessible(userId, question) {
     if (!question.is_paid_only) return true;
@@ -15,7 +16,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
   }
 
   // 题目批量导入
-  app.post('/api/questions/import', requireTeacher, (request, response) => {
+  app.post('/api/questions/import', requireRole(['teacher', 'admin']), (request, response) => {
     taskImportUpload(request, response, (error) => {
       if (error) {
         response.status(400).json({ error: '文件上传失败。' });
@@ -33,17 +34,18 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
       const importQuestions = db.transaction(() => {
         rows.forEach((row) => {
-        const title = sanitizeText(getFieldValue(row, ['题目标题', 'title', 'Title']));
-        const subject = sanitizeText(getFieldValue(row, ['科目', 'subject', 'Subject']) || '考研英语');
-        const questionType = sanitizeText(getFieldValue(row, ['题型', 'questionType', 'QuestionType']));
+        const tableFiveStem = sanitizeText(getFieldValue(row, ['题目']));
+        const title = sanitizeText(getFieldValue(row, ['题目标题', 'title', 'Title'])) || tableFiveStem;
+        const subject = sanitizeText(getFieldValue(row, ['科目', 'subject', 'Subject']) || (tableFiveStem ? '政治' : '考研英语'));
+        const questionType = sanitizeText(getFieldValue(row, ['题型', 'questionType', 'QuestionType']) || 'choice');
         const textbook = sanitizeText(getFieldValue(row, ['参考书', 'textbook', 'Textbook']));
-        const stem = sanitizeText(getFieldValue(row, ['题干', 'stem', 'Stem']));
+        const stem = sanitizeText(getFieldValue(row, ['题干', 'stem', 'Stem'])) || tableFiveStem;
         const optionA = sanitizeText(getFieldValue(row, ['选项A', 'optionA', 'OptionA']));
         const optionB = sanitizeText(getFieldValue(row, ['选项B', 'optionB', 'OptionB']));
         const optionC = sanitizeText(getFieldValue(row, ['选项C', 'optionC', 'OptionC']));
         const optionD = sanitizeText(getFieldValue(row, ['选项D', 'optionD', 'OptionD']));
-        const correctAnswer = String(getFieldValue(row, ['正确答案', 'correctAnswer', 'CorrectAnswer']) || '').trim().toUpperCase();
-        const analysisText = sanitizeText(getFieldValue(row, ['文字解析', 'analysisText', 'AnalysisText']));
+        const correctAnswer = String(getFieldValue(row, ['正确答案', '答案', 'correctAnswer', 'CorrectAnswer']) || '').trim().toUpperCase();
+        const analysisText = sanitizeText(getFieldValue(row, ['文字解析', 'analysisText', 'AnalysisText', '助记']));
         const displayMode = sanitizeText(getFieldValue(row, ['展示模式', 'displayMode', 'DisplayMode']) || 'radio');
         const sourceYear = Number(getFieldValue(row, ['年份', 'sourceYear', 'SourceYear', 'Year']) || 0) || null;
         const sourcePaper = sanitizeText(getFieldValue(row, ['试卷', 'sourcePaper', 'SourcePaper', 'Paper']) || '');
@@ -86,6 +88,15 @@ module.exports = function registerQuestionRoutes(app, shared) {
       fs.unlink(request.file.path, () => {});
       response.json({ ok: true, imported, skipped });
     });
+  });
+
+  app.get('/api/questions/detail', requireAuth, (request, response) => {
+    const id = Number(request.query.id);
+    const row = db.prepare('SELECT * FROM questions WHERE id = ?').get(id);
+    if (!row || !questionIsAccessible(request.currentUser.id, row)) {
+      return response.status(404).json({ code: 404, message: '题目不存在。' });
+    }
+    response.json({ code: 0, data: serializeQuestionForStudent(row, null), message: '' });
   });
 
   // 创建题目
@@ -263,10 +274,10 @@ module.exports = function registerQuestionRoutes(app, shared) {
   // 题库筛选（学生可用）
   app.get('/api/questions', requireAuth, (request, response) => {
     const {
-      subject, questionType, textbook, tagId, page, limit, mode, ids,
+      subject, questionType, textbook, tagId, page, limit, pageSize, mode, ids,
       displayMode, isRealExam, sourceYear, sourcePaper, difficulty, minDifficulty, maxDifficulty
     } = request.query;
-    const maxLimit = Math.min(Number(limit) || 20, 100);
+    const maxLimit = Math.min(Number(limit || pageSize) || 20, 100);
     const pageNum = Number(page) || 1;
     const skip = (pageNum - 1) * maxLimit;
 
@@ -288,7 +299,7 @@ module.exports = function registerQuestionRoutes(app, shared) {
       }
     }
 
-    if (subject) { conditions.push('questions.subject = ?'); params.push(subject); }
+    if (subject) { conditions.push('questions.subject = ?'); params.push(subjectAliases[subject] || subject); }
     if (questionType) { conditions.push('questions.question_type = ?'); params.push(questionType); }
     if (textbook) { conditions.push('questions.textbook = ?'); params.push(textbook); }
     if (displayMode) { conditions.push('questions.display_mode = ?'); params.push(displayMode); }
@@ -352,7 +363,9 @@ module.exports = function registerQuestionRoutes(app, shared) {
 
     const filteredResults = studentId ? results.filter((q) => questionIsAccessible(studentId, q)) : results;
 
-    response.json({ questions: filteredResults, totalCount: countResult.total, page: Number(page) || 1, limit: maxLimit });
+    const pageValue = Number(page) || 1;
+    const data = { list: filteredResults, total: countResult.total, page: pageValue, pageSize: maxLimit };
+    response.json({ code: 0, data, message: '', questions: filteredResults, totalCount: countResult.total, page: pageValue, limit: maxLimit });
   });
 
   // 题目收藏切换

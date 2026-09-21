@@ -1,0 +1,83 @@
+model = "gpt-5.6-sol"
+model_reasoning_effort = "high"
+personality = "pragmatic"
+approvals_reviewer = "user"
+
+[projects.'e:\imc']
+trust_level = "trusted"
+
+[projects.'e:\红绿灯\红绿灯']
+trust_level = "trusted"
+
+[tui.model_availability_nux]
+"gpt-5.6-sol" = 4
+"gpt-5.5" = 4
+
+[windows]
+sandbox = "elevated"
+
+[notice]
+hide_rate_limit_model_nudge = true
+hide_full_access_warning = true
+
+[features]
+multi_agent = true
+
+[projects.'c:\windows\system32']
+trust_level = "trusted"
+
+[plugins."github@openai-curated"]
+enabled = true
+
+[projects.'e:\keyan\ariticlegrg\grg_aaai27 (2)']
+trust_level = "trusted"
+
+[plugins."documents@openai-primary-runtime"]
+enabled = true
+
+[plugins."spreadsheets@openai-primary-runtime"]
+enabled = true
+
+[plugins."presentations@openai-primary-runtime"]
+enabled = true
+
+[projects.'C:\Users\Eric\Desktop\并行实验']
+trust_level = "trusted"
+
+[projects.'E:\考研小程序']
+trust_level = "trusted"
+
+[projects.'E:\验证页面']
+trust_level = "trusted"
+
+[projects.'E:\keyan\benchmark']
+trust_level = "trusted"
+
+[projects.'e:\kaggle\nvidia nemotron model reasoning challenge']
+trust_level = "trusted"
+
+[projects.'b:\']
+trust_level = "trusted"
+
+[projects.'c:\users\eric\documents\codex\2026-04-23-c']
+trust_level = "trusted"
+
+[projects.'e:\ctf']
+trust_level = "trusted"
+
+[projects.'c:\users\eric\desktop']
+trust_level = "trusted"
+
+[projects.'e:\backend']
+trust_level = "trusted"
+
+[projects.'e:\keyan']
+trust_level = "trusted"
+
+[marketplaces.openai-primary-runtime]
+last_updated = "2026-04-24T09:28:54Z"
+source_type = "local"
+source = '\\?\C:\Users\Eric\.cache\codex-runtimes\codex-primary-runtime\plugins\openai-primary-runtime'
+
+[desktop]
+followUpQueueMode = "queue"

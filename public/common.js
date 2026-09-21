@@ -237,7 +237,8 @@ async function logout() {
 }
 
 function activateTabs(buttonSelector, sectionSelector, onActivate, onSwitch) {
-  const buttons = Array.from(document.querySelectorAll(buttonSelector));
+  const buttons = Array.from(document.querySelectorAll(buttonSelector))
+    .filter((button) => button.dataset.target);
   const sections = Array.from(document.querySelectorAll(sectionSelector));
 
   // 查找"更多"下拉组件（兼容旧 tab-more 和新 nav-more）

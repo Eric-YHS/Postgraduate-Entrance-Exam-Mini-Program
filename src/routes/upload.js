@@ -46,7 +46,7 @@ module.exports = function registerUploadRoutes(app, shared) {
 
   // 通用单文件上传（小程序论坛媒体、附件等使用）
   app.post('/api/upload', requireAuth, (request, response) => {
-    generalUpload(request, fileResponse(request, response));
+    generalUpload(request, response, fileResponse(request, response));
   });
 
   function fileResponse(request, response) {

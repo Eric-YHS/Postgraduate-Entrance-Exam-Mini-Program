@@ -62,6 +62,7 @@ if (mode === 'restricted') {
     'pages/plan/index/index',
     'pages/support/qa/qa',
     'pages/user/settings/settings',
+    'pages/notification/detail/detail',
     'pages/user/help/help',
     'pages/user/content-security/content-security',
   ];

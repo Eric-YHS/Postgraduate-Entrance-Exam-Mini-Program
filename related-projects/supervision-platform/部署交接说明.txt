@@ -1,0 +1,10 @@
+考研督学平台部署包
+
+本压缩包已排除：node_modules、dist、.runtime、本地账号文件、日志、PID 文件、数据库文件和真实环境变量。
+
+部署前请：
+1. 复制 .env.example 为 .env，填写随机强密码、SESSION_SECRET、正式 APP_ORIGIN 和首次管理员信息。
+2. 按 DEPLOYMENT.md / DEPLOYMENT_GUIDE.md 执行数据库迁移、启动和健康检查。
+3. 首次执行 bootstrap:admin 后立即删除或清空 BOOTSTRAP_ADMIN_* 环境变量。
+4. 在真实服务器上验证：教师发布课程、上架商品，学生商城展示，免费领取或提交订单，以及“我的课程”权益同步。
+5. 不要把填写真实密钥后的 .env 文件提交或转发给他人。

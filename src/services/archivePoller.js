@@ -13,7 +13,12 @@
 
 const { db } = require('../db');
 const { isReady, pullChatData, decryptChatMessage, getStatus, updateSeq, incrementErrors, resetErrors, setRunning } = require('./wecomArchive');
-const { processBatch, loadBotUserIds } = require('./archiveDispatcher');
+const {
+  processBatch,
+  loadBotUserIds,
+  startPendingReplyWorker,
+  stopPendingReplyWorker,
+} = require('./archiveDispatcher');
 const { checkAndExtractAll } = require('./memoryExtractor');
 const { checkAndUpdateAll } = require('./memberProfiles');
 const config = require('../config');
@@ -25,12 +30,15 @@ let consecutiveFailures = 0;
 let paused = false;
 let pauseUntil = 0;
 let maintenanceTimer = null;
+let lastIdleLogAt = 0;
+let lastBusyLogAt = 0;
 
 const MAX_CONSECUTIVE_FAILURES = 10;
 const MAX_RETRIES = 3;
 const RETRY_DELAYS = [5, 15, 45]; // 秒，指数退避
 const PAUSE_DURATION = 5 * 60 * 1000; // 5 分钟
 const MAINTENANCE_INTERVAL = 60 * 60 * 1000; // 每小时记忆维护（提取记忆卡 + 更新画像）
+const STATUS_LOG_INTERVAL = 60 * 1000; // 高频轮询时，空闲/忙碌状态最多每分钟记录一次
 
 // ── 数据库 seq 读写 ─────────────────────────────────────────────────────
 
@@ -72,7 +80,11 @@ async function tick() {
 
   // 运行锁
   if (running) {
-    console.warn('[archive-poller] 上一次轮询尚未完成，跳过本次');
+    const now = Date.now();
+    if (now - lastBusyLogAt >= STATUS_LOG_INTERVAL) {
+      console.warn('[archive-poller] 上一次轮询尚未完成，跳过本次');
+      lastBusyLogAt = now;
+    }
     return;
   }
 
@@ -85,8 +97,6 @@ async function tick() {
 
     // 读取当前 seq
     const seq = readSeq();
-    console.log(`[archive-poller] 拉取消息: seq=${seq}`);
-
     // 拉取加密消息
     const result = await pullChatData(seq, 500);
 
@@ -102,17 +112,23 @@ async function tick() {
 
     if (chatdata.length === 0) {
       // 没有新消息，正常
-      console.log('[archive-poller] 无新消息');
+      const now = Date.now();
+      if (now - lastIdleLogAt >= STATUS_LOG_INTERVAL) {
+        console.log(`[archive-poller] 轮询正常: seq=${seq}, 暂无新消息`);
+        lastIdleLogAt = now;
+      }
       resetErrors();
       return;
     }
+
+    console.log(`[archive-poller] 拉取消息: seq=${seq}`);
 
     // 解密所有消息
     const decrypted = [];
     let decryptErrors = 0;
     for (const item of chatdata) {
       try {
-        const msg = await decryptChatMessage(
+        const msg = item.decrypted_message || await decryptChatMessage(
           item.encrypt_random_key,
           item.encrypt_chat_msg,
           config.wecomArchivePrivateKey
@@ -142,14 +158,17 @@ async function tick() {
       const stats = await processBatch(decrypted);
       console.log(
         `[archive-poller] 处理完成: ${stats.processed} 条, ` +
-        `回复 ${stats.replied} 条, 错误 ${stats.errors} 条`
+        `入队 ${stats.queued || 0} 条, 即时回复 ${stats.replied} 条, 错误 ${stats.errors} 条`
       );
     }
 
     // 更新 seq
-    const maxSeq = chatdata.length > 0
-      ? Math.max(...chatdata.map((m) => m.seq))
-      : seq;
+    const reportedLastSeq = Number(result.last_seq) || 0;
+    const maxSeq = reportedLastSeq > 0
+      ? reportedLastSeq
+      : chatdata.length > 0
+        ? Math.max(...chatdata.map((m) => m.seq))
+        : seq;
     writeSeq(maxSeq);
     updateSeq(maxSeq);
 
@@ -195,6 +214,7 @@ function start(intervalSeconds) {
   const intervalMs = (intervalSeconds || 15) * 1000;
 
   console.log(`[archive-poller] 启动: 间隔 ${intervalSeconds || 15}s`);
+  startPendingReplyWorker();
 
   // 立即执行一次
   tick().catch((err) => console.error('[archive-poller] 初始化轮询失败:', err.message));
@@ -232,6 +252,7 @@ function stop() {
     clearInterval(maintenanceTimer);
     maintenanceTimer = null;
   }
+  stopPendingReplyWorker();
 }
 
 /**

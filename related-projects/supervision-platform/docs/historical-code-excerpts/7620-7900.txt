@@ -1,0 +1,281 @@
+7620	      {modules.map(item => <article className={`assessment-push-chip tone-${item.tone} ${item.enabled ? 'is-enabled' : 'is-off'}`} key={item.id}><b>{item.title}</b><span>{getAssessmentSpecFormat(item)}</span><small>{item.enabled ? '学生端已开放' : '未开始'}</small></article>)}
+7621	    </div>
+7622	
+7623	    <div className="form-footer">
+7624	      {push.enabled ? <button type="button" className="secondary" onClick={() => onApply(false)}>全部停止</button> : <button type="button" className="primary" onClick={() => onApply(true)}>全部开始</button>}
+7625	      {isPaid && <small>付费学员默认可全开，仍可按科目和测试类型分别停止。</small>}
+7626	    </div>
+7627	  </div>;
+7628	}
+7629	
+7630	function StudentAssessmentArchive({student, entranceState, setEntranceState, selector, notify, aiSettings, onOpenAssessment}) {
+7631	  const [tab, setTab] = useState('pending');
+7632	  const pendingEntrance = getPendingEntranceAssessments(student, entranceState);
+7633	  const pendingPeriodic = getStudentAssessmentModules(student, aiSettings)
+7634	    .filter(item => item.isToday && item.enabled && (item.actionable || isApiConfigured()));
+7635	  const completed = getStudentAssessmentArchive(student, entranceState);
+7636	
+7637	  const openEntranceAssessment = async distribution => {
+7638	    if (isApiConfigured() && distribution?.id) {
+7639	      try {
+7640	        const access = await apiRequest(`/api/student/exam-distributions/${encodeURIComponent(distribution.id)}/access`, { method:'POST' });
+7641	        setEntranceState(current => ({
+7642	          ...current,
+7643	          pendingDistributions: (current.pendingDistributions || []).filter(item => String(item.id) !== String(distribution.id))
+7644	        }));
+7645	        window.location.assign(`/exam/${encodeURIComponent(access.paperId)}/?token=${encodeURIComponent(access.shareToken)}`);
+7646	      } catch (error) {
+7647	        notify(error?.message || '打开试卷失败，请稍后重试');
+7648	      }
+7649	      return;
+7650	    }
+7651	    if (distribution?.shareUrl) {
+7652	      window.location.assign(distribution.shareUrl);
+7653	      return;
+7654	    }
+7655	    notify('该入学自测暂未生成可访问链接，请联系老师重新分发。');
+7656	  };
+7657	
+7658	  const pendingCount = pendingEntrance.length + pendingPeriodic.length;
+7659	  return <>
+7660	    <section className="page-head student-practice-head"><div><span className="eyebrow">我的自测档案</span><h1>待完成与已完成，分开管理。</h1><p>老师分发的入学摸底，以及当天开放的日测、周测、月测会进入“待自测”；完成并提交后自动归入“已自测”。</p>{selector}</div></section>
+7661	    <section className="panel student-record-panel assessment-archive-panel">
+7662	      <div className="assessment-archive-tabs" role="tablist" aria-label="自测档案分类">
+7663	        <button type="button" role="tab" aria-selected={tab === 'pending'} className={tab === 'pending' ? 'active' : ''} onClick={() => setTab('pending')}>待自测{pendingCount > 0 && <b>{pendingCount > 99 ? '99+' : pendingCount}</b>}</button>
+7664	        <button type="button" role="tab" aria-selected={tab === 'completed'} className={tab === 'completed' ? 'active' : ''} onClick={() => setTab('completed')}>已自测<span>{completed.length}</span></button>
+7665	      </div>
+7666	      {tab === 'pending' ? <div className="assessment-pending-list">
+7667	        {pendingEntrance.map(item => <article className="assessment-pending-card entrance" key={`entrance-${item.id || item.paperId || item.paper_id}`}>
+7668	          <div className="assessment-pending-icon"><FileQuestion size={20}/></div>
+7669	          <div className="assessment-pending-main"><span className="eyebrow">老师分发 · 入学摸底</span><h3>{item.paperTitle || item.paper_title || '入学摸底试卷'}</h3><p>{item.startDeadlineAt || item.start_deadline_at ? `请在 ${new Date(item.startDeadlineAt || item.start_deadline_at).toLocaleString('zh-CN')} 前开始作答；开始后有 1 小时答题时间。` : '可开始作答；开始后有 1 小时答题时间。'}</p></div>
+7670	          <button type="button" className="primary" onClick={() => openEntranceAssessment(item)}>开始自测<ChevronRight size={16}/></button>
+7671	        </article>)}
+7672	        {pendingPeriodic.map(item => <article className="assessment-pending-card periodic" key={`periodic-${item.id}`}>
+7673	          <div className="assessment-pending-icon"><ClipboardCheck size={20}/></div>
+7674	          <div className="assessment-pending-main"><span className="eyebrow">今日开放 · {item.short || item.title}</span><h3>{item.title}</h3><p>{item.actionable ? (item.status || '当前可开始作答。') : isApiConfigured() ? '服务端出题器尚未可用，当前保留待处理状态，不生成本地题目。' : (item.status || '当前可开始作答。')}</p></div>
+7675	          <button type="button" className={item.actionable ? 'primary' : 'secondary'} disabled={!item.actionable} onClick={() => onOpenAssessment?.(item)}>{item.actionable ? '开始测试' : '暂不可用'}<ChevronRight size={16}/></button>
+7676	        </article>)}
+7677	        {!pendingCount && <div className="empty-line"><Check size={20}/><span>当前没有待完成的自测。老师分发新试卷或当天的日测、周测、月测开放后，会自动显示在这里。</span></div>}
+7678	      </div> : <AssessmentArchive student={student} entranceState={entranceState} notify={notify}/>}
+7679	    </section>
+7680	  </>;
+7681	}
+7682	
+7683	function AssessmentArchive({student, entranceState, notify}) {
+7684	  const records = getStudentAssessmentArchive(student, entranceState);
+7685	  if (!records.length) {
+7686	    return <div className="empty-line"><FileQuestion size={20}/><span>该学员尚无自测记录。入学摸底在「自测」分发；日/周/月测开通后，成绩与答案会自动汇总到本档案（测完归档，不结束学情跟踪）。</span></div>;
+7687	  }
+7688	  const entranceCount = records.filter(item => item.kind === 'entrance').length;
+7689	  const periodicCount = records.length - entranceCount;
+7690	  return <div className="assessment-archive">
+7691	    <div className="assessment-archive-summary">
+7692	      <span>共 {records.length} 次</span>
+7693	      <span>入学摸底 {entranceCount}</span>
+7694	      <span>日/周/月 {periodicCount}</span>
+7695	      <small>入学自测测完即归档为基线；后续日测、周测、月测的成绩与答案持续写入本模块，供教师与 AI 跟进。</small>
+7696	    </div>
+7697	    <div className="entrance-archive-list">
+7698	      {records.map(record => {
+7699	        const subjectSummary = record.subjectScores ? Object.keys(record.subjectScores).map(subject => {
+7700	          const total = record.subjectTotals?.[subject] || 0;
+7701	          const score = record.subjectScores[subject] || 0;
+7702	          return { subject, score, total, ratio: total ? Math.round((score / total) * 100) : 0 };
+7703	        }) : [];
+7704	        const wrongQuestions = record.wrongQuestions || [];
+7705	        return <article className="entrance-archive-card" key={record.id}>
+7706	          <header className="entrance-archive-head">
+7707	            <div>
+7708	              <span className={`eyebrow assessment-kind-tag kind-${record.kind}`}>{record.kindLabel}</span>
+7709	              <h3>{record.title}</h3>
+7710	              <small>
+7711	                {record.submittedAt ? `提交：${new Date(record.submittedAt).toLocaleString('zh-CN')}` : '时间待同步'}
+7712	                {record.gradedAt && ` · 批改：${new Date(record.gradedAt).toLocaleString('zh-CN')}`}
+7713	                {record.studyDay != null && ` · 学习日第 ${record.studyDay} 天`}
+7714	              </small>
+7715	            </div>
+7716	            <div className="entrance-archive-score">
+7717	              <b>{typeof record.score === 'number' ? `${record.score} / ${record.total || '—'}` : '待批改'}</b>
+7718	              <span className={`badge ${record.status === '已批改' || record.status === '已完成' ? 'ok' : 'warn'}`}>{record.status}</span>
+7719	              {record.objectiveScore != null && <small>客观分：{record.objectiveScore} / {record.total || '—'}</small>}
+7720	              {record.subjectiveScore != null ? <small>主观分：{record.subjectiveScore} / {record.total || '—'}</small> : record.wrongQuestions.some(item => item.gradingStatus === '待批改' || item.kind === 'short_answer' || item.kind === 'translation') ? <small>主观题：待老师批改</small> : null}
+7721	            </div>
+7722	          </header>
+7723	          {subjectSummary.length > 0 && <div className="entrance-subject-grid">
+7724	            {subjectSummary.map(item => (
+7725	              <div className="entrance-subject-cell" key={item.subject}>
+7726	                <span>{item.subject}</span>
+7727	                <b>{item.ratio}%</b>
+7728	                <small>{item.score} / {item.total}</small>
+7729	              </div>
+7730	            ))}
+7731	          </div>}
+7732	          {record.aiFeedback && <p className="entrance-feedback"><b>AI 反馈：</b>{record.aiFeedback}</p>}
+7733	          {record.answersNote && <p className="entrance-feedback assessment-answers-note">{record.answersNote}</p>}
+7734	          <h4>错题与知识点（{wrongQuestions.length}）</h4>
+7735	          {wrongQuestions.length === 0
+7736	            ? <p className="entrance-feedback">本次无错题记录，或批改结果尚未回写。</p>
+7737	            : <ol className="entrance-wrong-list">
+7738	                {wrongQuestions.map((item, index) => (
+7739	                  <li key={item.questionId || `${record.id}-w-${index}`}>
+7740	                    <div><b>{item.subject || '综合'} · 第 {item.number || index + 1} 题</b><small>正确答案：{item.correctAnswer || '—'} · 学生作答：{item.studentAnswer || '未作答'}</small></div>
+7741	                    {item.correctMethod && <p><b>正确做法：</b>{item.correctMethod}</p>}
+7742	                    {item.knowledgePointExplanation && <p><b>知识点解析：</b>{item.knowledgePointExplanation}</p>}
+7743	                  </li>
+7744	                ))}
+7745	              </ol>
+7746	          }
+7747	        </article>;
+7748	      })}
+7749	    </div>
+7750	  </div>;
+7751	}
+7752	
+7753	/** @deprecated 使用 AssessmentArchive；保留别名避免遗漏引用 */
+7754	function EntranceTestArchive(props) {
+7755	  return <AssessmentArchive {...props}/>;
+7756	}
+7757	
+7758	const normalizeGradingStatusLabel = value => ({
+7759	  graded: '已批改',
+7760	  partially_graded: '部分待批改',
+7761	  pending_review: '待批改',
+7762	  '已批改': '已批改',
+7763	  '部分待批改': '部分待批改',
+7764	  '待批改': '待批改'
+7765	}[value] || '待批改');
+7766	const getQuestionType = question => {
+7767	  const value = question?.questionType || question?.question_type || question?.kind || 'single_choice';
+7768	  return value === 'selection' ? 'single_choice' : value;
+7769	};
+7770	const isMultipleChoiceQuestion = question => getQuestionType(question) === 'multiple_choice';
+7771	const getQuestionOptionKey = (option, index) => typeof option === 'object'
+7772	  ? String(option.key || String.fromCharCode(65 + index))
+7773	  : String.fromCharCode(65 + index);
+7774	const getQuestionOptionText = option => typeof option === 'object' ? option.text : option;
+7775	const getStoredQuestionAnswer = (answers, question, key) => {
+7776	  const candidates = [key, question?.id, question?.itemIndex, question?.number - 1].filter(value => value !== undefined && value !== null);
+7777	  return candidates.reduce((found, candidate) => found !== undefined ? found : answers?.[candidate], undefined);
+7778	};
+7779	const toggleMultipleChoiceAnswer = (answers, key, value) => {
+7780	  const current = normalizeMultipleChoiceAnswer(answers?.[key]);
+7781	  const next = current.includes(value) ? current.filter(item => item !== value) : [...current, value];
+7782	  return next.sort();
+7783	};
+7784	
+7785	function flattenPaperQuestions(paper) {
+7786	  const result = [];
+7787	  if (!paper?.sections) return result;
+7788	  if (Array.isArray(paper.sections.server)) {
+7789	    paper.sections.server.forEach(question => {
+7790	      const questionType = question.questionType || question.question_type || question.kind || 'single_choice';
+7791	      const correctAnswer = question.correctAnswer ?? question.answer;
+7792	      result.push({
+7793	        ...question,
+7794	        subject: question.subject || paper.subject || '综合',
+7795	        subjectLabel: question.subject || paper.subject || '综合',
+7796	        kind: questionType,
+7797	        questionType,
+7798	        prompt: question.prompt || question.stem || '',
+7799	        options: Array.isArray(question.options) ? question.options : [],
+7800	        answer: correctAnswer,
+7801	        correctAnswer,
+7802	        knowledge: question.knowledge || question.knowledgePoint || '',
+7803	      });
+7804	    });
+7805	    return result;
+7806	  }
+7807	
+7808	  if (paper.sections.政治) {
+7809	    paper.sections.政治.forEach(question =>
+7810	      result.push({ ...question, subject: '政治', subjectLabel: '政治', kind: 'selection' })
+7811	    );
+7812	  }
+7813	  if (paper.sections.英语) {
+7814	    paper.sections.英语.vocabulary.forEach(question =>
+7815	      result.push({ ...question, subject: '英语', subjectLabel: '英语·实词辨析', kind: 'selection', prompt: question.word })
+7816	    );
+7817	    paper.sections.英语.grammar.forEach(question =>
+7818	      result.push({ ...question, subject: '英语', subjectLabel: '英语·语法填空', kind: 'selection', prompt: question.sentence })
+7819	    );
+7820	    paper.sections.英语.translation.forEach(question =>
+7821	      result.push({ ...question, subject: '英语', subjectLabel: '英语·英译中', kind: 'selection', prompt: question.sentence })
+7822	    );
+7823	  }
+7824	  if (paper.sections.数学) {
+7825	    paper.sections.数学.forEach(question =>
+7826	      result.push({ ...question, subject: '数学', subjectLabel: '数学', kind: 'selection' })
+7827	    );
+7828	  }
+7829	
+7830	  return result;
+7831	}
+7832	
+7833	function gradeEntrancePaper(paper, answers) {
+7834	  const questions = flattenPaperQuestions(paper);
+7835	  let score = 0;
+7836	  let objectiveScore = 0;
+7837	  let subjectiveScore = null;
+7838	  const total = questions.reduce((sum, question) => sum + (Number(question.score) || 2), 0);
+7839	  const subjectScores = {};
+7840	  const subjectTotals = {};
+7841	  const wrongQuestions = [];
+7842	  let hasSubjective = false;
+7843	
+7844	  questions.forEach(question => {
+7845	    const points = Number(question.score) || 2;
+7846	    const subject = question.subject || paper.subject || '综合';
+7847	    subjectTotals[subject] = (subjectTotals[subject] || 0) + points;
+7848	    const questionType = getQuestionType(question);
+7849	    const objective = ['single_choice', 'multiple_choice', 'true_false', 'fill_blank'].includes(questionType);
+7850	    const studentAnswer = answers?.[question.id];
+7851	    const correct = objective && answersMatch(studentAnswer, question.correctAnswer ?? question.answer, questionType === 'multiple_choice');
+7852	    if (correct) {
+7853	      score += points;
+7854	      objectiveScore += points;
+7855	      subjectScores[subject] = (subjectScores[subject] || 0) + points;
+7856	    } else {
+7857	      if (!objective) hasSubjective = true;
+7858	      wrongQuestions.push({
+7859	        questionId: question.id,
+7860	        subject,
+7861	        number: question.number,
+7862	        kind: questionType,
+7863	        prompt: question.prompt,
+7864	        correctAnswer: question.correctAnswer ?? question.answer,
+7865	        studentAnswer: studentAnswer ?? '',
+7866	        gradingStatus: objective ? '客观题已判错' : '待批改',
+7867	        correctMethod: deriveCorrectMethod(question),
+7868	        knowledgePointExplanation: question.knowledge
+7869	      });
+7870	    }
+7871	  });
+7872	
+7873	  const gradingStatus = hasSubjective ? '部分待批改' : '已批改';
+7874	  const aiFeedback = buildEntranceFeedback(subjectScores, subjectTotals, objectiveScore, total);
+7875	  return { score: hasSubjective ? null : score, objectiveScore, subjectiveScore, total, gradingStatus, subjectScores, subjectTotals, wrongQuestions, aiFeedback };
+7876	}
+7877	
+7878	function deriveCorrectMethod(question) {
+7879	  if (question.subject === '政治') return `正确答案为 ${question.answer}。${question.knowledge} 复习时应结合具体提法，把核心关键词与易混淆项对照记忆。`;
+7880	  if (question.subject === '数学') return `正确答案为 ${question.answer}。${question.knowledge} 复习时建议先重温教材中的公式与等价无穷小，再独立重做两道同类型题巩固。`;
+7881	  return `正确答案为 ${question.answer}。${question.knowledge}`;
+7882	}
+7883	
+7884	function buildEntranceFeedback(subjectScores, subjectTotals, score, total) {
+7885	  const overall = total ? Math.round((score / total) * 100) : 0;
+7886	  const [subject] = Object.keys(subjectScores);
+7887	  const ratio = subjectTotals[subject]
+7888	    ? Math.round((subjectScores[subject] / subjectTotals[subject]) * 100)
+7889	    : 0;
+7890	
+7891	  if (ratio < 50) {
+7892	    return `${subject} 正确率 ${ratio}%，当前基础尚未达到考研入门要求。建议先回到专升本衔接知识与考研基础教材，按章节补齐概念、公式或语法，再进行同类题复测。`;
+7893	  }
+7894	  if (ratio < 70) {
+7895	    return `${subject} 正确率 ${ratio}%，已具备部分基础，但考研入门知识仍有缺口。建议完成对应基础模块、整理错题后再做一次复测。`;
+7896	  }
+7897	  if (ratio < 85) {
+7898	    return `${subject} 正确率 ${ratio}%，基础较稳，可在巩固薄弱知识点后进入考研提高阶段任务。`;
+7899	  }
+7900	  return `${subject} 正确率 ${ratio}%，考研基础掌握较好，可以按老师安排进入提高阶段训练。`;

@@ -1,0 +1,251 @@
+6970	  paperId: paper.id,
+6971	  assignedAt: assignedAt.toISOString(),
+6972	  startDeadlineAt: getExamStartDeadline(student, assignedAt),
+6973	  startedAt: null,
+6974	  examDeadlineAt: null,
+6975	  shareUrl: buildShareUrl(paper, student),
+6976	  status: '待开始'
+6977	});
+6978	
+6979	function QuestionBank({aiSettings, students, setStudents, notify, entranceState, setEntranceState}) {
+6980	  const apiMode = isApiConfigured();
+6981	  const [serverPapers, setServerPapers] = useState(null);
+6982	  const [serverPaperState, setServerPaperState] = useState({ loading: apiMode, error: '' });
+6983	  const [serverPaperReloadNonce, setServerPaperReloadNonce] = useState(0);
+6984	  const [activePaperId, setActivePaperId] = useState(ENTRANCE_PAPERS[0].id);
+6985	  const [gradingStudentId, setGradingStudentId] = useState(null);
+6986	  const [gradingDraftAnswers, setGradingDraftAnswers] = useState(null);
+6987	  const [gradingSubjectiveScore, setGradingSubjectiveScore] = useState('');
+6988	  const [gradingStatus, setGradingStatus] = useState('部分待批改');
+6989	  const [gradingNote, setGradingNote] = useState('');
+6990	  const [gradingPending, setGradingPending] = useState(false);
+6991	  const [previewingPaperId, setPreviewingPaperId] = useState(null);
+6992	  const [copiedLink, setCopiedLink] = useState('');
+6993	  const [bankTab, setBankTab] = useState('entrance');
+6994	  const [aiPromptOpen, setAiPromptOpen] = useState(false);
+6995	  useEffect(() => {
+6996	    if (!apiMode) return undefined;
+6997	    let active = true;
+6998	    setServerPaperState({ loading: true, error: '' });
+6999	    (async () => {
+7000	      try {
+7001	        const list = await apiRequest('/api/admin/entrance/papers', { cache: 'no-store' });
+7002	        const papers = await Promise.all((Array.isArray(list) ? list : []).map(async paper => {
+7003	          const detail = await apiRequest(`/api/admin/entrance/papers/${encodeURIComponent(paper.id)}`, { cache: 'no-store' });
+7004	          return {
+7005	            id: paper.id,
+7006	            subject: detail.subject || detail.items?.[0]?.subject || '综合',
+7007	            title: paper.title,
+7008	            level: paper.state || '已发布',
+7009	            summary: `${detail.items?.length || 0} 道服务端题目`,
+7010	            passThreshold: 60,
+7011	            shareSlug: paper.id,
+7012	            serverManaged: true,
+7013	            durationMinutes: paper.duration_minutes || paper.durationMinutes || 60,
+7014	            sections: { server: Array.isArray(detail.items) ? detail.items.map((item, index) => ({
+7015	              ...item,
+7016	              id: item.questionId || item.id || `${paper.id}-${index}`,
+7017	              number: index + 1,
+7018	              prompt: item.stem || '',
+7019	              options: Array.isArray(item.options) ? item.options : [],
+7020	              answer: item.correctAnswer,
+7021	              correctAnswer: item.correctAnswer,
+7022	              questionType: item.questionType || item.question_type || 'single_choice',
+7023	              knowledge: item.knowledgePoint || '',
+7024	            })) : [] },
+7025	          };
+7026	        }));
+7027	        if (!active) return;
+7028	        setServerPapers(papers);
+7029	        if (papers[0]) setActivePaperId(current => papers.some(item => item.id === current) ? current : papers[0].id);
+7030	        setServerPaperState({ loading: false, error: '' });
+7031	      } catch (error) {
+7032	        if (active) setServerPaperState({ loading: false, error: error?.message || '题库加载失败' });
+7033	      }
+7034	    })();
+7035	    return () => { active = false; };
+7036	  }, [apiMode, serverPaperReloadNonce]);
+7037	  if (apiMode && serverPaperState.loading) return <section className="panel"><div className="empty-line"><Clock3 size={20}/><span>正在加载服务端题库与试卷…</span></div></section>;
+7038	  if (apiMode && serverPaperState.error) return <section className="panel"><div className="empty-line" role="alert"><CircleHelp size={20}/><span>{serverPaperState.error}</span><button type="button" className="secondary" onClick={() => setServerPaperReloadNonce(current => current + 1)}>重新加载</button></div></section>;
+7039	  const paperCatalog = apiMode ? (serverPapers || []) : ENTRANCE_PAPERS;
+7040	  const distributions = entranceState.distributions || {};
+7041	  const submissions = entranceState.submissions || [];
+7042	  const activePaper = paperCatalog.find(paper => paper.id === activePaperId) || paperCatalog[0] || null;
+7043	  const paperDistributions = activePaper ? (distributions[activePaper.id] || {}) : {};
+7044	  const paperSubmissions = activePaper ? submissions.filter(item => String(item.paperId) === String(activePaper.id)) : [];
+7045	  const enabledPushCount = (students || []).filter(item => getAssessmentPush(item).enabled).length;
+7046	  const modelReady = isAiSlotReady(aiSettings, 'periodic_assessment');
+7047	  const assessmentSlot = getAiSlotConfig(aiSettings, 'periodic_assessment');
+7048	  const gradingReady = isAiSlotReady(aiSettings, 'assessment_grading');
+7049	  const gradingSlot = getAiSlotConfig(aiSettings, 'assessment_grading');
+7050	  const assessmentModel = getConfiguredModel(aiSettings, assessmentSlot.modelId);
+7051	  const gradingModel = getConfiguredModel(aiSettings, gradingSlot.modelId);
+7052	  const distributePaper = async (student) => {
+7053	    if (!student) return notify('请选择要分发的学员');
+7054	    if (isApiConfigured() && student.id && !student.isTestAccount) {
+7055	      try {
+7056	        const result = await apiRequest('/api/exams/distributions', {
+7057	          method: 'POST',
+7058	          body: { paperId: activePaper.id, paperTitle: activePaper.title, studentId: student.id }
+7059	        });
+7060	        const shareUrl = `${window.location.origin}/exam/${encodeURIComponent(activePaper.id)}/?token=${encodeURIComponent(result.shareToken)}`;
+7061	        setEntranceState(current => ({
+7062	          ...current,
+7063	          distributions: {
+7064	            ...current.distributions,
+7065	            [activePaperId]: {
+7066	              ...(current.distributions[activePaperId] || {}),
+7067	              [student.id]: {
+7068	                distributionId: result.distribution?.id,
+7069	                shareToken: result.shareToken,
+7070	                paperId: activePaper.id,
+7071	                paperTitle: activePaper.title,
+7072	                studentId: student.id,
+7073	                studentName: student.name,
+7074	                assignedAt: result.distribution?.assignedAt || new Date().toISOString(),
+7075	                status: '待开始',
+7076	                shareUrl,
+7077	                shareSlug: activePaper.shareSlug || activePaper.id
+7078	              }
+7079	            }
+7080	          }
+7081	        }));
+7082	        if (navigator.clipboard?.writeText) {
+7083	          try { await navigator.clipboard.writeText(shareUrl); notify(`分发链接已生成并复制到剪贴板，转交给 ${student.name}`); return; } catch (e) {}
+7084	        }
+7085	        notify(`已将「${activePaper.title}」链接发送给 ${student.name}`);
+7086	      } catch (error) {
+7087	        notify(error?.message || '分发试卷失败，请稍后重试');
+7088	      }
+7089	      return;
+7090	    }
+7091	    setEntranceState(current => ({
+7092	      ...current,
+7093	      distributions: {
+7094	        ...current.distributions,
+7095	        [activePaperId]: {
+7096	          ...(current.distributions[activePaperId] || {}),
+7097	          [student.id]: createExamDistribution(activePaper, student)
+7098	        }
+7099	      }
+7100	    }));
+7101	    notify(`已将「${activePaper.title}」链接发送给 ${student.name}`);
+7102	  };
+7103	  const revokeDistribution = async item => {
+7104	    if (!item) return;
+7105	    if (!window.confirm(`确定撤回 ${item.studentName || '该学员'} 的试卷链接吗？已提交结果不会被删除。`)) return;
+7106	    if (apiMode) {
+7107	      try {
+7108	        // The deployment will expose this real mutation endpoint. Do not hide a
+7109	        // failed request by changing the local distribution state.
+7110	        await apiRequest(`/api/admin/exams/distributions/${encodeURIComponent(item.id)}/revoke`, { method: 'POST' });
+7111	        setEntranceState(current => {
+7112	          const nextDistributions = { ...(current.distributions[activePaperId] || {}) };
+7113	          nextDistributions[item.studentId] = { ...nextDistributions[item.studentId], status: '已撤销', revokedAt: new Date().toISOString() };
+7114	          return { ...current, distributions: { ...current.distributions, [activePaperId]: nextDistributions } };
+7115	        });
+7116	        notify('已撤回试卷链接，学生端不会继续显示待自测');
+7117	      } catch (error) {
+7118	        notify(`撤回失败：${error?.message || '请稍后重试'}。当前显示未修改，可重新点击撤回。`);
+7119	      }
+7120	      return;
+7121	    }
+7122	    setEntranceState(current => {
+7123	      const nextDistributions = { ...(current.distributions[activePaperId] || {}) };
+7124	      delete nextDistributions[item.studentId];
+7125	      return { ...current, distributions: { ...current.distributions, [activePaperId]: nextDistributions } };
+7126	    });
+7127	    notify('已撤回该学员的试卷链接');
+7128	  };
+7129	  const startGrading = (submission) => {
+7130	    const student = students.find(item => String(item.id) === String(submission.studentId));
+7131	    if (!student) return notify('该提交未关联有效学员，无法进入批改');
+7132	    setGradingStudentId(submission.studentId);
+7133	    setGradingDraftAnswers(submission.answers || {});
+7134	    setGradingSubjectiveScore(submission.subjectiveScore == null ? '' : String(submission.subjectiveScore));
+7135	    setGradingStatus(normalizeGradingStatusLabel(submission.gradingStatus || (submission.subjectiveScore != null ? '已批改' : '部分待批改')));
+7136	    setGradingNote(submission.gradingNote || '');
+7137	    setPreviewingPaperId(null);
+7138	  };
+7139	  const cancelGrading = () => {
+7140	    setGradingStudentId(null);
+7141	    setGradingDraftAnswers(null);
+7142	    setGradingSubjectiveScore('');
+7143	    setGradingStatus('部分待批改');
+7144	    setGradingNote('');
+7145	  };
+7146	  const updateGradingAnswer = (questionId, value) => {
+7147	    setGradingDraftAnswers(current => ({ ...(current || {}), [questionId]: value }));
+7148	  };
+7149	  const submitGrading = async () => {
+7150	    const submission = paperSubmissions.find(item => String(item.studentId) === String(gradingStudentId));
+7151	    if (!submission) return notify('未找到对应的学生作答');
+7152	    const student = students.find(item => String(item.id) === String(gradingStudentId));
+7153	    if (!student) return notify('未找到对应学员，无法写入入学自测档案');
+7154	    const result = gradeEntrancePaper(activePaper, gradingDraftAnswers);
+7155	    if (apiMode && submission.isServerManaged) {
+7156	      const hasSubjective = flattenPaperQuestions(activePaper).some(question => !['single_choice', 'multiple_choice', 'true_false', 'fill_blank'].includes(getQuestionType(question)));
+7157	      const objectiveScore = Number(submission.objectiveScore ?? result.objectiveScore ?? 0);
+7158	      const requestedStatus = hasSubjective ? gradingStatus : '已批改';
+7159	      const subjectiveScore = hasSubjective && gradingSubjectiveScore !== '' ? Number(gradingSubjectiveScore) : null;
+7160	      if (hasSubjective && requestedStatus === '已批改' && subjectiveScore === null) return notify('完成批改前请填写主观题成绩，或保留为待批改');
+7161	      if (subjectiveScore !== null && (!Number.isFinite(subjectiveScore) || subjectiveScore < 0)) return notify('主观题成绩必须是非负数字');
+7162	      setGradingPending(true);
+7163	      try {
+7164	        const saved = await apiRequest(`/api/admin/exams/submissions/${encodeURIComponent(submission.id)}/grade`, {
+7165	          method: 'PATCH',
+7166	          body: { objectiveScore, subjectiveScore, gradingStatus: requestedStatus, gradingNote: gradingNote.trim() }
+7167	        });
+7168	        setEntranceState(current => ({ ...current, submissions: (current.submissions || []).map(item => String(item.id) === String(submission.id) ? { ...item, ...saved, isServerManaged: true } : item) }));
+7169	        cancelGrading();
+7170	        notify('批改结果已保存到服务端，学生端刷新后可查看');
+7171	      } catch (error) {
+7172	        notify(error?.message || '批改保存失败，请重试');
+7173	      } finally { setGradingPending(false); }
+7174	      return;
+7175	    }
+7176	    const nextSubmission = {
+7177	      ...submission,
+7178	      answers: gradingDraftAnswers,
+7179	      gradedAt: new Date().toISOString(),
+7180	      status: result.gradingStatus || '已批改',
+7181	      ...result
+7182	    };
+7183	    setEntranceState(current => ({
+7184	      ...current,
+7185	      submissions: current.submissions.map(item => item.id === submission.id ? nextSubmission : item)
+7186	    }));
+7187	    setStudents(items => items.map(item => item.id === student.id
+7188	      ? {
+7189	          ...item,
+7190	          entranceRecords: [
+7191	            ...(item.entranceRecords || []).filter(record => record.paperId !== activePaperId),
+7192	            { paperId: activePaperId, paperTitle: activePaper.title, score: result.score, total: result.total, submittedAt: nextSubmission.submittedAt, gradedAt: nextSubmission.gradedAt }
+7193	          ]
+7194	        }
+7195	      : item
+7196	    ));
+7197	    cancelGrading();
+7198	    notify(`已完成 ${student.name} 的「${activePaper.title}」批改复核`);
+7199	  };
+7200	
+7201	  const previewPaper = previewingPaperId === activePaperId ? null : activePaperId;
+7202	  const activeSubmission = gradingStudentId ? paperSubmissions.find(item => String(item.studentId) === String(gradingStudentId)) : null;
+7203	  const activeStudent = gradingStudentId ? students.find(item => String(item.id) === String(gradingStudentId)) : null;
+7204	  const renderMathText = text => {
+7205	    if (!text) return '';
+7206	    if (typeof text !== 'string') return String(text);
+7207	    return text;
+7208	  };
+7209	  const renderMathOption = (option, index) => {
+7210	    const letter = String.fromCharCode(65 + index);
+7211	    if (option && typeof option === 'object' && option.isLatex) {
+7212	      return <span className="math-option">{letter}. <MathFormula value={option.text}/></span>;
+7213	    }
+7214	    return <span>{letter}. {renderMathText(option)}</span>;
+7215	  };
+7216	
+7217	  return <>
+7218	    <section className="page-head">
+7219	      <div>
+7220	        <span className="eyebrow">自测</span>

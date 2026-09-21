@@ -4,7 +4,7 @@ const crypto = require('crypto');
 
 // 自动加载 .env 文件（无需 dotenv 依赖）
 const envPath = path.join(__dirname, '..', '.env');
-if (fs.existsSync(envPath)) {
+if (process.env.NODE_ENV !== 'test' && fs.existsSync(envPath)) {
   const envContent = fs.readFileSync(envPath, 'utf-8');
   envContent.split('\n').forEach((line) => {
     const trimmed = line.trim();
@@ -41,6 +41,13 @@ const tokenTtlDays = Number(process.env.TOKEN_TTL_DAYS || 30);
 const nodeEnv = process.env.NODE_ENV || 'development';
 // 默认关闭全部付费能力；false 仅重新启用旧服务端逻辑，恢复商业化前仍需完成前端与数据迁移。
 const freeAccessMode = String(process.env.FREE_ACCESS_MODE || 'true').toLowerCase() !== 'false';
+const publicBaseUrl = String(process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+const smtpHost = process.env.SMTP_HOST || '';
+const smtpPort = Number(process.env.SMTP_PORT || 465);
+const smtpSecure = String(process.env.SMTP_SECURE || 'true').toLowerCase() !== 'false';
+const smtpUser = process.env.SMTP_USER || '';
+const smtpPassword = process.env.SMTP_PASSWORD || '';
+const smtpFrom = process.env.SMTP_FROM || smtpUser || '';
 
 // SESSION_SECRET 安全校验
 const rawSessionSecret = process.env.SESSION_SECRET;
@@ -62,6 +69,16 @@ const trustProxy = process.env.TRUST_PROXY === 'true';
 const expectedWxAppId = 'wx27fca32a9ddfdc8e';
 const wxAppId = process.env.WX_APP_ID || '';
 const wxAppSecret = process.env.WX_APP_SECRET || '';
+const wxSubscribeTestTemplateId = process.env.WX_SUBSCRIBE_TEST_TEMPLATE_ID || '';
+const wxSubscribeTestFixedKey = process.env.WX_SUBSCRIBE_TEST_FIXED_KEY || 'short_thing1';
+const wxSubscribeTestDateKey = process.env.WX_SUBSCRIBE_TEST_DATE_KEY || 'time2';
+const wxSubscribeTestNumberKey = process.env.WX_SUBSCRIBE_TEST_NUMBER_KEY || 'character_string3';
+const wxSubscribeTestTipKey = process.env.WX_SUBSCRIBE_TEST_TIP_KEY || 'thing4';
+const wxSubscribeMiniprogramState = ['developer', 'trial', 'formal'].includes(
+  process.env.WX_SUBSCRIBE_MINIPROGRAM_STATE
+)
+  ? process.env.WX_SUBSCRIBE_MINIPROGRAM_STATE
+  : (process.env.NODE_ENV === 'production' ? 'formal' : 'developer');
 const contentSecurityPublicBaseUrl = (process.env.CONTENT_SECURITY_PUBLIC_BASE_URL || 'https://xiaoeduhub.online').replace(/\/$/, '');
 const contentSecurityPublicBaseUrlValid = (() => {
   try {
@@ -87,6 +104,25 @@ const wecomWebhookKey = process.env.WECOM_WEBHOOK_KEY || '';
 const wecomToken = process.env.WECOM_TOKEN || '';
 const wecomEncodingAesKey = process.env.WECOM_ENCODING_AES_KEY || '';
 
+// 微信客服（普通微信用户的一对一客服渠道）
+// 微信客服使用被授权的企业自建应用 Secret；未单独配置时复用 WECOM_SECRET。
+// 回调 Token/AES 也默认复用现有企业微信回调配置，避免保存重复密钥。
+const wecomKfEnabled = process.env.WECOM_KF_ENABLED === 'true';
+const wecomKfSecret = process.env.WECOM_KF_SECRET || wecomSecret;
+const wecomKfToken = process.env.WECOM_KF_TOKEN || wecomToken;
+const wecomKfEncodingAesKey = process.env.WECOM_KF_ENCODING_AES_KEY || wecomEncodingAesKey;
+const wecomKfReplyDelaySeconds = Math.min(
+  300,
+  Math.max(0, Number(process.env.WECOM_KF_REPLY_DELAY_SECONDS) || 5)
+);
+const wecomKfThinkingMessage = process.env.WECOM_KF_THINKING_MESSAGE === undefined
+  ? '思考中，请稍等'
+  : String(process.env.WECOM_KF_THINKING_MESSAGE).trim().slice(0, 500);
+const wecomKfRecoveryPollIntervalSeconds = Math.min(
+  3600,
+  Math.max(30, Number(process.env.WECOM_KF_RECOVERY_POLL_INTERVAL_SECONDS) || 60)
+);
+
 // 企业微信-会话内容存档（群聊监听）
 const wecomArchiveSecret = process.env.WECOM_ARCHIVE_SECRET || '';
 // 私钥 PEM 在 .env 中编码为 base64 单行，这里还原换行
@@ -98,10 +134,40 @@ const wecomArchivePrivateKey = (() => {
 const wecomArchivePollInterval = Number(process.env.WECOM_ARCHIVE_POLL_INTERVAL) || 15;
 const wecomArchiveEnabled = process.env.WECOM_ARCHIVE_ENABLED === 'true';
 
-// AI 大模型 API 配置
-const aiApiKey = process.env.AI_API_KEY || '';
-const aiApiUrl = process.env.AI_API_URL || '';
-const aiModel = process.env.AI_MODEL || 'deepseek-chat';
+// AI 大模型 API 配置。保留原 AI_* 作为回退，生产可通过 AI_PROVIDER=minimax
+// 切换到 MiniMax-M3，而无需覆盖原有供应商密钥。
+const aiProvider = String(process.env.AI_PROVIDER || 'default').trim().toLowerCase();
+const legacyAiApiKey = process.env.AI_API_KEY || '';
+const legacyAiApiUrl = process.env.AI_API_URL || '';
+const minimaxApiKey = process.env.MINIMAX_API_KEY || '';
+const minimaxApiUrl = process.env.MINIMAX_API_URL || 'https://api.minimaxi.com/v1/chat/completions';
+const minimaxModel = process.env.MINIMAX_MODEL || 'MiniMax-M3';
+const minimaxServiceTier = process.env.MINIMAX_SERVICE_TIER || 'priority';
+const minimaxMaxCompletionTokens = Math.max(
+  1024,
+  Number(process.env.MINIMAX_MAX_COMPLETION_TOKENS) || 131072
+);
+const minimaxWebSearchEnabled = process.env.MINIMAX_WEB_SEARCH_ENABLED !== 'false';
+const minimaxWebSearchApiUrl = process.env.MINIMAX_WEB_SEARCH_API_URL
+  || 'https://api.minimaxi.com/v1/coding_plan/search';
+const officialAiDeepMode = process.env.OFFICIAL_AI_DEEP_MODE !== 'false';
+const officialAiMaxToolRounds = Math.min(
+  8,
+  Math.max(1, Number(process.env.OFFICIAL_AI_MAX_TOOL_ROUNDS) || 5)
+);
+const deepseekApiKey = process.env.DEEPSEEK_API_KEY
+  || (/api\.deepseek\.com/i.test(legacyAiApiUrl) ? legacyAiApiKey : '');
+const deepseekApiUrl = process.env.DEEPSEEK_API_URL
+  || 'https://api.deepseek.com/chat/completions';
+const deepseekModel = process.env.DEEPSEEK_MODEL || 'deepseek-v4-pro';
+const deepseekReasoningEffort = process.env.DEEPSEEK_REASONING_EFFORT || 'max';
+const deepseekMaxCompletionTokens = Math.max(
+  1024,
+  Number(process.env.DEEPSEEK_MAX_COMPLETION_TOKENS) || 131072
+);
+const aiApiKey = aiProvider === 'minimax' ? minimaxApiKey : legacyAiApiKey;
+const aiApiUrl = aiProvider === 'minimax' ? minimaxApiUrl : legacyAiApiUrl;
+const aiModel = aiProvider === 'minimax' ? minimaxModel : (process.env.AI_MODEL || 'deepseek-chat');
 
 // 微信支付 V3 配置。免费模式下即使环境变量仍有残留，也不会向应用暴露。
 const wxPayAppId = freeAccessMode ? '' : (process.env.WX_PAY_APP_ID || process.env.WX_APP_ID || '');
@@ -139,6 +205,7 @@ module.exports = {
   aiApiKey,
   aiApiUrl,
   aiModel,
+  aiProvider,
   cookieSecure,
   contentSecurityPublicBaseUrl,
   contentSecurityPublicBaseUrlValid,
@@ -149,14 +216,41 @@ module.exports = {
   freeAccessMode,
   iceServers,
   nodeEnv,
+  deepseekApiKey,
+  deepseekApiUrl,
+  deepseekModel,
+  deepseekReasoningEffort,
+  deepseekMaxCompletionTokens,
+  minimaxApiKey,
+  minimaxApiUrl,
+  minimaxModel,
+  minimaxServiceTier,
+  minimaxMaxCompletionTokens,
+  minimaxWebSearchEnabled,
+  minimaxWebSearchApiUrl,
+  officialAiDeepMode,
+  officialAiMaxToolRounds,
   port,
+  publicBaseUrl,
   rootDir,
   sessionSecret,
+  smtpFrom,
+  smtpHost,
+  smtpPassword,
+  smtpPort,
+  smtpSecure,
+  smtpUser,
   tokenTtlDays,
   trustProxy,
   uploadRootDir,
   wxAppId,
   wxAppSecret,
+  wxSubscribeTestTemplateId,
+  wxSubscribeTestFixedKey,
+  wxSubscribeTestDateKey,
+  wxSubscribeTestNumberKey,
+  wxSubscribeTestTipKey,
+  wxSubscribeMiniprogramState,
   wxPayAppId,
   wxPayMchId,
   wxPayApiV3Key,
@@ -169,6 +263,13 @@ module.exports = {
   wecomWebhookKey,
   wecomToken,
   wecomEncodingAesKey,
+  wecomKfEnabled,
+  wecomKfSecret,
+  wecomKfToken,
+  wecomKfEncodingAesKey,
+  wecomKfReplyDelaySeconds,
+  wecomKfThinkingMessage,
+  wecomKfRecoveryPollIntervalSeconds,
   wecomArchiveSecret,
   wecomArchivePrivateKey,
   wecomArchivePollInterval,

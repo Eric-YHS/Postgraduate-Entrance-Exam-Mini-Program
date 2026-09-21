@@ -1,0 +1,11 @@
+.vocabulary-page { padding-bottom:48rpx; }
+.progress { font-size:25rpx; color:#597086; text-align:center; }
+.word-card { min-height:520rpx; margin-top:24rpx; padding:54rpx 36rpx; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; }
+.word { font-size:60rpx; font-weight:700; color:#1d4e89; letter-spacing:2rpx; }
+.phonetic { margin-top:14rpx; color:#8290a2; font-size:27rpx; }
+.tap-tip { margin-top:90rpx; color:#94a3b8; font-size:24rpx; }
+.answer { width:100%; margin-top:54rpx; padding-top:34rpx; border-top:1rpx solid #dbe4ef; }
+.meaning { font-size:34rpx; color:#22354b; font-weight:600; }
+.mnemonic { margin-top:24rpx; padding:22rpx; border-radius:14rpx; background:#f4f7fb; color:#52687d; font-size:26rpx; line-height:1.75; text-align:left; }
+.ratings { display:grid; grid-template-columns:repeat(4,1fr); gap:12rpx; margin-top:24rpx; }
+.ratings button { padding:0; font-size:25rpx; line-height:76rpx; background:#fff; color:#1d5f99; border:1rpx solid #b9cce0; }

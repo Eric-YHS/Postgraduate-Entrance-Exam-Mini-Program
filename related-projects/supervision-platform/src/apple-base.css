@@ -1,0 +1,77 @@
+/* 第一版布局基线之上的首轮苹果风视觉层：只调整视觉，不改变页面结构或业务规则。 */
+:root{
+  --apple-canvas:#f5f5f7;
+  --apple-surface:#ffffff;
+  --apple-surface-soft:#f8fafc;
+  --apple-ink:#1d1d1f;
+  --apple-muted:#667085;
+  --apple-line:#e4e7ec;
+  --apple-blue:#0071e3;
+  --apple-blue-hover:#0067cf;
+  --apple-blue-soft:#e8f2ff;
+  --apple-success:#16803d;
+  --apple-shadow:0 2px 9px rgba(16,24,40,.045);
+  --apple-shadow-hover:0 12px 26px rgba(16,24,40,.095);
+  --apple-ease:180ms cubic-bezier(.2,.8,.2,1);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+body{background:var(--apple-canvas);color:var(--apple-ink)}
+button,input,textarea,select{font-family:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--apple-blue);outline-offset:2px;box-shadow:0 0 0 4px rgba(0,113,227,.14)}
+
+.app-shell{background:var(--apple-canvas)}
+.sidebar{background:rgba(255,255,255,.88);border-right-color:var(--apple-line);color:var(--apple-ink);backdrop-filter:blur(18px)}
+.brand b,.page-head h1,.dashboard-head h1,.panel-head h2,.dashboard-section-head h2{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif;color:var(--apple-ink);letter-spacing:-.025em}
+.brand span,.breadcrumb,.page-head p,.dashboard-head p{color:var(--apple-muted)}
+.brand-mark{background:var(--apple-blue);box-shadow:0 5px 12px rgba(0,113,227,.18)}
+.sidebar nav button{border-radius:9px;color:var(--apple-muted);transition:color var(--apple-ease),background var(--apple-ease),transform var(--apple-ease)}
+.sidebar nav button:hover{background:#f2f6fb;color:var(--apple-blue);transform:translateX(1px)}
+.sidebar nav .nav-active{background:var(--apple-blue-soft);color:var(--apple-blue)}
+.side-footer{border-top-color:var(--apple-line);color:#98a2b3}.status-dot{background:var(--apple-success)}
+
+main{background:var(--apple-canvas)}
+.topbar{background:rgba(255,255,255,.84);border-bottom-color:var(--apple-line);backdrop-filter:blur(18px)}
+.icon-button{border-radius:9px;color:var(--apple-muted);transition:color var(--apple-ease),background var(--apple-ease)}
+.icon-button:hover{background:var(--apple-blue-soft);color:var(--apple-blue)}
+.profile{border-radius:999px;transition:background var(--apple-ease)}
+.profile:hover{background:#f1f5f9}.profile span,.avatar{background:var(--apple-blue-soft);color:var(--apple-blue)}
+
+.primary,.secondary,.text-button{font-weight:600;transition:background var(--apple-ease),border-color var(--apple-ease),box-shadow var(--apple-ease),transform 120ms ease}
+.primary{background:var(--apple-blue);box-shadow:0 1px 1px rgba(0,0,0,.06)}
+.primary:hover{background:var(--apple-blue-hover);box-shadow:0 6px 16px rgba(0,113,227,.19)}
+.primary:active,.secondary:active{transform:scale(.98)}
+.secondary{background:#fff;border-color:#d9dfe7;color:var(--apple-ink)}
+.secondary:hover{background:#f8fafc;border-color:#c7d0db}.text-button,.quiet-button{color:var(--apple-blue)}
+
+.panel,.metric,.practice-card,.content-action,.setting-card,.course-card,.tool-card,.student-tool-card,.store-product-card,.application-card,.plan-card,.table-panel,.dashboard-stat-grid article,.dashboard-subject-grid article{background:var(--apple-surface);border-color:var(--apple-line);box-shadow:var(--apple-shadow)}
+.panel,.metric,.practice-card,.content-action,.setting-card,.course-card,.tool-card,.student-tool-card,.store-product-card,.application-card,.plan-card,.table-panel{border-radius:13px}
+.course-card,.student-tool-card,.dashboard-todo,.content-action{transition:transform var(--apple-ease),box-shadow var(--apple-ease),border-color var(--apple-ease)}
+.course-card:hover,.student-tool-card:hover,.dashboard-todo:hover,.content-action:hover{transform:translateY(-2px);border-color:#bfd8f3;box-shadow:var(--apple-shadow-hover)}
+.metric strong,.dashboard-stat-grid b,.dashboard-subject-grid b{font-variant-numeric:tabular-nums}
+
+.search,input,textarea,select{background:#fff;border-color:#d9dfe7;color:var(--apple-ink)}
+.search:focus-within{border-color:var(--apple-blue);box-shadow:0 0 0 3px rgba(0,113,227,.12)}
+th{background:#f8fafc;color:var(--apple-muted)}
+td{border-color:var(--apple-line)}
+
+.student-home-hero,.student-today-hero{background:linear-gradient(120deg,#ffffff 0%,#f5f9ff 70%,#eef6ff 100%);border-color:#d7e7fa;box-shadow:0 10px 26px rgba(28,85,144,.07)}
+.student-home-hero h1,.student-today-hero h1{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif;letter-spacing:-.04em;color:#17253a}
+.student-home-hero p,.student-today-hero p{color:#66788c}
+.student-home-summary-action{transition:transform var(--apple-ease),box-shadow var(--apple-ease),border-color var(--apple-ease)}
+.student-home-summary-action:hover{transform:translateY(-2px);border-color:#b9d8f7;box-shadow:var(--apple-shadow-hover)}
+.student-tool-card.tool-companion-study{background:#f0faf4;border-color:#c5e7d1}.student-tool-card.tool-politics{background:#faf9ff;border-color:#dcd8f6}.student-tool-card.tool-english-words{background:#f4f9ff;border-color:#d0e4fb}.student-tool-card.tool-english-choice{background:#f7f8ff;border-color:#dfdff8}
+
+.word-reading-stage{border-color:var(--apple-line);box-shadow:var(--apple-shadow)}
+.word-reading-card{box-shadow:inset 0 0 0 1px #f0f2f5,0 2px 8px rgba(16,24,40,.04)}
+.word-reading-topbar h1{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei",sans-serif;color:var(--apple-ink)}
+.word-study-actions button{transition:transform 120ms ease,box-shadow var(--apple-ease),background var(--apple-ease)}
+.word-study-actions button:hover{transform:translateY(-1px)}
+.word-master-button{background:var(--apple-success)}
+.word-master-button:hover{background:#126b34;box-shadow:0 7px 16px rgba(22,128,61,.17)}
+
+.toast{background:var(--apple-ink);box-shadow:0 12px 30px rgba(16,24,40,.18)}
+.modal-backdrop{background:rgba(29,29,31,.3);backdrop-filter:blur(4px)}
+.modal{box-shadow:0 22px 60px rgba(16,24,40,.18)}
+
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:1ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:1ms!important}.course-card:hover,.student-tool-card:hover,.dashboard-todo:hover,.content-action:hover,.student-home-summary-action:hover,.word-study-actions button:hover,.sidebar nav button:hover{transform:none}}

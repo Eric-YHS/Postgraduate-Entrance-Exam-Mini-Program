@@ -83,9 +83,12 @@ function sanitizeControlChars(req, res, next) {
   next();
 }
 
-// 企业微信回调需要原始 XML 请求体，必须在 express.json() 之前解析
+// 企业微信和微信客服回调需要原始 XML 请求体，必须在 express.json() 之前解析
 // 用 type 函数接受所有 Content-Type，避免企业微信发送非标准类型时 body 被后续中间件解析为对象
-app.use('/api/wecom/callback', express.raw({ type: () => true, limit: '10mb' }));
+app.use(
+  ['/api/wecom/callback', '/api/wecom/kf/callback'],
+  express.raw({ type: () => true, limit: '10mb' })
+);
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb', charset: 'utf-8' }));
@@ -174,11 +177,17 @@ function csrfCheck(request, response, next) {
     return next();
   }
   // 企业微信官方回调不需要 CSRF 校验（请求来自腾讯服务器，无 Origin/Referer）
-  if (request.path === '/api/wecom/callback') {
+  if (
+    request.path === '/api/wecom/callback'
+    || request.path === '/api/wecom/kf/callback'
+  ) {
     return next();
   }
-  // 小程序内容安全会话使用一次性 wx.login code 建立，随后请求均校验专用 Bearer Token。
-  if (request.path === '/api/content-security/session') {
+  // 小程序会话使用一次性 wx.login code 建立，随后请求均校验专用 Bearer Token。
+  if (
+    request.path === '/api/content-security/session'
+    || request.path === '/api/wx-subscribe/session'
+  ) {
     return next();
   }
   // 测试环境跳过 CSRF 校验，便于自动化测试
@@ -511,12 +520,23 @@ function serializeQuestionForTeacher(row) {
 }
 
 function serializeQuestionForStudent(row, latestRecord) {
+  const options = safeJsonParse(row.options, []).map((option) => ({
+    ...option,
+    key: option.key || option.label || '',
+    label: option.label || option.key || ''
+  }));
+  const subjectCode = { '政治': 'politics', '英语': 'english', '考研英语': 'english', '数学': 'math' }[row.subject] || row.subject;
   return {
     id: row.id,
     title: row.title,
     subject: row.subject,
+    subjectCode,
     stem: row.stem,
-    options: safeJsonParse(row.options, []),
+    options,
+    correctAnswer: row.correct_answer,
+    correctOption: row.correct_answer,
+    analysisText: row.analysis_text || '',
+    explanation: row.analysis_text || '',
     isPaidOnly: config.freeAccessMode ? 0 : (row.is_paid_only || 0),
     subjectScope: config.freeAccessMode ? '' : (row.subject_scope || ''),
     displayMode: row.display_mode || 'radio',
@@ -924,6 +944,19 @@ function readWorkbookRows(filePath) {
   }
   // BUG-036: 改进编码检测 — 先读原始字节判断是否为 GBK，再选择解码方式
   const rawBuffer = fs.readFileSync(filePath);
+
+  // Excel 二进制（OLE .xls）和 ZIP 容器（.xlsx）不能参与文本编码探测。
+  // OLE 内大量高位字节会被误判成 GBK，随后按字符串读取会静默得到空工作表。
+  const isOleWorkbook = rawBuffer.length >= 8
+    && rawBuffer.subarray(0, 8).equals(Buffer.from([0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1]));
+  const isZipWorkbook = rawBuffer.length >= 4
+    && rawBuffer[0] === 0x50 && rawBuffer[1] === 0x4B
+    && [0x03, 0x05, 0x07].includes(rawBuffer[2]);
+  if (isOleWorkbook || isZipWorkbook) {
+    const workbook = XLSX.read(rawBuffer, { type: 'buffer' });
+    const sheetName = workbook.SheetNames[0];
+    return XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+  }
 
   // 快速检测：如果含 BOM (EF BB BF)，一定是 UTF-8
   const hasBOM = rawBuffer.length >= 3 && rawBuffer[0] === 0xEF && rawBuffer[1] === 0xBB && rawBuffer[2] === 0xBF;
@@ -1611,6 +1644,7 @@ if (config.freeAccessMode) {
 
 require('./routes/auth')(app, shared);
 require('./routes/contentSecurity')(app, shared);
+require('./routes/wxSubscribe')(app, shared);
 require('./routes/admin')(app, shared);
 require('./routes/students')(app, shared);
 require('./routes/teachers')(app, shared);
@@ -1624,8 +1658,12 @@ require('./routes/upload')(app, shared);
 require('./routes/knowledgeBase')(app, shared);
 require('./routes/messageTemplates')(app, shared);
 require('./routes/bots')(app, shared);
+require('./routes/requirements')(app, shared);
 require('./routes/ai')(app, shared);
 require('./routes/wecom')(app, shared);
+require('./routes/wecomAdmin')(app, shared);
+require('./routes/wecomKf')(app, shared);
+require('./routes/wecomKfAdmin')(app, shared);
 if (!config.freeAccessMode) require('./routes/promoter')(app, shared);
 require('./routes/misc')(app, shared);
 
@@ -1642,6 +1680,13 @@ if (config.wecomArchiveEnabled) {
 
 // 将 poller 句柄挂到 shared，方便路由管理接口调用
 shared.archivePoller = archivePoller;
+
+// ── 微信客服（普通微信一对一咨询） ──
+
+const wecomKfDispatcher = require('./services/wecomKfDispatcher');
+if (wecomKfDispatcher.start()) {
+  console.log('[server] 微信客服消息同步与延迟回复已初始化');
+}
 
 // ── 启动服务器 ──
 
@@ -1667,6 +1712,7 @@ if (require.main === module) {
 
 // 进程退出时优雅停止归档轮询器
 process.on('SIGINT', () => {
+  wecomKfDispatcher.stop();
   if (archivePoller) {
     archivePoller.stop();
     console.log('[server] 会话存档轮询器已停止');
@@ -1674,6 +1720,7 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 process.on('SIGTERM', () => {
+  wecomKfDispatcher.stop();
   if (archivePoller) {
     archivePoller.stop();
     console.log('[server] 会话存档轮询器已停止');
@@ -1681,7 +1728,7 @@ process.on('SIGTERM', () => {
   process.exit(0);
 });
 
-module.exports = { app, server, db, wss };
+module.exports = { app, server, db, wss, csrfCheck };
 
 // BUG-051: 定期清理过期 auth_tokens
 setInterval(() => {
@@ -1693,6 +1740,7 @@ setInterval(() => {
 // BUG-075: 优雅关闭
 function gracefulShutdown(signal) {
   console.log(`收到 ${signal}，正在关闭服务...`);
+  wecomKfDispatcher.stop();
   wss.clients.forEach((client) => client.close());
   server.close(() => {
     console.log('服务已关闭。');

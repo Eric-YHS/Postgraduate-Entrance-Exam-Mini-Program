@@ -1,0 +1,66 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-shangan}
+      POSTGRES_USER: ${POSTGRES_USER:-shangan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+
+  migrate:
+    build: ./server
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shangan}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-shangan}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["node", "src/migrate.js"]
+    restart: "no"
+
+  api:
+    build: ./server
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-shangan}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-shangan}
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:4000/ready').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
+
+  web:
+    build: .
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/nginx-health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -5,6 +5,8 @@ const { handleQuestion } = require('../services/bots/answerBot');
 const { handleQuestion: handleSchoolQuestion, recognizeIntent } = require('../services/bots/schoolSelectorBot');
 const { handleReply: handleSupervisionReply } = require('../services/bots/supervisorBot');
 const { isHandoffRequest, startHandoff, isInHandoff, notifyHumanAgents } = require('../services/bots/humanHandoff');
+const { processBatch: queueArchivedGroupMessages } = require('../services/archiveDispatcher');
+const wecomKfDispatcher = require('../services/wecomKfDispatcher');
 
 /**
  * 判断一条消息是否像「督学打卡回复」（完成/未完成进度反馈），
@@ -101,6 +103,9 @@ module.exports = function registerWecomRoutes(app, shared) {
       }
 
       const msgType = extractXmlField(parsed.message, 'MsgType');
+      const eventType = extractXmlField(parsed.message, 'Event');
+      const callbackToken = extractXmlField(parsed.message, 'Token');
+      const openKfid = extractXmlField(parsed.message, 'OpenKfId');
       const userId = extractXmlField(parsed.message, 'FromUserName');
       const chatId = extractXmlField(parsed.message, 'ChatId');
       const senderId = extractXmlField(parsed.message, 'Send') || userId;
@@ -111,6 +116,22 @@ module.exports = function registerWecomRoutes(app, shared) {
 
       // 先返回 success，避免企业微信重试；回复消息异步发送
       response.send('success');
+
+      // 微信客服与自建应用共用“接收消息”回调时，也能立即触发客服消息同步。
+      // 独立的 /api/wecom/kf/callback 继续保留，两种后台配置均兼容。
+      if (
+        config.wecomKfEnabled
+        && msgType === 'event'
+        && eventType === 'kf_msg_or_event'
+        && openKfid
+      ) {
+        setImmediate(() => {
+          wecomKfDispatcher.syncAccount(openKfid, callbackToken).catch((error) => {
+            console.error(`[wecom] 微信客服事件同步失败 open_kfid=${openKfid}:`, error.message);
+          });
+        });
+        return;
+      }
 
       if (msgType === 'text' && userId && message) {
         const { db } = shared;
@@ -135,37 +156,22 @@ module.exports = function registerWecomRoutes(app, shared) {
             } catch (_) { /* 表可能还不存在，忽略 */ }
           }
 
-          // 群聊统一走免费答疑机器人（避免权限判断复杂化，后续可按发送者身份区分）
+          // 与会话存档共用同一套“全量文字 + 按群静默等待”队列，避免回调立即
+          // 回复、存档稍后又回复一次，也确保 5 秒内的连续消息只生成一次回答。
           try {
-            const result = await handleFreeTutorMessage({ userId: senderId, message: question, source, groupId: chatId });
-            replyText = result && result.reply ? result.reply : '抱歉，我暂时无法回答这个问题。';
+            const callbackMsgId = msgIdXml
+              || `callback-${chatId}-${timestamp}-${senderId}`;
+            await queueArchivedGroupMessages([{
+              msgid: callbackMsgId,
+              seq: 0,
+              from: senderId,
+              roomid: chatId,
+              msgtype: 'text',
+              msgtime: Number(timestamp) * 1000 || Date.now(),
+              text: { content: question },
+            }]);
           } catch (err) {
-            console.error('[wecom] 群聊机器人处理失败:', err.message);
-            replyText = '机器人处理失败，请稍后再试。';
-          }
-
-          if (replyText) {
-            try {
-              const sendResult = await wecom.sendAppChatMessage({
-                chatid: chatId,
-                msgtype: 'text',
-                text: { content: replyText }
-              });
-              console.log(`[wecom] 回复群聊 ${chatId} 结果:`, sendResult);
-
-              // 记录处理结果（防止 archive 系统重复处理）
-              if (msgIdXml) {
-                try {
-                  db.prepare(`
-                    INSERT OR IGNORE INTO wecom_archive_messages
-                      (msgid, seq, from_user, roomid, msgtype, content, action, processed_at)
-                    VALUES (?, 0, ?, ?, 'text', ?, 'callback_reply', ?)
-                  `).run(msgIdXml, senderId, chatId, question, new Date().toISOString());
-                } catch (_) { /* 忽略去重写入失败 */ }
-              }
-            } catch (sendErr) {
-              console.error('[wecom] 回复群聊消息失败:', sendErr.message);
-            }
+            console.error('[wecom] 群聊消息加入延迟回复队列失败:', err.message);
           }
           return;
         }
@@ -303,7 +309,7 @@ module.exports = function registerWecomRoutes(app, shared) {
       if (!users || !Array.isArray(users) || users.length === 0) {
         return response.status(400).json({ error: '成员列表不能为空。' });
       }
-      const result = await wecom.inviteChatMembers({ chatid, users });
+      const result = await wecom.inviteChatMembers({ chatid, userlist: users });
       response.json({ success: true, result });
     } catch (error) {
       console.error('邀请成员到群聊失败:', error.message);
@@ -458,10 +464,10 @@ module.exports = function registerWecomRoutes(app, shared) {
       }
       if (pollInterval !== undefined) {
         const interval = Number(pollInterval);
-        if (interval >= 5 && interval <= 300) {
+        if (interval >= 1 && interval <= 300) {
           config.wecomArchivePollInterval = interval;
         } else {
-          return response.status(400).json({ error: 'pollInterval 必须在 5-300 秒之间' });
+          return response.status(400).json({ error: 'pollInterval 必须在 1-300 秒之间' });
         }
       }
 

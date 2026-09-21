@@ -233,7 +233,7 @@ function deleteKnowledgeBase(id) {
   return true;
 }
 
-function parseDocument(filePath, fileType) {
+async function parseDocument(filePath, fileType) {
   const ext = (fileType || path.extname(filePath) || '').toLowerCase().replace(/^\./, '');
 
   // txt / md / json / csv / js / ts / py / html / css / xml / yaml / yml
@@ -285,12 +285,31 @@ function parseDocument(filePath, fileType) {
     }
   }
 
+  // 表 4 / 表 5 以及运营表格：兼容旧版 .xls 与 .xlsx，并保留工作表/行列语义供 RAG 检索。
+  if (ext === 'xls' || ext === 'xlsx') {
+    try {
+      const XLSX = require('xlsx');
+      const workbook = XLSX.readFile(filePath, { cellDates: true, raw: false });
+      return workbook.SheetNames.map((sheetName) => {
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        const textRows = rows
+          .map((row) => row.map((cell) => String(cell || '').trim()).filter(Boolean).join(' | '))
+          .filter(Boolean);
+        return [`工作表：${sheetName}`, ...textRows].join('\n');
+      }).filter(Boolean).join('\n\n');
+    } catch (e) {
+      console.error('[knowledgeBase] 解析 Excel 失败:', filePath, e.message);
+      return '';
+    }
+  }
+
   // pdf: 使用 pdf-parse（如果已安装）
   if (ext === 'pdf') {
     try {
       const pdfParse = require('pdf-parse');
       const dataBuffer = fs.readFileSync(filePath);
-      const data = pdfParse(dataBuffer);
+      const data = await pdfParse(dataBuffer);
       return data.text || '';
     } catch (e) {
       console.error('[knowledgeBase] 解析 pdf 失败（请安装 pdf-parse）:', filePath, e.message);
@@ -335,7 +354,7 @@ async function chunkDocument(documentId, text) {
     throw new Error('文档不存在');
   }
 
-  const chunks = chunkTextByParagraphs(text, 800, 100);
+  const chunks = chunkTextByParagraphs(String(text || ''), 800, 100);
   if (!chunks.length) {
     // 更新文档 parsed_text 为空
     db.prepare('UPDATE knowledge_documents SET parsed_text = ?, chunk_count = 0 WHERE id = ?').run('', documentId);
@@ -356,8 +375,9 @@ async function chunkDocument(documentId, text) {
     }))
   );
 
-  // 使用事务批量插入
+  // 使用事务替换旧分块，文档重复处理时不产生重复语料。
   const insertMany = db.transaction((chunkList) => {
+    db.prepare('DELETE FROM knowledge_chunks WHERE document_id = ?').run(documentId);
     for (let i = 0; i < chunkList.length; i++) {
       const content = chunkList[i];
       const keywords = generateKeywords(content);
@@ -375,17 +395,9 @@ async function chunkDocument(documentId, text) {
   try {
     const ftsExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='knowledge_chunks_fts'").get();
     if (ftsExists) {
-      // 先删除旧数据
-      db.prepare('DELETE FROM knowledge_chunks_fts WHERE rowid IN (SELECT id FROM knowledge_chunks WHERE document_id = ?)').run(documentId);
+      // FTS 外部内容表允许使用 rebuild 保持与替换后的主表严格一致。
+      db.prepare("INSERT INTO knowledge_chunks_fts(knowledge_chunks_fts) VALUES('rebuild')").run();
       // 插入新数据
-      const allChunks = db.prepare('SELECT id, content, keywords FROM knowledge_chunks WHERE document_id = ?').all(documentId);
-      const insertFts = db.prepare('INSERT INTO knowledge_chunks_fts (rowid, content, keywords) VALUES (?, ?, ?)');
-      const insertFtsMany = db.transaction((rows) => {
-        for (const row of rows) {
-          insertFts.run(row.id, row.content, row.keywords);
-        }
-      });
-      insertFtsMany(allChunks);
     }
   } catch (e) {
     // FTS 同步失败不影响主流程

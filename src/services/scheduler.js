@@ -3,6 +3,8 @@ const dayjs = require('dayjs');
 const { getTasksForStudentOnDate, normalizeTaskRow } = require('./taskService');
 const { sendSubscribeMessage } = require('./wxPush');
 const { sendMorningPlan, sendDueReminders, sendEveningCheck, getPaidStudents } = require('./bots/supervisorBot');
+const { sendWeeklyReportEmail } = require('./reportMailer');
+const { dispatchScheduledBotPushes } = require('./botPush');
 const { downgradeExpiredTrials, downgradeExpiredPaid } = require('./entitlements');
 const config = require('../config');
 
@@ -275,6 +277,9 @@ function startScheduler(db, notifyClient) {
       sendDueReminders(db, dayjs()).catch((err) => {
         console.error('[scheduler] 发送付费学员到点提醒失败:', err.message);
       });
+      dispatchScheduledBotPushes(db, dayjs()).catch((err) => {
+        console.error('[scheduler] 机器人定时推送失败:', err.message);
+      });
     } catch (err) {
       console.error('分钟 cron 错误:', err);
     }
@@ -356,6 +361,14 @@ function startScheduler(db, notifyClient) {
             if (reportData && plannerBot.sendReportToUser) {
               plannerBot.sendReportToUser(db, r.studentId, reportData).catch((err) => {
                 console.error(`[scheduler] 发送周报失败 studentId=${r.studentId}:`, err.message);
+              });
+              sendWeeklyReportEmail(db, {
+                reportId: r.reportId,
+                studentId: r.studentId,
+                report: reportData,
+                weekStart: reportRow?.week_start || weekTag
+              }).catch((err) => {
+                console.error(`[scheduler] 邮件周报发送失败 studentId=${r.studentId}:`, err.message);
               });
             }
           }

@@ -1,11 +1,12 @@
 /**
  * 共享 AI 服务封装
- * 供所有机器人、C-12 及业务模块统一调用 DeepSeek API
+ * 供所有机器人、C-12 及业务模块统一调用 OpenAI Chat Completions 兼容 API。
+ * 支持将全站切换到 MiniMax-M3，并为 M3 自动开启 Adaptive Thinking。
  *
  * 环境变量依赖（已在 .env 或 config.js 中读取）：
- *   AI_API_URL  — DeepSeek API 基础地址，如 https://api.deepseek.com/v1/chat/completions
+ *   AI_API_URL  — OpenAI Chat Completions 兼容地址
  *   AI_API_KEY  — API 密钥
- *   AI_MODEL    — 默认模型，如 deepseek-chat（即 DeepSeek-V3）
+ *   AI_MODEL    — 默认模型；AI_PROVIDER=minimax 时改用 MINIMAX_* 配置
  */
 
 const https = require('https');
@@ -15,10 +16,13 @@ const config = require('../config');
 
 // ── 常量 ──
 
-const DEFAULT_TIMEOUT_MS = 30000;          // 默认请求超时 30 秒
+const DEFAULT_TIMEOUT_MS = 30000;          // 普通供应商默认请求超时 30 秒
+const MINIMAX_TIMEOUT_MS = 180000;         // 多模态与深度思考预留 3 分钟
+const DEEPSEEK_TIMEOUT_MS = 300000;        // V4 Pro max thinking 预留 5 分钟
 const DEFAULT_MAX_TOKENS = 2000;           // 默认最大输出 token 数
 const DEFAULT_TEMPERATURE = 0.7;           // 默认温度
-const DEFAULT_MODEL = 'deepseek-chat';       // DeepSeek-V3
+const DEFAULT_MODEL = 'deepseek-chat';       // 未显式选择供应商时的兼容回退
+const TRANSIENT_HTTP_STATUSES = new Set([408, 409, 425, 429, 500, 502, 503, 504]);
 
 const EMBEDDING_MODEL = 'Xenova/bge-small-zh-v1.5'; // 中文本地 embedding 模型
 let embeddingPipeline = null;              // 懒加载的 embedding pipeline
@@ -71,7 +75,14 @@ function postJson(url, body, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS) {
             } catch (_) {
               // 保持默认 errMsg
             }
-            reject(new Error(`AI API 错误: ${errMsg}`));
+            const error = new Error(`AI API 错误: ${errMsg}`);
+            error.statusCode = Number(res.statusCode) || 0;
+            error.retryable = TRANSIENT_HTTP_STATUSES.has(error.statusCode);
+            const retryAfterSeconds = Number(res.headers['retry-after']);
+            error.retryAfterMs = Number.isFinite(retryAfterSeconds)
+              ? Math.max(0, retryAfterSeconds * 1000)
+              : 0;
+            reject(error);
             return;
           }
           try {
@@ -85,11 +96,16 @@ function postJson(url, body, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS) {
 
     req.on('timeout', () => {
       req.destroy();
-      reject(new Error('AI 请求超时'));
+      const error = new Error('AI 请求超时');
+      error.retryable = true;
+      reject(error);
     });
 
     req.on('error', (err) => {
-      reject(new Error(`AI 网络错误: ${err.message}`));
+      const error = new Error(`AI 网络错误: ${err.message}`);
+      error.code = err.code;
+      error.retryable = true;
+      reject(error);
     });
 
     req.write(postData);
@@ -154,11 +170,21 @@ function postStream(url, body, apiKey, timeoutMs = DEFAULT_TIMEOUT_MS) {
 
 // ── 内部工具：安全提取 AI 回复内容 ──
 
+function stripThinkingContent(value) {
+  const content = String(value || '');
+  const withoutCompleteBlocks = content.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  if (!withoutCompleteBlocks && /<think>/i.test(content) && !/<\/think>/i.test(content)) {
+    return '';
+  }
+  return withoutCompleteBlocks;
+}
+
 function extractContent(data) {
   if (!data || typeof data !== 'object') return '';
-  return data.choices?.[0]?.message?.content
+  const content = data.choices?.[0]?.message?.content
     || data.choices?.[0]?.delta?.content
     || '';
+  return stripThinkingContent(content);
 }
 
 // ── 内部工具：读取 SSE 流中的一行数据 ──
@@ -189,22 +215,141 @@ async function* readSSEStream(response) {
 
 // ── 内部工具：获取配置 ──
 
-function getAIConfig() {
+function getAIConfig(options = {}) {
+  if (options.provider === 'minimax') {
+    return {
+      apiKey: config.minimaxApiKey || '',
+      apiUrl: config.minimaxApiUrl || '',
+      model: config.minimaxModel || 'MiniMax-M3',
+      provider: 'minimax',
+    };
+  }
+  if (options.provider === 'deepseek') {
+    return {
+      apiKey: config.deepseekApiKey || '',
+      apiUrl: config.deepseekApiUrl || 'https://api.deepseek.com/chat/completions',
+      model: config.deepseekModel || 'deepseek-v4-pro',
+      provider: 'deepseek',
+    };
+  }
   return {
     apiKey: config.aiApiKey || '',
     apiUrl: config.aiApiUrl || '',
-    model: config.aiModel || DEFAULT_MODEL
+    model: config.aiModel || DEFAULT_MODEL,
+    provider: config.aiProvider || 'default',
   };
 }
 
-function checkConfig() {
-  const { apiKey, apiUrl } = getAIConfig();
+function checkConfig(options = {}) {
+  const { apiKey, apiUrl, provider } = getAIConfig(options);
   if (!apiKey || !apiUrl) {
-    throw new Error('AI 服务未配置：请在 .env 中设置 AI_API_KEY 和 AI_API_URL');
+    const variableHint = provider === 'minimax'
+      ? 'MINIMAX_API_KEY'
+      : (provider === 'deepseek' ? 'DEEPSEEK_API_KEY' : 'AI_API_KEY 和 AI_API_URL');
+    throw new Error(`AI 服务未配置：请在 .env 中设置 ${variableHint}`);
+  }
+}
+
+function isMiniMaxM3(aiConfig, model) {
+  return String(model || aiConfig?.model || '').toLowerCase() === 'minimax-m3'
+    && (aiConfig?.provider === 'minimax' || /api\.minimaxi\.com/i.test(aiConfig?.apiUrl || ''));
+}
+
+function isDeepSeekV4(aiConfig, model) {
+  return /^deepseek-v4-(?:pro|flash)$/i.test(String(model || aiConfig?.model || ''))
+    && (aiConfig?.provider === 'deepseek' || /api\.deepseek\.com/i.test(aiConfig?.apiUrl || ''));
+}
+
+function normalizeChatMessage(message) {
+  const normalized = {
+    role: message.role,
+    // 多模态消息的 content 是内容块数组，不能转换为字符串。
+    content: message.content,
+  };
+  for (const key of [
+    'name',
+    'tool_call_id',
+    'tool_calls',
+    'reasoning_content',
+    'reasoning_details',
+  ]) {
+    if (message[key] !== undefined) normalized[key] = message[key];
+  }
+  return normalized;
+}
+
+function buildChatRequestBody(messages, options = {}, aiConfig = getAIConfig(options), stream = false) {
+  const model = options.model || aiConfig.model || DEFAULT_MODEL;
+  const requestedTokens = Number(options.maxCompletionTokens || options.maxTokens)
+    || DEFAULT_MAX_TOKENS;
+  const body = {
+    model,
+    messages: messages.map(normalizeChatMessage),
+  };
+
+  if (isMiniMaxM3(aiConfig, model)) {
+    body.max_completion_tokens = Math.max(
+      requestedTokens,
+      Number(config.minimaxMaxCompletionTokens) || 8192
+    );
+    body.thinking = options.thinking || { type: 'adaptive' };
+    body.reasoning_split = true;
+    body.service_tier = options.serviceTier || config.minimaxServiceTier || 'priority';
+    body.temperature = options.temperature !== undefined ? options.temperature : 1;
+  } else if (isDeepSeekV4(aiConfig, model)) {
+    body.max_tokens = Math.max(
+      requestedTokens,
+      Number(config.deepseekMaxCompletionTokens) || 131072
+    );
+    body.thinking = options.thinking || { type: 'enabled' };
+    body.reasoning_effort = options.reasoningEffort
+      || config.deepseekReasoningEffort
+      || 'max';
+  } else {
+    body.max_tokens = requestedTokens;
+    body.temperature = options.temperature !== undefined ? options.temperature : DEFAULT_TEMPERATURE;
+  }
+
+  if (Array.isArray(options.tools) && options.tools.length) body.tools = options.tools;
+  if (options.toolChoice !== undefined) body.tool_choice = options.toolChoice;
+  if (stream) body.stream = true;
+  return body;
+}
+
+function assertProviderSuccess(data) {
+  const statusCode = Number(data?.base_resp?.status_code || 0);
+  if (statusCode !== 0) {
+    throw new Error(data?.base_resp?.status_msg || `MiniMax 错误码 ${statusCode}`);
   }
 }
 
 // ── 核心 API ──
+
+/**
+ * 返回供应商完整 assistant message，供 Tool Use / Interleaved Thinking 循环使用。
+ * reasoning_content/reasoning_details 只参与后续模型请求，不应直接展示给用户。
+ */
+async function chatCompletion(messages, options = {}) {
+  checkConfig(options);
+  const aiConfig = getAIConfig(options);
+  const { apiKey, apiUrl } = aiConfig;
+  const body = buildChatRequestBody(messages, options, aiConfig, false);
+  const timeoutMs = options.timeoutMs
+    || (isMiniMaxM3(aiConfig, body.model)
+      ? MINIMAX_TIMEOUT_MS
+      : (isDeepSeekV4(aiConfig, body.model) ? DEEPSEEK_TIMEOUT_MS : DEFAULT_TIMEOUT_MS));
+  const data = await postJson(apiUrl, body, apiKey, timeoutMs);
+  assertProviderSuccess(data);
+  const message = data?.choices?.[0]?.message;
+  if (!message || typeof message !== 'object') {
+    throw new Error('AI 返回的 assistant message 无效');
+  }
+  return {
+    data,
+    message,
+    finishReason: data?.choices?.[0]?.finish_reason || '',
+  };
+}
 
 /**
  * 标准对话调用（非流式）
@@ -217,18 +362,9 @@ function checkConfig() {
  * @returns {Promise<string>} AI 回复文本
  */
 async function chat(messages, options = {}) {
-  checkConfig();
-  const { apiKey, apiUrl, model } = getAIConfig();
-  const body = {
-    model: options.model || model || DEFAULT_MODEL,
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    max_tokens: options.maxTokens || DEFAULT_MAX_TOKENS,
-    temperature: options.temperature !== undefined ? options.temperature : DEFAULT_TEMPERATURE
-  };
-
   try {
-    const data = await postJson(apiUrl, body, apiKey, options.timeoutMs || DEFAULT_TIMEOUT_MS);
-    const content = extractContent(data);
+    const completion = await chatCompletion(messages, options);
+    const content = stripThinkingContent(completion.message.content);
     if (!content) {
       throw new Error('AI 返回空内容');
     }
@@ -246,19 +382,16 @@ async function chat(messages, options = {}) {
  * @returns {AsyncGenerator<string>} 逐段生成的文本
  */
 async function* streamChat(messages, options = {}) {
-  checkConfig();
-  const { apiKey, apiUrl, model } = getAIConfig();
-  const body = {
-    model: options.model || model || DEFAULT_MODEL,
-    messages: messages.map((m) => ({ role: m.role, content: m.content })),
-    max_tokens: options.maxTokens || DEFAULT_MAX_TOKENS,
-    temperature: options.temperature !== undefined ? options.temperature : DEFAULT_TEMPERATURE,
-    stream: true
-  };
+  checkConfig(options);
+  const aiConfig = getAIConfig(options);
+  const { apiKey, apiUrl } = aiConfig;
+  const body = buildChatRequestBody(messages, options, aiConfig, true);
+  const timeoutMs = options.timeoutMs
+    || (isMiniMaxM3(aiConfig, body.model) ? MINIMAX_TIMEOUT_MS : DEFAULT_TIMEOUT_MS);
 
   let response;
   try {
-    response = await postStream(apiUrl, body, apiKey, options.timeoutMs || DEFAULT_TIMEOUT_MS);
+    response = await postStream(apiUrl, body, apiKey, timeoutMs);
   } catch (err) {
     console.error('[AI.streamChat] 流式调用失败:', err.message);
     throw err;
@@ -423,5 +556,10 @@ module.exports = {
   generateEmbedding,
   summarize,
   generateStudyPlan,
-  explainQuestion
+  explainQuestion,
+  chatCompletion,
+  buildChatRequestBody,
+  getAIConfig,
+  isDeepSeekV4,
+  stripThinkingContent,
 };

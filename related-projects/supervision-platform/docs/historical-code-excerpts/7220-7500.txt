@@ -1,0 +1,281 @@
+7220	        <span className="eyebrow">自测</span>
+7221	        <h1>自测</h1>
+7222	        <p>入学自测负责摸底；日测 / 周测 / 月测按学员计划一对一出题，不在此预置固定试卷。</p>
+7223	      </div>
+7224	    </section>
+7225	
+7226	    <div className="bank-tab-bar">
+7227	      <button type="button" className={bankTab === 'entrance' ? 'active' : ''} onClick={() => setBankTab('entrance')}>
+7228	        入学自测
+7229	        <small>3 套固定卷</small>
+7230	      </button>
+7231	      <button type="button" className={bankTab === 'periodic' ? 'active' : ''} onClick={() => setBankTab('periodic')}>
+7232	        日 / 周 / 月自测
+7233	        <small>{enabledPushCount} 人已开通</small>
+7234	      </button>
+7235	      <button type="button" className={bankTab === 'practice-books' ? 'active' : ''} onClick={() => setBankTab('practice-books')}>
+7236	        刷题书库
+7237	        <small>含代学书籍</small>
+7238	      </button>
+7239	    </div>
+7240	
+7241	    {bankTab === 'practice-books' && <CompanionStudyManagement notify={notify} embedded/>}
+7242	
+7243	    {bankTab === 'periodic' && (
+7244	      <section className="panel periodic-assessment-bank is-compact">
+7245	        <PanelHead title="日测 · 周测 · 月测" action={modelReady ? '模型已就绪' : '模型待配置'}/>
+7246	        <div className="periodic-summary-row">
+7247	          {getTeacherAssessmentSpecs().map(spec => (
+7248	            <article className={`periodic-spec-card compact tone-${spec.tone}`} key={spec.id}>
+7249	              <span className="eyebrow">{spec.subject} · {spec.cadence}</span>
+7250	              <h3>{spec.title}</h3>
+7251	              <b>{getAssessmentSpecFormat(spec)}</b>
+7252	              <p>{spec.desc}</p>
+7253	            </article>
+7254	          ))}
+7255	        </div>
+7256	        <div className="periodic-compact-meta">
+7257	          <p>优先级：月测日 &gt; 周测日 &gt; 日测日。每位学员按「个人起始日」独立推送，不共用同一套题。</p>
+7258	          <p>开通入口：学员管理 → 学员详情 → 日周月自测指定。句子取自考研阅读真题；同卷不重复，跨日可重复。</p>
+7259	        </div>
+7260	        <div className="periodic-ai-entry">
+7261	          <div className="periodic-ai-entry-info">
+7262	            <span className="eyebrow">出题 AI</span>
+7263	            <h3>{aiPromptOpen ? '提示词编辑' : '提示词与模型窗口'}</h3>
+7264	            <p>
+7265	              出题槽位：{modelReady ? (assessmentModel?.model || '已接入') : '未接入'}
+7266	              {' · '}
+7267	              {modelReady ? `${assessmentModel?.name || '已配置模型'} · 已启用` : '请到系统设置 → 模型管理新增模型，再到监管机器人选择'}
+7268	              {' · '}
+7269	              已开通 {enabledPushCount} 人
+7270	            </p>
+7271	          </div>
+7272	          <button type="button" className={aiPromptOpen ? 'secondary' : 'primary'} onClick={() => setAiPromptOpen(open => !open)}>
+7273	            {aiPromptOpen ? '收起' : '进入编辑'}
+7274	          </button>
+7275	        </div>
+7276	        {aiPromptOpen && (
+7277	          <div className="periodic-ai-window">
+7278	            <p className="periodic-ai-window-tip">正式出题走服务端；密钥不进前端。此处可预览、修改并复制按学员计划生成的提示词。</p>
+7279	            <PeriodicAssessmentAiPanel students={students} aiSettings={aiSettings} notify={notify}/>
+7280	          </div>
+7281	        )}
+7282	      </section>
+7283	    )}
+7284	
+7285	    {bankTab === 'entrance' && <>
+7286	    {!activePaper ? <div className="empty-line"><FileQuestion size={20}/><span>暂无可展示的试卷，请先创建并发布一套服务端试卷。</span></div> : <>
+7287	    <div className="plan-subjects">
+7288	      {paperCatalog.map(paper => (
+7289	        <button key={paper.id} className={activePaperId === paper.id ? 'active' : ''} onClick={() => { setActivePaperId(paper.id); cancelGrading(); setPreviewingPaperId(null); }}>
+7290	          {paper.title}
+7291	          <small className="paper-level-tag">· {paper.level}</small>
+7292	        </button>
+7293	      ))}
+7294	      {!paperCatalog.length && <div className="empty-line"><FileQuestion size={20}/><span>服务端暂无可管理试卷，请先创建并发布试卷。</span></div>}
+7295	    </div>
+7296	    <section className="panel paper-overview">
+7297	      <div className="paper-overview-meta">
+7298	        <span className="eyebrow">入学自测 · {activePaper.level}</span>
+7299	        <h2>{activePaper.title}</h2>
+7300	        <p>{activePaper.summary}</p>
+7301	        <div className="paper-overview-stats">
+7302	          <span>{activePaper.subject}独立试卷</span>
+7303	          <span>共 {flattenPaperQuestions(activePaper).length} 题 · 每题 2 分</span>
+7304	          <span>满分 100 分 · 及格线 {activePaper.passThreshold} 分</span>
+7305	          <span>开始答题后限时 1 小时，可提前交卷</span>
+7306	        </div>
+7307	      </div>
+7308	      <div className="paper-overview-actions">
+7309	        <button className="secondary" onClick={() => setPreviewingPaperId(previewPaper)}><FileQuestion size={16}/>{previewingPaperId === activePaperId ? '收起试卷预览' : '预览试卷结构'}</button>
+7310	        <span className="paper-overview-link">学生作答链接前缀：<b>{`${typeof window !== 'undefined' && window.location ? window.location.origin : ''}/exam/${activePaper.shareSlug}`}</b></span>
+7311	      </div>
+7312	    </section>
+7313	    {previewingPaperId === activePaperId && <section className="panel paper-preview-panel">
+7314	      <PanelHead title={`${activePaper.title} · 试卷预览`} action="教师参考"/>
+7315	      {activePaper.serverManaged && <article className="paper-section"><h3>服务端题目快照（{flattenPaperQuestions(activePaper).length} 题）</h3><ol>{flattenPaperQuestions(activePaper).map(question => <li key={question.id}><b>{question.number}. {question.prompt}</b>{question.options?.length ? <div className="paper-options">{question.options.map((option, index) => <span key={index}>{String.fromCharCode(65 + index)}. {typeof option === 'object' ? option.text : option}</span>)}</div> : <small>主观题 · 提交后按服务端批改状态展示</small>}</li>)}</ol></article>}
+7316	      {!activePaper.serverManaged && activePaper.subject === '政治' && <article className="paper-section">
+7317	        <h3>政治基础单选题（{activePaper.sections.政治.length} 题，每题 2 分，共 100 分）</h3>
+7318	        <ol>{activePaper.sections.政治.map(q => <li key={q.id}><b>{q.number}. {q.prompt}</b><div className="paper-options">{q.options.map((option, index) => <span key={index}>{String.fromCharCode(65 + index)}. {option}</span>)}</div></li>)}</ol>
+7319	      </article>}
+7320	      {!activePaper.serverManaged && activePaper.subject === '英语' && <article className="paper-section">
+7321	        <h3>英语基础单选题（共 {activePaper.sections.英语.vocabulary.length + activePaper.sections.英语.grammar.length + activePaper.sections.英语.translation.length} 题，每题 2 分，共 100 分）</h3>
+7322	        <h4>实词辨析（{activePaper.sections.英语.vocabulary.length} 题）</h4>
+7323	        <ol>{activePaper.sections.英语.vocabulary.map(q => <li key={q.id}><b>{q.number}. {q.word}</b><div className="paper-options">{q.options.map((option, index) => <span key={index}>{String.fromCharCode(65 + index)}. {option}</span>)}</div></li>)}</ol>
+7324	        <h4>语法填空（{activePaper.sections.英语.grammar.length} 题）</h4>
+7325	        <ol>{activePaper.sections.英语.grammar.map(q => <li key={q.id}><b>{q.number}. {q.sentence}</b><div className="paper-options">{q.options.map((option, index) => <span key={index}>{String.fromCharCode(65 + index)}. {option}</span>)}</div></li>)}</ol>
+7326	        <h4>英译中句子翻译（{activePaper.sections.英语.translation.length} 题）</h4>
+7327	        <ol>{activePaper.sections.英语.translation.map(q => <li key={q.id}><b>{q.number}. {q.sentence}</b><div className="paper-options">{q.options.map((option, index) => <span key={index}>{String.fromCharCode(65 + index)}. {option}</span>)}</div></li>)}</ol>
+7328	      </article>}
+7329	      {!activePaper.serverManaged && activePaper.subject === '数学' && <article className="paper-section">
+7330	        <h3>数学基础单选题（{activePaper.sections.数学.length} 题，每题 2 分，共 100 分）</h3>
+7331	        <ol>{activePaper.sections.数学.map(q => <li key={q.id}><b>{q.number}. {q.prompt}</b><div className="paper-options">{q.options.map((option, index) => <span key={index}>{renderMathOption(option, index)}</span>)}</div></li>)}</ol>
+7332	      </article>}
+7333	    </section>}
+7334	    <section className="panel table-panel">
+7335	      <PanelHead title="试卷分发 · 每位学员的作答链接" action={`${Object.keys(paperDistributions).length} 名已发送`}/>
+7336	      <div className="exam-send-grid distribution-grid">
+7337	        <label>选择学员
+7338	          <select value="" onChange={event => { const student = students.find(item => String(item.id) === String(event.target.value)); if (student) distributePaper(student); event.target.value=''; }}>
+7339	            <option value="">分配给…</option>
+7340	            {students.map(item => <option value={item.id} key={item.id}>{item.name} · {item.status}</option>)}
+7341	          </select>
+7342	        </label>
+7343	        <label>已发送学员
+7344	          <small>{Object.keys(paperDistributions).length ? `${Object.keys(paperDistributions).length} 名学员已获得作答链接` : '暂未分发'}</small>
+7345	        </label>
+7346	        <div>
+7347	          <span>链接说明</span>
+7348	          <p>选择学员分发后，专属链接会显示在下方表格中，可直接复制后通过二维码、短信或微信发送给学生。</p>
+7349	        </div>
+7350	      </div>
+7351	      {Object.keys(paperDistributions).length > 0 && <table>
+7352	        <thead><tr><th>学员</th><th>状态</th><th>分发时间</th><th>可开始至</th><th>作答截止</th><th>作答链接</th><th>操作</th></tr></thead>
+7353	        <tbody>{Object.values(paperDistributions).map(item => (
+7354	          <tr key={item.studentId}>
+7355	            <td><b>{item.studentName}</b></td>
+7356	            <td><span className="badge ok">{item.status}</span></td>
+7357	            <td>{new Date(item.assignedAt).toLocaleString('zh-CN')}</td>
+7358	            <td>{item.startDeadlineAt ? new Date(item.startDeadlineAt).toLocaleString('zh-CN') : item.expiresAt ? new Date(item.expiresAt).toLocaleString('zh-CN') : '旧链接未设时限'}</td>
+7359	            <td>{item.examDeadlineAt ? new Date(item.examDeadlineAt).toLocaleString('zh-CN') : item.startedAt ? '计时信息待同步' : '未开始'}</td>
+7360	            <td>
+7361	              <div className="share-link-row">
+7362	                <input value={item.shareUrl} readOnly onFocus={event => event.target.select()}/>
+7363	                <button className="quiet-button" onClick={() => {
+7364	                  if (navigator?.clipboard?.writeText) {
+7365	                    navigator.clipboard.writeText(item.shareUrl).then(() => { setCopiedLink(item.shareUrl); notify('作答链接已复制到剪贴板'); }).catch(() => notify('复制失败，请手动选择文本'));
+7366	                  } else {
+7367	                    setCopiedLink(item.shareUrl);
+7368	                    notify('请手动复制输入框中的链接');
+7369	                  }
+7370	                }}>复制链接</button>
+7371	              </div>
+7372	            </td>
+7373	            <td><button className="danger-button" disabled={item.status === '已撤销'} onClick={() => revokeDistribution(item)}>{item.status === '已撤销' ? '已撤回' : '撤回'}</button></td>
+7374	          </tr>
+7375	        ))}</tbody>
+7376	      </table>}
+7377	    </section>
+7378	    <section className="panel table-panel">
+7379	      <PanelHead title="学生提交与 AI 批改" action={`${paperSubmissions.length} 条`}/>
+7380	      {paperSubmissions.length === 0 && <div className="empty-line"><Sparkles size={20}/><span>暂无学生提交。学生完成作答后会自动批改并写入自测档案，老师可在此查看结果或进行复核。</span></div>}
+7381	      {paperSubmissions.length > 0 && <table>
+7382	        <thead><tr><th>学员</th><th>提交时间</th><th>状态</th><th>分数</th><th>操作</th></tr></thead>
+7383	        <tbody>{paperSubmissions.map(item => (
+7384	          <tr key={item.id}>
+7385	            <td><b>{item.studentName}</b></td>
+7386	            <td>{new Date(item.submittedAt).toLocaleString('zh-CN')}</td>
+7387	            <td><span className={`badge ${item.status === '已批改' ? 'ok' : 'warn'}`}>{item.status}</span></td>
+7388	            <td>{typeof item.score === 'number' ? <b>{item.score} / {item.total}</b> : <span>—</span>}</td>
+7389	            <td>
+7390	              <button className="quiet-button" onClick={() => startGrading(item)}>查看或复核<ChevronRight size={14}/></button>
+7391	            </td>
+7392	          </tr>
+7393	        ))}</tbody>
+7394	      </table>}
+7395	    </section>
+7396	    {activeSubmission && activeStudent && <section className="panel grading-panel">
+7397	      <PanelHead title={`${activeStudent.name} · ${activePaper.title} · ${activeSubmission.status === '已批改' ? '批改结果' : '批改工作台'}`} action="返回题库列表" onAction={cancelGrading}/>
+7398	      <div className="grading-overview">
+7399	        <div><span>作答时间</span><b>{new Date(activeSubmission.submittedAt).toLocaleString('zh-CN')}</b></div>
+7400	        <div><span>提交状态</span><b>{activeSubmission.status}</b></div>
+7401	        <div><span>评分规则</span><b>50 题 × 2 分，满分 100 分</b></div>
+7402	        <div><span>批改模型槽位</span><b>{gradingReady ? (gradingModel?.model || '已接入') : '未就绪'}</b></div>
+7403	      </div>
+7404	      {activeSubmission.status !== '已批改' && <p className="grading-note">
+7405	        「自测批改机器人」统一负责入学自测、日测、周测和月测的批改与解析。
+7406	        {gradingReady
+7407	          ? ` 当前使用 ${gradingModel?.name || '已配置模型'} / ${gradingModel?.model || '模型'}。`
+7408	          : ' 请先到系统设置 → 模型管理新增模型，再到监管机器人 →「自测批改机器人」选择模型并启用。'}
+7409	        老师可在此复核作答，再一键生成错题解析与个人自测档案。
+7410	      </p>}
+7411	      <div className="grading-list">
+7412	        {flattenPaperQuestions(activePaper).map(question => (
+7413	          <div className="grading-question" key={question.id}>
+7414	            <div className="grading-question-head">
+7415	              <span className="grading-tag">{question.subjectLabel}</span>
+7416	              <b>第 {question.number} 题 · {isMultipleChoiceQuestion(question) ? '多选题' : getQuestionType(question) === 'single_choice' ? '单选题' : getQuestionType(question) === 'short_answer' ? '主观题' : getQuestionType(question)}</b>
+7417	            </div>
+7418	            <div className="grading-prompt">{question.subject === '数学' ? <MathFormula value={String(question.prompt).replace(/^\d+\.\s*/, '')}/> : question.prompt}</div>
+7419	            <div className="paper-options grading-options">{question.options.map((option, index) => {
+7420	              const letter = getQuestionOptionKey(option, index);
+7421	              const multiple = isMultipleChoiceQuestion(question);
+7422	              const studentAnswer = getStoredQuestionAnswer(gradingDraftAnswers || activeSubmission.answers, question, question.id);
+7423	              const selectedAnswers = multiple ? normalizeMultipleChoiceAnswer(studentAnswer) : [String(studentAnswer || '')];
+7424	              const isCorrect = answersMatch(studentAnswer, question.correctAnswer ?? question.answer, multiple);
+7425	              const isMarked = selectedAnswers.includes(letter);
+7426	              const optionClass = isMarked ? 'is-marked' : '';
+7427	              const answerClass = studentAnswer !== undefined && studentAnswer !== '' ? (isCorrect ? 'is-correct' : 'is-wrong') : '';
+7428	              return <label key={index} className={`grading-option ${optionClass} ${answerClass}`}>
+7429	                <input type={multiple ? 'checkbox' : 'radio'} name={question.id} value={letter} checked={isMarked} onChange={event => updateGradingAnswer(question.id, multiple ? toggleMultipleChoiceAnswer(activeSubmission.answers, question.id, letter) : event.target.value)}/>
+7430	                {question.subject === '数学' && option && typeof option === 'object' && option.isLatex ? <MathFormula value={option.text}/> : <span>{letter}. {renderMathText(getQuestionOptionText(option))}</span>}
+7431	              </label>;
+7432	            })}</div>
+7433	            <div className="grading-answer">
+7434	              <span>正确答案：<b>{normalizeMultipleChoiceAnswer(question.correctAnswer ?? question.answer).join('、') || '待配置'}</b></span>
+7435	              <span>学生作答：<b>{normalizeMultipleChoiceAnswer(getStoredQuestionAnswer(activeSubmission.answers, question, question.id)).join('、') || '未作答'}</b></span>
+7436	              {getStoredQuestionAnswer(activeSubmission.answers, question, question.id) && <span className={answersMatch(getStoredQuestionAnswer(activeSubmission.answers, question, question.id), question.correctAnswer ?? question.answer, isMultipleChoiceQuestion(question)) ? 'green-text' : 'danger-text'}>{answersMatch(getStoredQuestionAnswer(activeSubmission.answers, question, question.id), question.correctAnswer ?? question.answer, isMultipleChoiceQuestion(question)) ? '答对' : '答错'}</span>}
+7437	            </div>
+7438	          </div>
+7439	        ))}
+7440	      </div>
+7441	      <section className="grading-controls">
+7442	        <div><span className="eyebrow">主观题结果</span><p>客观题由服务端题目快照评分；主观题仅在教师填写后计入最终分数。</p></div>
+7443	        <label>批改状态<select value={gradingStatus} onChange={event => setGradingStatus(event.target.value)} disabled={gradingPending}><option value="部分待批改">部分待批改</option><option value="待批改">待批改</option><option value="已批改">已批改</option></select></label>
+7444	        <label>主观分（可选）<input type="number" min="0" value={gradingSubjectiveScore} onChange={event => setGradingSubjectiveScore(event.target.value)} placeholder="未批改留空" disabled={gradingPending}/></label>
+7445	        <label className="grading-note-field">教师批注<textarea value={gradingNote} onChange={event => setGradingNote(event.target.value)} placeholder="填写批改说明或后续建议" rows={3} disabled={gradingPending}/></label>
+7446	      </section>
+7447	      <div className="form-footer">
+7448	        <BackButton label="返回题库列表" onClick={cancelGrading}/>
+7449	        <button className="primary" onClick={submitGrading} disabled={gradingPending}>{gradingPending ? '正在保存…' : '保存批改结果'}</button>
+7450	      </div>
+7451	      {(activeSubmission.status === '已批改' || activeSubmission.gradingStatus === 'graded' || activeSubmission.gradingStatus === '已批改') && <div className="grading-summary">
+7452	        <h3>批改反馈</h3>
+7453	        <p><b>总分：</b>{activeSubmission.score} / {activeSubmission.total}</p>
+7454	        <p><b>正确率：</b>{activeSubmission.total ? `${Math.round((activeSubmission.score / activeSubmission.total) * 100)}%` : '0%'}</p>
+7455	        <p><b>错题数量：</b>{activeSubmission.wrongQuestions.length}</p>
+7456	        <h4>错题与正确做法</h4>
+7457	        <ol className="grading-wrong-list">
+7458	          {activeSubmission.wrongQuestions.map(item => (
+7459	            <li key={item.questionId}>
+7460	              <div><b>{item.subject} · 第 {item.number} 题</b><small>正确：{item.correctAnswer} · 学生作答：{item.studentAnswer || '未作答'}</small></div>
+7461	              <p>正确做法：{item.correctMethod}</p>
+7462	              <p>知识点解析：{item.knowledgePointExplanation}</p>
+7463	            </li>
+7464	          ))}
+7465	        </ol>
+7466	        <h4>整体学习建议</h4>
+7467	        <p className="grading-advice">{activeSubmission.aiFeedback}</p>
+7468	      </div>}
+7469	    </section>}
+7470	    </>}
+7471	    </>}
+7472	  </>;
+7473	}
+7474	
+7475	function PeriodicAssessmentAiPanel({students, aiSettings, notify}) {
+7476	  const enabledStudents = (students || []).filter(item => getAssessmentPush(item).enabled);
+7477	  const [selectedId, setSelectedId] = useState(() => enabledStudents[0]?.id || students?.[0]?.id || '');
+7478	  const [typeId, setTypeId] = useState('daily');
+7479	  const selected = (students || []).find(item => String(item.id) === String(selectedId)) || students?.[0];
+7480	  const availableSpecs = getStudentAssessmentSpecs(selected);
+7481	  const activeTypeId = availableSpecs.some(spec => spec.id === typeId) ? typeId : availableSpecs[0]?.id || '英语-daily';
+7482	  const draftSeed = selected ? buildAssessmentPromptDraft(selected, activeTypeId) : '请先选择学员';
+7483	  const [promptDraft, setPromptDraft] = useState(draftSeed);
+7484	  const [seedKey, setSeedKey] = useState(`${selected?.id || ''}:${activeTypeId}`);
+7485	  const currentKey = `${selected?.id || ''}:${activeTypeId}`;
+7486	  if (currentKey !== seedKey) {
+7487	    setSeedKey(currentKey);
+7488	    setPromptDraft(draftSeed);
+7489	  }
+7490	  const studyDay = selected ? getPersonalStudyDay(selected) : 0;
+7491	  const todayModules = selected ? getStudentAssessmentModules(selected, aiSettings).filter(item => item.isToday) : [];
+7492	
+7493	  return <div className="periodic-ai-panel">
+7494	    <div className="exam-send-grid periodic-ai-controls">
+7495	      <label>预览学员
+7496	        <select value={selected?.id || ''} onChange={event => setSelectedId(event.target.value)}>
+7497	          {(students || []).map(item => (
+7498	            <option value={item.id} key={item.id}>
+7499	              {item.name}{getAssessmentPush(item).enabled ? ' · 已指定' : ' · 未指定'}
+7500	            </option>

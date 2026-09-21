@@ -1,0 +1,8 @@
+.env
+data/uploads/
+data/*.sqlite3
+data/*.sqlite3-*
+data/document_index.json
+__pycache__/
+*.py[cod]
+.DS_Store

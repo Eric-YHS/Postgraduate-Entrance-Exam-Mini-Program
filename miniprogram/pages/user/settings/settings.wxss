@@ -25,6 +25,11 @@
   border-bottom: 0;
 }
 
+.setting-copy {
+  min-width: 0;
+  padding-right: 20rpx;
+}
+
 .item-title {
   font-size: 29rpx;
 }
@@ -42,6 +47,22 @@
 .arrow {
   color: var(--text-tertiary);
   font-size: 28rpx;
+}
+
+.subscribe-action {
+  flex: 0 0 auto;
+  min-width: 112rpx;
+  margin: 0;
+  border-radius: 6rpx;
+  background: var(--primary);
+  color: #fff;
+  font-size: 24rpx;
+  line-height: 2.1;
+}
+
+.subscribe-action[disabled] {
+  background: var(--border);
+  color: var(--text-tertiary);
 }
 
 .version {

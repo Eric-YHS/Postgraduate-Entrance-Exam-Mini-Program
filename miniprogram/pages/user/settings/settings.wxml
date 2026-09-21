@@ -22,6 +22,19 @@
       </view>
       <view class="arrow">></view>
     </view>
+    <view class="setting-item">
+      <view class="setting-copy">
+        <view class="item-title">微信提醒</view>
+        <view class="item-description">{{ subscribeStatus }}</view>
+      </view>
+      <button
+        class="subscribe-action"
+        size="mini"
+        loading="{{ subscribeRunning }}"
+        disabled="{{ !subscribeReady || subscribeRunning }}"
+        bindtap="onSubscribeTest"
+      >验证</button>
+    </view>
   </view>
 
   <view class="setting-group card">

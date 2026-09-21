@@ -57,7 +57,7 @@ function getAccessToken() {
  * @param {object} data - 模板数据
  * @param {string} page - 跳转页面路径
  */
-async function sendSubscribeMessage(openid, templateId, data, page) {
+async function sendSubscribeMessage(openid, templateId, data, page, options = {}) {
   if (!openid || !templateId) {
     return null;
   }
@@ -68,20 +68,24 @@ async function sendSubscribeMessage(openid, templateId, data, page) {
   }
 
   return new Promise((resolve, reject) => {
-    const body = JSON.stringify({
+    const payload = {
       touser: openid,
       template_id: templateId,
       page: page || '',
       data
-    });
+    };
+    if (['developer', 'trial', 'formal'].includes(options.miniprogramState)) {
+      payload.miniprogram_state = options.miniprogramState;
+    }
+    const body = JSON.stringify(payload);
 
     const url = `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${token}`;
-    const options = {
+    const requestOptions = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) }
     };
 
-    const req = https.request(url, options, (response) => {
+    const req = https.request(url, requestOptions, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {

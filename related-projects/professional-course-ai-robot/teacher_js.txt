@@ -1,0 +1,675 @@
+
+const $ = selector => document.querySelector(selector);
+const escapeHtml = value => String(value ?? '').replace(/[&<>'"]/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[char]));
+const labels = {overview:['教学概览','从学习轨迹、资料归属和服务状态掌握平台运行情况。'],students:['学生档案','查看学习天数、频率、操作记录、资料上传量和学习态度。'],courses:['学生上传资料','汇总学生上传的文本资料与考试试卷，并关注解析状态。'],questions:['院校专业课知识管理库','按目标院校和专业课归档学生资料，形成可复用的教研资产。'],tasks:['运行监管','检查已配置、已路由与实际调用状态；配置不等于已触发。'],system:['模型配置','统一添加、验证和分配平台使用的模型。']};
+function show(view){document.querySelectorAll('.view').forEach(node=>node.classList.toggle('on',node.id===view));document.querySelectorAll('[data-view]').forEach(node=>node.classList.toggle('on',node.dataset.view===view));$('#page-title').textContent=labels[view][0];$('#page-copy').textContent=labels[view][1]}
+document.querySelectorAll('[data-view]').forEach(button=>button.onclick=()=>show(button.dataset.view));
+function row(name,configured,detail=''){return `<div class="status"><span title="${name}${detail?` · ${detail}`:''}">${name}${detail?` · ${detail}`:''}</span><b class="${configured?'ok':'off'}">${configured?'已配置':'未配置'}</b></div>`}
+let adminBase='',adminToken='';
+const authHeaders=()=>adminToken?{Authorization:`Bearer ${adminToken}`}:{};
+const formatTime=value=>value?new Date(value).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'--';
+let currentStudents=[];
+function studentSummary(student){return [student.targetSchool,student.targetMajor,student.targetCourse,student.examYear&&`${student.examYear} 考研`].filter(Boolean).join(' · ')||'未补充报考信息'}
+function renderStudents(students){currentStudents=students;const body=$('#students-body');body.innerHTML=students.length?students.map(student=>`<tr><td><b>${escapeHtml(student.displayName)}</b><br><small>${escapeHtml(studentSummary(student))}</small><br><small>${student.id.slice(0,12)}...</small>${student.profileUpdatedAt?`<br><small class="profile-sync-time">档案同步：${formatTime(student.profileUpdatedAt)}</small>`:''}</td><td>${student.learningDays} 天</td><td>${student.learningDays?`${student.learningDays} 天有学习`: '暂无学习'}</td><td>${student.eventCount} 次</td><td>${student.uploadedDocuments} 份</td><td class="attitude">${escapeHtml(student.attitude)}</td><td><div class="student-actions"><button class="secondary course-base" data-student-id="${student.id}" data-enabled="${student.baseCourseEnabled?'1':'0'}">${student.baseCourseEnabled?'第一门已开通':student.permissionRequestStatus==='pending'?'通过专业课申请':'开通第一门专业课'}</button><button class="secondary course-access" data-student-id="${student.id}" data-enabled="${student.extraCourseEnabled?'1':'0'}">${student.extraCourseEnabled?'已开通第二门 · 收回':'开通第二门专业课'}</button><small>${student.permissionRequestStatus==='pending'?'学生已申请，等待你审批':student.permissionRequestStatus==='rejected'?'申请已驳回':''}</small></div></td><td><div class="student-actions"><button class="secondary student-edit" data-student-id="${student.id}">编辑</button><button class="secondary danger student-delete" data-student-id="${student.id}">删除</button></div></td><td>${formatTime(student.lastActivity||student.lastSeenAt)}</td></tr>`).join(''):'<tr><td colspan="9" class="caption">暂无学生行为数据。</td></tr>';body.querySelectorAll('.course-base').forEach(button=>button.onclick=()=>updateBaseCourseAccess(button.dataset.studentId,button.dataset.enabled!=='1'));body.querySelectorAll('.course-access').forEach(button=>button.onclick=()=>updateCourseAccess(button.dataset.studentId,button.dataset.enabled!=='1'));body.querySelectorAll('.student-edit').forEach(button=>button.onclick=()=>openStudentEditor(currentStudents.find(student=>student.id===button.dataset.studentId)));body.querySelectorAll('.student-delete').forEach(button=>button.onclick=()=>deleteStudent(button.dataset.studentId))}
+function renderKnowledge(entries){const body=$('#knowledge-body');body.innerHTML=entries.length?entries.map(entry=>`<tr><td>${entry.school}</td><td>${entry.course}</td><td>${entry.documents}</td><td>${entry.text||0}</td><td>${entry.exam||0}</td><td>${entry.parsed}</td><td>${entry.needsOcr}</td><td>${entry.studentCount}</td></tr>`).join(''):'<tr><td colspan="8" class="caption">暂无已归档的学生资料。</td></tr>'}
+function fillSettings(settings){const form=$('#settings-form');if(!form)return;const roles=settings.modelRoles||{};const set=(name,value)=>{const input=form.elements[name];if(input)input.value=value||''};set('textBaseUrl',roles.text?.baseUrl);set('textModel',roles.text?.model);set('visionBaseUrl',roles.vision?.baseUrl);set('visionModel',roles.vision?.model);set('searchBaseUrl',roles.search?.baseUrl);set('searchModel',roles.search?.model);$('#settings-message').textContent='当前配置已读取。密钥不会回显；留空不会改变已有密钥。'}
+async function exportStudents(){if(!adminBase){alert('请稍候，正在加载教学数据。');return}const response=await fetch(`${adminBase}/admin/students/export`,{headers:authHeaders()});if(!response.ok){alert('导出失败，请刷新页面后重试。');return}const url=URL.createObjectURL(await response.blob()),link=document.createElement('a');link.href=url;link.download='yanban-students.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}
+async function updateCourseAccess(studentId,enabled){if(!adminBase){alert('请稍候，正在加载教学数据。');return}const action=enabled?'开通':'收回';if(!confirm(`确定${action}该学生的第二门专业课权限吗？`))return;try{const response=await fetch(`${adminBase}/admin/students/course-access`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({studentId,extraCourseEnabled:enabled})});const result=await response.json();if(!response.ok)throw new Error(result.message||'权限更新失败');await load()}catch(error){alert(`无法更新课程权限：${error.message}`)}}
+async function updateBaseCourseAccess(studentId,enabled){if(!adminBase){alert('请稍候，正在加载教学数据。');return}const action=enabled?'通过':'收回';if(!confirm(`确定${action}该学生的第一门专业课权限吗？`))return;try{const response=await fetch(`${adminBase}/admin/students/course-access`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({studentId,baseCourseEnabled:enabled})});const result=await response.json();if(!response.ok)throw new Error(result.message||'权限更新失败');await load()}catch(error){alert(`无法更新课程权限：${error.message}`)}}
+function closeStudentEditor(){const editor=$('#student-editor');editor.classList.remove('open');$('#student-form').reset();$('#student-form').elements.studentId.value=''}
+function openStudentEditor(student=null){if(!adminBase){alert('请稍候，正在加载教学数据。');return}const editor=$('#student-editor'),form=$('#student-form');form.reset();form.elements.studentId.value=student?.id||'';for(const field of ['displayName','status','phone','wechatId','email','targetSchool','targetMajor','targetCourse','examYear','notes'])form.elements[field].value=student?.[field]||'';if(!form.elements.status.value)form.elements.status.value='在学';$('#student-editor-title').textContent=student?'编辑学生档案':'新增学生';editor.classList.add('open');editor.scrollIntoView({behavior:'smooth',block:'start'});form.elements.displayName.focus()}
+async function saveStudentProfile(event){event.preventDefault();if(!adminBase){alert('请稍候，正在加载教学数据。');return}const payload=Object.fromEntries(new FormData(event.currentTarget).entries()),editing=Boolean(payload.studentId);const url=editing?`${adminBase}/admin/students/profile`:`${adminBase}/admin/students`;try{const response=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.message||'学生档案保存失败');closeStudentEditor();await load()}catch(error){alert(`无法保存学生档案：${error.message}`)}}
+async function deleteStudent(studentId){if(!adminBase){alert('请稍候，正在加载教学数据。');return}const student=currentStudents.find(item=>item.id===studentId),name=student?.displayName||'该学生',confirmation=`永久删除 ${name}`;if(!confirm(`即将永久删除“${name}”。\n\n这会同时删除学生档案、课程权限与申请、学习记录、上传资料和知识库索引，无法恢复。`))return;const entered=prompt(`为避免误删，请输入：${confirmation}`);if(entered!==confirmation){alert('确认文字不匹配，未执行删除。');return}try{const response=await fetch(`${adminBase}/admin/students/${encodeURIComponent(studentId)}`,{method:'DELETE',headers:authHeaders()});const result=await response.json();if(!response.ok)throw new Error(result.message||'学生档案删除失败');alert(`已永久删除“${name}”，并清理 ${result.deletedDocuments||0} 份归属资料。`);await load()}catch(error){alert(`无法删除学生档案：${error.message}`)}}
+async function saveSettings(event){event.preventDefault();if(!adminBase){alert('请稍候，正在加载教学数据。');return}const form=new FormData(event.currentTarget),payload=Object.fromEntries([...form.entries()].filter(([,value])=>String(value).trim()));const message=$('#settings-message');message.textContent='正在保存服务端配置…';try{const response=await fetch(`${adminBase}/admin/settings`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)});const result=await response.json();if(!response.ok)throw new Error(result.message||'服务端拒绝保存');fillSettings(result);event.currentTarget.querySelectorAll('input[type=password]').forEach(input=>input.value='');message.textContent='配置已保存，正在进行一次真实模型调用验证…';const diagnosticResponse=await fetch(`${adminBase}/diagnostics`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({})});const diagnostic=await diagnosticResponse.json();if(!diagnosticResponse.ok)throw new Error(diagnostic.message||'无法完成模型验证');const probe=(diagnostic.steps||[]).find(item=>item.id==='model_probe');if(probe?.status!=='passed')throw new Error(probe?.detail||'模型验证未通过');message.textContent=`已保存并验证通过：${probe.detail}。学生端现在可以生成院校专属画像。`;await load()}catch(error){message.textContent=`保存或验证失败：${error.message}`}}
+$('#students-export').onclick=exportStudents;$('#settings-form').onsubmit=saveSettings;$('#new-student').onclick=()=>openStudentEditor();$('#student-editor-close').onclick=closeStudentEditor;$('#student-form-cancel').onclick=closeStudentEditor;$('#student-form').onsubmit=saveStudentProfile;
+const baseRenderStudentsForExtraRequest = renderStudents;
+renderStudents = function(students) {
+  baseRenderStudentsForExtraRequest(students);
+  const body = $('#students-body');
+  body?.querySelectorAll('.course-access').forEach(button => {
+    const student = currentStudents.find(item => item.id === button.dataset.studentId);
+    if (!student) return;
+    const pending = student.extraPermissionRequestStatus === 'pending';
+    if (pending && !student.extraCourseEnabled) {
+      button.textContent = `通过第二门申请${student.extraRequestedCourse ? ` · ${student.extraRequestedCourse}` : ''}`;
+      const hint = button.parentElement.querySelector('small');
+      const detail = student.extraRequestedCourseProfile || {};
+      const target = detail.target || {};
+      if (hint) hint.textContent = `第二门：${student.extraRequestedCourse || '未填写科目'} · ${target.school || '院校未填写'} · ${target.major || '专业未填写'} · ${target.examYear || '年份未填写'}，等待你审批`;
+    }
+  });
+};
+const coordinatorStyle = document.createElement('style');
+coordinatorStyle.textContent = `.coordinator-form{display:grid;gap:14px}.coordinator-form label{display:grid;gap:6px;font-size:12px;font-weight:800;color:var(--deep)}.coordinator-form select,.coordinator-form textarea{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}.coordinator-form select{height:39px;padding:0 9px}.coordinator-form textarea{min-height:235px;padding:11px;resize:vertical;line-height:1.65}.coordinator-actions{display:flex;align-items:center;gap:12px}.coordinator-actions small{color:var(--muted);font-size:11px;line-height:1.55}.student-task-detail{display:none;margin:0 0 13px}.student-task-detail.open{display:block}.supervision-summary{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:14px}.supervision-summary span{padding:5px 7px;border-radius:4px;background:#eff8f2;color:#2f654c;font-size:11px}.teacher-checkin{display:grid;grid-template-columns:repeat(14,minmax(0,1fr));gap:5px;margin:12px 0}.teacher-checkin span{display:grid;place-items:center;min-height:36px;border:1px solid var(--line);border-radius:4px;color:#98a59f;font-size:10px}.teacher-checkin span.done{border-color:#8bc39d;background:#eff9f1;color:#237252;font-weight:800}.recent-progress{display:grid;gap:0;border-top:1px solid #edf1ee}.recent-progress div{display:flex;justify-content:space-between;gap:8px;padding:8px 0;border-bottom:1px solid #edf1ee;font-size:11px}.recent-progress .done{color:var(--green);font-weight:800}.recent-progress .missed{color:var(--red);font-weight:800}`;
+document.head.append(coordinatorStyle);
+
+const showWithCoordinator = show;
+show = function(view) { if (view !== 'coordinator') return showWithCoordinator(view); document.querySelectorAll('.view').forEach(node => node.classList.toggle('on', node.id === view)); document.querySelectorAll('[data-view]').forEach(node => node.classList.toggle('on', node.dataset.view === view)); $('#page-title').textContent = '任务监管协调机器人'; $('#page-copy').textContent = '配置教师规则，并查看学生实际完成后的动态调整依据。'; };
+
+const fillSettingsWithCoordinator = fillSettings;
+fillSettings = function(settings) { fillSettingsWithCoordinator(settings); const form=$('#coordinator-form'), coordinator=settings.taskCoordinator||{}; if (!form) return; form.elements.taskCoordinatorEnabled.value=coordinator.enabled?'true':'false'; form.elements.taskCoordinatorPrompt.value=coordinator.prompt||''; $('#coordinator-message').textContent='当前监管策略已读取。提示词只会在服务端参与学生开启后的计划重排。'; };
+
+async function saveCoordinator(event) { event.preventDefault(); if (!adminBase) return alert('请稍候，正在加载教学数据。'); const form=event.currentTarget, message=$('#coordinator-message'); const payload={taskCoordinatorEnabled:form.elements.taskCoordinatorEnabled.value==='true',taskCoordinatorPrompt:form.elements.taskCoordinatorPrompt.value.trim()}; if (!payload.taskCoordinatorPrompt) return message.textContent='请先填写提示词。'; message.textContent='正在保存监管策略…'; try { const response=await fetch(`${adminBase}/admin/settings`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}); const result=await response.json(); if(!response.ok) throw new Error(result.message||'保存失败'); fillSettings(result); message.textContent='监管策略已保存。学生端仅在学生本人开启动态调整后使用该规则。'; } catch(error) { message.textContent=`保存失败：${error.message}`; } }
+
+function renderStudentTaskDetail(detail) { let host=$('#student-task-detail'); if(!host) { host=document.createElement('section'); host.id='student-task-detail'; host.className='panel student-task-detail'; $('#students-body')?.closest('.panel')?.before(host); } if(!host) return; const checkins=detail.checkins||[], metrics=detail.taskMetrics||{}; const cells=checkins.map(day=>{const done=day.done>0&&day.missed===0;return `<span class="${done?'done':''}" title="${day.date}：完成 ${day.done}，未完成 ${day.missed}">${day.date.slice(5)}${done?' ✓':''}</span>`}).join('')||'<span>暂无打卡</span>'; const tasks=(detail.recentTasks||[]).map(item=>`<div><span>${escapeHtml(item.date)} · ${escapeHtml(item.courseName||'专业课')} · ${escapeHtml(item.topic||'任务')}${item.actualMinutes ? ` · 实际 ${escapeHtml(item.actualMinutes)} 分钟` : ' · 未填写实际用时'}</span><b class="${item.status}">${item.status==='done'?'已完成':item.status==='missed'?'未完成':'仅记录用时'}</b></div>`).join('')||'<div><span>暂无任务完成记录</span></div>'; host.innerHTML=`<div class="panel-head"><div><h2>${escapeHtml(detail.displayName)} · 任务监管详情</h2><small>打卡由学生实际勾选任务生成</small></div><button class="secondary" type="button">关闭</button></div><div class="panel-body"><div class="supervision-summary"><span>学生开关：${detail.taskSupervision?.studentEnabled?'已开启':'未开启'}</span><span>教师总开关：${detail.taskSupervision?.available?'已启用':'已暂停'}</span><span>完成率：${metrics.completionRate==null?'暂无':`${Math.round(metrics.completionRate*100)}%`}</span><span>平均实际用时：${metrics.actualMinutesAverage==null?'暂无':`${metrics.actualMinutesAverage} 分钟`}</span><span>学习风险：${escapeHtml(metrics.risk||'样本不足')}</span></div><b>近 14 个有任务日期</b><div class="teacher-checkin">${cells}</div><b>最近任务记录</b><div class="recent-progress">${tasks}</div></div>`; host.classList.add('open'); host.querySelector('button').onclick=()=>host.classList.remove('open'); host.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+
+async function openStudentTaskDetail(studentId) { if(!adminBase) return alert('请稍候，正在加载教学数据。'); try { const response=await fetch(`${adminBase}/admin/students/${encodeURIComponent(studentId)}/task-supervision`,{headers:authHeaders()}); const result=await response.json(); if(!response.ok) throw new Error(result.message||'读取失败'); renderStudentTaskDetail(result); } catch(error) { alert(`无法读取任务详情：${error.message}`); } }
+
+const renderStudentsWithTaskDetail = renderStudents;
+renderStudents = function(students) { renderStudentsWithTaskDetail(students); const body=$('#students-body'); Array.from(body?.rows||[]).forEach((row,index)=>{ const metrics=students[index]?.taskMetrics||{}; const cell=row.cells?.[2]; if(cell&&!cell.querySelector('.task-metric-line')) cell.insertAdjacentHTML('beforeend',`<br><small class="task-metric-line">任务 ${metrics.completionRate==null?'暂无':`${Math.round(metrics.completionRate*100)}%`} · ${escapeHtml(metrics.risk||'样本不足')}</small>`); }); body?.querySelectorAll('.student-edit').forEach(button=>{ if(button.parentElement.querySelector('.student-task-detail-button')) return; const detail=document.createElement('button'); detail.type='button'; detail.className='secondary student-edit student-task-detail-button'; detail.textContent='任务详情'; detail.onclick=()=>openStudentTaskDetail(button.dataset.studentId); button.parentElement.prepend(detail); }); };
+const renderStudentsWithPayment = renderStudents;
+renderStudents = function(students) {
+  renderStudentsWithPayment(students);
+  const body = $('#students-body');
+  body?.querySelectorAll('.course-base, .course-access').forEach(button => {
+    const student = students.find(item => item.id === button.dataset.studentId);
+    const type = button.classList.contains('course-base') ? 'base' : 'extra';
+    const proof = student?.paymentSubmissions?.[type];
+    if (!proof || button.parentElement.querySelector(`.payment-proof[data-payment-type="${type}"]`)) return;
+    const note = document.createElement('small');
+    note.className = 'payment-proof';
+    note.dataset.paymentType = type;
+    note.textContent = `${type === 'base' ? '第一门' : '第二门'}付款核验：${proof.reference || proof.note || '已提交'} · ${formatTime(proof.submittedAt)}`;
+    note.title = proof.note || '';
+    button.parentElement.append(note);
+  });
+};
+
+$('#coordinator-form').onsubmit=saveCoordinator;
+const pricingStyle=document.createElement('style');pricingStyle.textContent=`.pricing-form{display:grid;grid-template-columns:1fr 1fr;gap:13px}.pricing-form label{display:grid;gap:6px;font-size:12px;font-weight:800;color:var(--deep)}.pricing-form input,.pricing-form textarea{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;padding:9px;font:inherit}.pricing-form textarea{min-height:140px;resize:vertical;line-height:1.6}.pricing-form .wide{grid-column:1/-1}@media(max-width:760px){.pricing-form{grid-template-columns:1fr}.pricing-form .wide{grid-column:auto}}`;document.head.append(pricingStyle);
+const paymentProofStyle=document.createElement('style');paymentProofStyle.textContent='.payment-proof{display:block;max-width:260px;margin-top:4px;color:#8a5a18;font-size:10px;line-height:1.45;overflow-wrap:anywhere}';document.head.append(paymentProofStyle);
+const showWithPricing=show;show=function(view){if(view!=='pricing')return showWithPricing(view);document.querySelectorAll('.view').forEach(node=>node.classList.toggle('on',node.id===view));document.querySelectorAll('[data-view]').forEach(node=>node.classList.toggle('on',node.dataset.view===view));$('#page-title').textContent='套餐与人工授权';$('#page-copy').textContent='设置展示价格、付款说明，并由教师审核后手动开通课程。';};
+const fillSettingsWithPricing=fillSettings;fillSettings=function(settings){fillSettingsWithPricing(settings);const form=$('#pricing-form'),pricing=settings.pricing||{};if(!form)return;form.elements.baseCoursePrice.value=pricing.baseCoursePrice||'';form.elements.extraCoursePrice.value=pricing.extraCoursePrice||'';form.elements.paymentInstructions.value=pricing.paymentInstructions||'';$('#pricing-message').textContent='价格仅用于学生端展示；付款与开通均由教师人工审核。';};
+$('#pricing-form').onsubmit=async event=>{event.preventDefault();if(!adminBase)return alert('请稍候，正在加载教学数据。');const form=event.currentTarget,message=$('#pricing-message');const payload=Object.fromEntries(new FormData(form).entries());message.textContent='正在保存套餐设置…';try{const response=await fetch(`${adminBase}/admin/settings`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}),result=await response.json();if(!response.ok)throw new Error(result.message||'保存失败');fillSettings(result);message.textContent='套餐设置已保存，学生端刷新后即可看到。';}catch(error){message.textContent=`保存失败：${error.message}`;}};
+
+const robotManagerStyle = document.createElement('style');
+robotManagerStyle.textContent = `.robot-manager-intro{margin:0 0 14px;color:var(--muted);font-size:12px;line-height:1.65}.robot-rule{margin:0 0 14px;padding:11px 12px;border-left:3px solid #2e7a5b;background:#f3f9f5;color:#446055;font-size:12px;line-height:1.65}.robot-form{display:grid;gap:13px}.robot-form label{display:grid;gap:6px;font-size:12px;font-weight:800;color:var(--deep)}.robot-form select,.robot-form textarea{width:100%;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--ink);font:inherit}.robot-form select{height:39px;padding:0 9px}.robot-form textarea{min-height:150px;padding:10px;resize:vertical;line-height:1.65}.robot-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}.robot-actions small{color:var(--muted);font-size:11px;line-height:1.55}.robot-test-output{display:none;margin-top:12px;padding:12px;border:1px solid #dce9e0;border-radius:6px;background:#fbfefc;color:#42574d;font-size:12px;line-height:1.65;white-space:pre-wrap}.robot-test-output.show{display:block}`;
+document.head.append(robotManagerStyle);
+
+const robotNav = document.querySelector('[data-view="coordinator"]');
+if (robotNav) robotNav.innerHTML = '<span>07</span>机器人管理';
+const robotView = $('#coordinator');
+const robotTitle = robotView?.querySelector('.section-title');
+const robotCopy = robotView?.querySelector('.section-copy');
+if (robotTitle) robotTitle.textContent = '机器人管理';
+if (robotCopy) robotCopy.textContent = '两类机器人共用教师端配置的文本模型。提示词与限制词仅保存在服务端，学生端只接收计划调整结果和学习总结。';
+const dynamicPanel = $('#coordinator-form')?.closest('.panel');
+if (dynamicPanel) {
+  dynamicPanel.querySelector('.panel-head h2').textContent = '动态计划调整机器人';
+  dynamicPanel.querySelector('.panel-head small').textContent = '学生主动开启后，才会调整未来任务';
+  const constraint = document.createElement('label');
+  constraint.innerHTML = '动态计划调整 · 限制词<textarea name="taskCoordinatorConstraints" maxlength="12000" placeholder="限制任务调整幅度、证据边界和禁止行为"></textarea>';
+  $('#coordinator-form .coordinator-actions')?.before(constraint);
+}
+if (robotView && !$('#summary-robot-form')) {
+  robotView.insertAdjacentHTML('beforeend', `<section class="panel"><div class="panel-head"><h2>总结机器人</h2><small>按上海时间向学生网页端发送总结</small></div><form id="summary-robot-form" class="panel-body robot-form"><p class="robot-manager-intro">日总结每天 22:00 发送；周总结每周日 12:00 发送；月总结每月最后一天 12:00 发送。同日优先级：月总结、周总结、日总结。</p><p class="robot-rule">总结只使用该学生的学习计划、完成记录、资料状态与院校信息；机器人未接入文本模型时不会生成虚假总结。</p><label>总结机器人总开关<select name="summaryRobotEnabled"><option value="true">启用：按规则生成并展示</option><option value="false">暂停：不再生成新总结</option></select></label><label>总结机器人 · 提示词<textarea name="summaryRobotPrompt" maxlength="12000" placeholder="规定总结风格、重点和输出结构"></textarea></label><label>总结机器人 · 限制词<textarea name="summaryRobotConstraints" maxlength="12000" placeholder="限制证据范围、字数、禁止虚构内容"></textarea></label><div class="robot-actions"><button class="primary" type="submit">保存总结机器人</button><button class="secondary" type="button" id="test-summary-robot">测试模型生成</button><small id="summary-robot-message">连接后台后可读取配置。</small></div><pre class="robot-test-output" id="summary-robot-output"></pre></form></section>`);
+}
+
+const showWithRobotManager = show;
+show = function(view) { if (view !== 'coordinator') return showWithRobotManager(view); showWithRobotManager(view); $('#page-title').textContent = '机器人管理'; $('#page-copy').textContent = '配置动态计划调整与日/周/月学习总结机器人。'; };
+robotNav && (robotNav.onclick = () => show('coordinator'));
+
+const fillSettingsWithRobotManager = fillSettings;
+fillSettings = function(settings) {
+  fillSettingsWithRobotManager(settings);
+  const dynamicForm = $('#coordinator-form');
+  const coordinator = settings.taskCoordinator || {};
+  if (dynamicForm?.elements.taskCoordinatorConstraints) dynamicForm.elements.taskCoordinatorConstraints.value = coordinator.constraints || '';
+  const summaryForm = $('#summary-robot-form');
+  const summary = settings.summaryRobot || {};
+  if (!summaryForm) return;
+  summaryForm.elements.summaryRobotEnabled.value = summary.enabled ? 'true' : 'false';
+  summaryForm.elements.summaryRobotPrompt.value = summary.prompt || '';
+  summaryForm.elements.summaryRobotConstraints.value = summary.constraints || '';
+  $('#summary-robot-message').textContent = summary.modelConfigured ? '文本模型已配置。总结会按上海时间生成；同日按月、周、日优先。' : '请先到“系统配置”接入文本模型，再测试或生成总结。';
+};
+
+async function saveDynamicRobot(event) {
+  event.preventDefault();
+  if (!adminBase) return alert('请稍候，正在加载教学数据。');
+  const form = event.currentTarget, note = $('#coordinator-message');
+  const payload = { taskCoordinatorEnabled: form.elements.taskCoordinatorEnabled.value === 'true', taskCoordinatorPrompt: form.elements.taskCoordinatorPrompt.value.trim(), taskCoordinatorConstraints: form.elements.taskCoordinatorConstraints.value.trim(), taskCoordinatorModelId: form.elements.taskCoordinatorModelId?.value || '' };
+  if (!payload.taskCoordinatorPrompt || !payload.taskCoordinatorConstraints) return note.textContent = '请完整填写动态计划机器人的提示词和限制词。';
+  note.textContent = '正在保存动态计划机器人…';
+  try { const response = await fetch(`${adminBase}/admin/settings`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}); const result = await response.json(); if (!response.ok) throw new Error(result.message || '保存失败'); fillSettings(result); note.textContent = '动态计划机器人已保存；学生自主开启后才会作用于后续任务。'; } catch (error) { note.textContent = `保存失败：${error.message}`; }
+}
+
+async function saveSummaryRobot(event) {
+  event.preventDefault();
+  if (!adminBase) return alert('请稍候，正在加载教学数据。');
+  const form = event.currentTarget, note = $('#summary-robot-message');
+  const payload = { summaryRobotEnabled: form.elements.summaryRobotEnabled.value === 'true', summaryRobotPrompt: form.elements.summaryRobotPrompt.value.trim(), summaryRobotConstraints: form.elements.summaryRobotConstraints.value.trim(), summaryRobotModelId: form.elements.summaryRobotModelId?.value || '' };
+  if (!payload.summaryRobotPrompt || !payload.summaryRobotConstraints) return note.textContent = '请完整填写总结机器人的提示词和限制词。';
+  note.textContent = '正在保存总结机器人…';
+  try { const response = await fetch(`${adminBase}/admin/settings`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}); const result = await response.json(); if (!response.ok) throw new Error(result.message || '保存失败'); fillSettings(result); note.textContent = '总结机器人已保存。'; } catch (error) { note.textContent = `保存失败：${error.message}`; }
+}
+
+async function testSummaryRobot() {
+  if (!adminBase) return alert('请稍候，正在加载教学数据。');
+  const note = $('#summary-robot-message'), output = $('#summary-robot-output');
+  note.textContent = '正在调用文本模型测试总结机器人…'; output.classList.remove('show');
+  try { const response = await fetch(`${adminBase}/admin/robots/summary-test`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:'{}'}); const result = await response.json(); if (!response.ok) throw new Error(result.message || '测试失败'); output.textContent = JSON.stringify(result.content, null, 2); output.classList.add('show'); note.textContent = '测试通过：以下为测试学生的模拟总结，未写入任何学生档案。'; } catch (error) { note.textContent = `测试失败：${error.message}`; }
+}
+
+$('#coordinator-form').onsubmit = saveDynamicRobot;
+$('#summary-robot-form').onsubmit = saveSummaryRobot;
+$('#test-summary-robot').onclick = testSummaryRobot;
+
+const teacherLayoutStyle = document.createElement('style');
+teacherLayoutStyle.textContent = `.model-config-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.model-config-group{padding:13px;border:1px solid var(--line);border-radius:7px;background:#fbfdfb}.model-config-group legend{padding:0 5px;color:var(--deep);font-size:12px;font-weight:800}.model-config-group small{display:block;margin:0 0 11px;color:var(--muted);font-size:10px;line-height:1.5}.model-config-group label{display:grid;gap:5px;margin-top:9px;color:#52675d;font-size:11px;font-weight:700}.model-config-group input{width:100%;height:37px;padding:0 9px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);font:inherit}.model-config-actions{grid-column:1/-1;display:flex;align-items:center;gap:11px;flex-wrap:wrap}.contact-form{display:grid;grid-template-columns:1fr 1fr;gap:13px}.contact-form label{display:grid;gap:6px;color:var(--deep);font-size:12px;font-weight:800}.contact-form input,.contact-form textarea{width:100%;padding:9px;border:1px solid var(--line);border-radius:6px;background:#fff;font:inherit}.contact-form textarea{min-height:86px;resize:vertical}.contact-form .wide{grid-column:1/-1}.student-wechat{display:block;max-width:260px;margin-top:4px;color:#356a50;font-size:10px;line-height:1.45;overflow-wrap:anywhere}.robot-directory{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 14px}.robot-tile{min-height:120px;padding:15px;border:1px solid var(--line);border-radius:7px;background:#fff;text-align:left;transition:.18s}.robot-tile:hover,.robot-tile.active{border-color:#78ae8c;background:#f3faf5;box-shadow:0 7px 18px #173d250c}.robot-tile span,.robot-tile small{display:block}.robot-tile span{color:var(--green);font:800 10px 'DM Mono',monospace}.robot-tile b{display:block;margin:8px 0 5px;color:var(--deep);font-size:14px}.robot-tile small{color:var(--muted);font-size:11px;line-height:1.55}.robot-placeholder{min-height:120px;padding:15px;border:1px dashed #b9cfc0;border-radius:7px;color:#809187}.robot-placeholder b{display:block;margin:7px 0;color:#61736a;font-size:13px}.robot-editor-shell{min-height:260px}.robot-editor-panel{display:none}.robot-editor-panel.active{display:block}.robot-editor-panel .robot-form,.robot-editor-panel .coordinator-form{grid-template-columns:1fr 1fr}.robot-editor-panel .robot-form>p,.robot-editor-panel .robot-form>.robot-actions,.robot-editor-panel .robot-form>.robot-test-output,.robot-editor-panel .coordinator-form>.coordinator-actions,.robot-editor-panel .coordinator-form>label:nth-of-type(2),.robot-editor-panel .coordinator-form>label:nth-of-type(3){grid-column:1/-1}.robot-editor-panel textarea{min-height:120px}@media(max-width:980px){.model-config-grid,.robot-directory{grid-template-columns:1fr}.robot-editor-panel .robot-form,.robot-editor-panel .coordinator-form{grid-template-columns:1fr}.contact-form{grid-template-columns:1fr}.contact-form .wide{grid-column:auto}}`;
+document.head.append(teacherLayoutStyle);
+
+const systemView = $('#system');
+if (systemView) {
+  systemView.querySelector('.section-copy').textContent = '这里是可写的控制台：填写模型 API 路径、模型名称和 API Key，保存后服务端才会使用新配置。密钥不会回显。';
+  const form = $('#settings-form');
+  form.className = 'model-config-grid';
+  form.innerHTML = `<fieldset class="model-config-group"><legend>文本模型</legend><small>用于资料分析、规划、出题、带背与两个机器人。此组必须完整填写。</small><label>API 路径 / Base URL<input name="textBaseUrl" placeholder="https://你的中转站/v1"></label><label>模型名称<input name="textModel" placeholder="例如：deepseek-chat"></label><label>API Key<input type="password" name="textApiKey" placeholder="留空则不修改"></label></fieldset><fieldset class="model-config-group"><legend>视觉模型</legend><small>用于图片、扫描件和 OCR。留空时可回退到文本模型。</small><label>API 路径 / Base URL<input name="visionBaseUrl" placeholder="可选"></label><label>模型名称<input name="visionModel" placeholder="例如：qwen-vl-max"></label><label>API Key<input type="password" name="visionApiKey" placeholder="留空则不修改"></label></fieldset><fieldset class="model-config-group"><legend>联网搜索模型</legend><small>用于院校专属画像的单次检索。可配置中转站搜索模型或 Tavily。</small><label>API 路径 / Base URL<input name="searchBaseUrl" placeholder="可选"></label><label>模型名称<input name="searchModel" placeholder="例如：gpt-5.6"></label><label>API Key<input type="password" name="searchApiKey" placeholder="留空则不修改"></label><label>Tavily API Key<input type="password" name="tavilyApiKey" placeholder="可选，留空不修改"></label></fieldset><div class="model-config-actions"><button class="primary" type="submit">保存并验证文本模型</button><span class="settings-note" id="settings-message">API 路径可填写以 /v1 结尾的地址，服务端会自动补全 /chat/completions；也可以直接填写完整接口地址。</span></div>`;
+}
+const tasksView = $('#tasks');
+if (tasksView) {
+  tasksView.querySelector('.section-copy').textContent = '这里只读显示运行结果：模型是否可用、联网检索、OCR、资料解析与学习事件采集状态。参数修改统一在“系统配置”。';
+  tasksView.querySelector('.panel-head h2').textContent = '实时运行状态（只读）';
+}
+
+const pricingView = $('#pricing');
+if (pricingView && !$('#teacher-contact-form')) {
+  pricingView.insertAdjacentHTML('beforeend', `<section class="panel" style="margin-top:13px"><div class="panel-head"><h2>授权联系设置</h2><small>学生申请第一门专业课时会看到</small></div><form id="teacher-contact-form" class="panel-body contact-form"><label>老师微信号<input name="teacherWechatId" maxlength="120" placeholder="学生需要主动添加的微信号"></label><label>学生添加备注要求<textarea name="teacherWechatNote" maxlength="600" placeholder="例如：请备注：姓名 + 报考院校 + 专业课。"></textarea></label><div class="wide coordinator-actions"><button class="primary" type="submit">保存联系设置</button><small id="teacher-contact-message">登记后将展示给申请专业课的学生。</small></div></form></section>`);
+}
+
+const robotDirectory = document.createElement('section');
+robotDirectory.className = 'robot-directory';
+robotDirectory.innerHTML = `<button class="robot-tile" type="button" data-robot-editor="dynamic"><span>ROBOT 01</span><b>动态计划调整</b><small>根据完成情况调整未来任务</small></button><button class="robot-tile" type="button" data-robot-editor="summary"><span>ROBOT 02</span><b>学习总结</b><small>生成并发送日、周、月总结</small></button><article class="robot-placeholder"><span>NEXT ROBOT</span><b>预留扩展位</b><small>新增机器人时只需加入一张目录卡片与独立配置。</small></article>`;
+const summaryPanel = $('#summary-robot-form')?.closest('.panel');
+if (robotView && dynamicPanel && summaryPanel && !$('#robot-editor-shell')) {
+  const shell = document.createElement('div');
+  shell.id = 'robot-editor-shell'; shell.className = 'robot-editor-shell';
+  dynamicPanel.classList.add('robot-editor-panel'); dynamicPanel.dataset.robotEditor = 'dynamic';
+  summaryPanel.classList.add('robot-editor-panel'); summaryPanel.dataset.robotEditor = 'summary';
+  robotView.insertBefore(robotDirectory, dynamicPanel);
+  robotDirectory.after(shell);
+  shell.append(dynamicPanel, summaryPanel);
+  robotDirectory.querySelectorAll('[data-robot-editor]').forEach(button => button.onclick = () => { const target = button.dataset.robotEditor; robotDirectory.querySelectorAll('[data-robot-editor]').forEach(item => item.classList.toggle('active', item === button)); shell.querySelectorAll('.robot-editor-panel').forEach(panel => panel.classList.toggle('active', panel.dataset.robotEditor === target)); });
+}
+
+const renderStudentsWithWechat = renderStudents;
+renderStudents = function(students) {
+  renderStudentsWithWechat(students);
+  const body = $('#students-body');
+  body?.querySelectorAll('.course-base').forEach(button => {
+    const student = students.find(item => item.id === button.dataset.studentId);
+    if (!student || button.parentElement.querySelector('.student-wechat')) return;
+    const note = document.createElement('small');
+    note.className = 'student-wechat';
+    note.textContent = student.wechatId ? `待联系学生微信：${student.wechatId}` : '学生尚未填写微信号';
+    button.parentElement.append(note);
+  });
+};
+
+const fillSettingsWithContact = fillSettings;
+fillSettings = function(settings) {
+  fillSettingsWithContact(settings);
+  const form = $('#teacher-contact-form'), contact = settings.contact || {};
+  if (!form) return;
+  form.elements.teacherWechatId.value = contact.teacherWechatId || '';
+  form.elements.teacherWechatNote.value = contact.teacherWechatNote || '';
+};
+$('#teacher-contact-form').onsubmit = async event => { event.preventDefault(); if (!adminBase) return alert('请稍候，正在加载教学数据。'); const form = event.currentTarget, note = $('#teacher-contact-message'); const payload = Object.fromEntries(new FormData(form).entries()); note.textContent = '正在保存联系设置…'; try { const response = await fetch(`${adminBase}/admin/settings`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}); const result = await response.json(); if (!response.ok) throw new Error(result.message || '保存失败'); fillSettings(result); note.textContent = '联系设置已保存，学生申请时会看到老师微信与备注要求。'; } catch (error) { note.textContent = `保存失败：${error.message}`; } };
+
+const teacherLearningStyle = document.createElement('style');
+teacherLearningStyle.textContent = `.learning-ledger{margin-top:16px;padding-top:16px;border-top:1px solid #e6eee8}.ledger-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.ledger-metrics span{padding:9px;border:1px solid #e0ebe3;border-radius:5px;background:#fbfdfb;color:var(--muted);font-size:10px}.ledger-metrics b{display:block;margin-top:4px;color:var(--deep);font:800 16px 'DM Mono',monospace}.usage-chart{margin:14px 0;padding:12px;border:1px solid #e0ebe3;border-radius:6px;background:#fbfdfb}.usage-chart svg{display:block;width:100%;height:98px}.usage-axis{display:flex;justify-content:space-between;color:var(--muted);font-size:10px}.ledger-section{margin-top:14px}.ledger-section h3{margin:0 0 8px;color:var(--deep);font-size:12px}.ledger-table{width:100%;border-collapse:collapse;font-size:11px}.ledger-table th,.ledger-table td{padding:7px 5px;border-bottom:1px solid #edf1ee;text-align:left}.ledger-table th{color:var(--muted);font-weight:700}.birthday-watch{margin-top:13px}.birthday-watch ul{margin:8px 0 0;padding-left:18px;color:#52675d;font-size:12px;line-height:1.8}`;
+document.head.append(teacherLearningStyle);
+
+const birthInput = document.createElement('label');
+birthInput.innerHTML = '生日<input name="birthDate" type="date">';
+$('#student-form textarea[name="notes"]')?.closest('label')?.before(birthInput);
+const openStudentEditorWithBirthday = openStudentEditor;
+openStudentEditor = function(student = null) { openStudentEditorWithBirthday(student); if ($('#student-form').elements.birthDate) $('#student-form').elements.birthDate.value = student?.birthDate || ''; };
+
+const baseRenderStudentTaskDetail = renderStudentTaskDetail;
+renderStudentTaskDetail = function(detail) {
+  baseRenderStudentTaskDetail(detail);
+  const host = $('#student-task-detail .panel-body');
+  if (!host || host.querySelector('.learning-ledger')) return;
+  const usage = detail.toolUsage || {}, toolMinutes = detail.toolMinutes || {}, curve = detail.usageCurve || [], tokens = detail.tokenUsage || {}, docs = detail.documents || [];
+  const max = Math.max(1, ...curve.map(day => Number(day.minutes || 0)));
+  const points = curve.length ? curve.map((day,index) => `${curve.length===1?0:index/(curve.length-1)*100},${92-(Number(day.minutes||0)/max*80)}`).join(' ') : '';
+  host.insertAdjacentHTML('beforeend', `<section class="learning-ledger"><div class="ledger-metrics"><span>思维导图<b>${Number(usage['思维导图']||0)}</b></span><span>已完成任务<b>${detail.taskMetrics?.completed ?? 0}</b></span><span>上传资料<b>${docs.length}</b></span><span>Token 用量<b>${Number(tokens.total||0).toLocaleString()}</b></span></div><section class="usage-chart"><h3>近 30 天学习时长曲线</h3><svg viewBox="0 0 100 100" preserveAspectRatio="none"><line x1="0" y1="92" x2="100" y2="92" stroke="#dce8df" stroke-width="1"/><polyline points="${points}" fill="none" stroke="#187258" stroke-width="2" vector-effect="non-scaling-stroke"/></svg><div class="usage-axis"><span>${escapeHtml(curve[0]?.date||'暂无记录')}</span><span>最高 ${max} 分钟</span><span>${escapeHtml(curve[curve.length-1]?.date||'')}</span></div></section><section class="ledger-section"><h3>工具使用统计</h3><table class="ledger-table"><thead><tr><th>工具</th><th>使用次数</th><th>已记录用时</th></tr></thead><tbody>${Object.entries(usage).map(([name,count])=>`<tr><td>${escapeHtml(name)}</td><td>${count} 次</td><td>${toolMinutes[name] ? `${toolMinutes[name]} 分钟` : '--'}</td></tr>`).join('')||'<tr><td>暂无工具使用记录</td><td>--</td><td>--</td></tr>'}</tbody></table></section><section class="ledger-section"><h3>任务作业表</h3><table class="ledger-table"><thead><tr><th>日期</th><th>知识点</th><th>状态</th><th>实际用时</th></tr></thead><tbody>${(detail.recentTasks||[]).map(task=>`<tr><td>${escapeHtml(task.date||'')}</td><td>${escapeHtml(task.topic||'')}</td><td>${task.status==='done'?'已完成':task.status==='missed'?'未完成':'待完成'}</td><td>${task.actualMinutes?`${task.actualMinutes} 分钟`:'--'}</td></tr>`).join('')||'<tr><td colspan="4">暂无任务作业记录</td></tr>'}</tbody></table></section><section class="ledger-section"><h3>上传资料明细</h3><table class="ledger-table"><thead><tr><th>学生</th><th>学校</th><th>专业课</th><th>资料</th><th>状态</th></tr></thead><tbody>${docs.map(doc=>`<tr><td>${escapeHtml(doc.student||detail.displayName||'--')}</td><td>${escapeHtml(doc.school||'--')}</td><td>${escapeHtml(doc.course||'--')}</td><td>${escapeHtml(doc.name)}</td><td>${escapeHtml(doc.status||'--')}</td></tr>`).join('')||'<tr><td colspan="5">暂无上传资料</td></tr>'}</tbody></table></section><section class="ledger-section"><h3>模型 Token 使用</h3><table class="ledger-table"><tbody><tr><td>输入 Token</td><td>${Number(tokens.prompt||0).toLocaleString()}</td></tr><tr><td>输出 Token</td><td>${Number(tokens.completion||0).toLocaleString()}</td></tr>${Object.entries(tokens.byFeature||{}).map(([name,count])=>`<tr><td>${escapeHtml(name)}</td><td>${Number(count).toLocaleString()}</td></tr>`).join('')}</tbody></table></section><p class="caption">自测状态：${detail.selfTest?.studentEnabled===false?'学生已主动关闭，教师无法强制开启。':detail.selfTest?.available?'学生可自行开启或关闭。':'教师端暂未开启自测机器人。'}</p></section>`);
+};
+const renderKnowledgeWithAssets = renderKnowledge;
+renderKnowledge = function(entries) {
+  renderKnowledgeWithAssets(entries);
+  const table = $('#knowledge-body')?.closest('table');
+  if (!table) return;
+  table.querySelector('thead').innerHTML = '<tr><th>学校</th><th>专业</th><th>专业课</th><th>配套资料</th><th>上传学生</th><th>解析状态</th></tr>';
+  $('#knowledge-body').innerHTML = entries.length ? entries.map(entry => `<tr><td>${escapeHtml(entry.school)}</td><td>${escapeHtml(entry.major||'未填写')}</td><td>${escapeHtml(entry.course)}</td><td>${(entry.assets||[]).map(asset=>`${escapeHtml(asset.name)}（${escapeHtml(asset.student)}）`).join('<br>')||'--'}</td><td>${entry.studentCount||0}</td><td>已解析 ${entry.parsed||0} · 待 OCR ${entry.needsOcr||0}</td></tr>`).join('') : '<tr><td colspan="6" class="caption">暂无已归档的学生资料。</td></tr>';
+};
+
+if (robotView && $('#robot-editor-shell') && !$('#self-test-robot-form')) {
+  $('#robot-editor-shell').insertAdjacentHTML('beforeend', `<section class="panel robot-editor-panel" data-robot-editor="selftest"><div class="panel-head"><h2>自测机器人</h2><small>学生可主动关闭，关闭后教师不能强制开启</small></div><form id="self-test-robot-form" class="panel-body robot-form"><p class="robot-manager-intro">日测每天 10 个基础知识点；周测约 30 分钟；月测约 60 分钟。月测优先于周测，周测优先于日测。</p><label>自测机器人总开关<select name="selfTestRobotEnabled"><option value="true">启用：学生可自主使用</option><option value="false">暂停：不再生成新自测</option></select></label><label>自测机器人 · 提示词<textarea name="selfTestRobotPrompt" maxlength="12000"></textarea></label><label>自测机器人 · 限制词<textarea name="selfTestRobotConstraints" maxlength="12000"></textarea></label><div class="robot-actions"><button class="primary" type="submit">保存自测机器人</button><small id="self-test-robot-message">连接后台后可读取配置。</small></div></form></section>`);
+  const selfTestTile = document.createElement('button');
+  selfTestTile.className = 'robot-tile';
+  selfTestTile.type = 'button';
+  selfTestTile.dataset.robotEditor = 'selftest';
+  selfTestTile.innerHTML = '<span>ROBOT 03</span><b>自测</b><small>日测、周测、月测与答案批改</small>';
+  robotDirectory.querySelector('.robot-placeholder').before(selfTestTile);
+  robotDirectory.querySelectorAll('[data-robot-editor]').forEach(button => button.onclick = () => { const target=button.dataset.robotEditor; robotDirectory.querySelectorAll('[data-robot-editor]').forEach(item=>item.classList.toggle('active',item===button)); $('#robot-editor-shell').querySelectorAll('.robot-editor-panel').forEach(panel=>panel.classList.toggle('active',panel.dataset.robotEditor===target)); });
+}
+const fillSettingsWithSelfTest = fillSettings;
+fillSettings = function(settings) { fillSettingsWithSelfTest(settings); const form=$('#self-test-robot-form'), robot=settings.selfTestRobot||{}; if(!form)return; form.elements.selfTestRobotEnabled.value=robot.enabled?'true':'false'; form.elements.selfTestRobotPrompt.value=robot.prompt||''; form.elements.selfTestRobotConstraints.value=robot.constraints||''; $('#self-test-robot-message').textContent=robot.modelConfigured?'文本模型已配置。学生关闭自测后，教师端只能查看状态。':'请先配置文本模型。'; };
+if ($('#self-test-robot-form')) $('#self-test-robot-form').onsubmit = async event => { event.preventDefault(); if(!adminBase)return alert('请稍候，正在加载教学数据。'); const form=event.currentTarget,note=$('#self-test-robot-message'),payload={selfTestRobotEnabled:form.elements.selfTestRobotEnabled.value==='true',selfTestRobotPrompt:form.elements.selfTestRobotPrompt.value.trim(),selfTestRobotConstraints:form.elements.selfTestRobotConstraints.value.trim(),selfTestRobotModelId:form.elements.selfTestRobotModelId?.value || ''}; if(!payload.selfTestRobotPrompt||!payload.selfTestRobotConstraints)return note.textContent='请完整填写提示词与限制词。'; note.textContent='正在保存自测机器人…'; try{const response=await fetch(`${adminBase}/admin/settings`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}),result=await response.json();if(!response.ok)throw new Error(result.message||'保存失败');fillSettings(result);note.textContent='自测机器人已保存。';}catch(error){note.textContent=`保存失败：${error.message}`;}};
+const renderOverviewWithBirthdays = data => { let panel=$('#birthday-watch'); if(!panel){panel=document.createElement('section');panel.id='birthday-watch';panel.className='panel birthday-watch';$('#overview .grid')?.after(panel);}const birthdays=data.upcomingBirthdays||[];panel.innerHTML=`<div class="panel-head"><h2>未来 7 天生日提醒</h2><small>来自学生档案中的生日信息</small></div><div class="panel-body">${birthdays.length?`<ul>${birthdays.map(item=>`<li><b>${escapeHtml(item.displayName)}</b> · ${escapeHtml(item.date)} · ${item.daysUntil===0?'今天生日':`${item.daysUntil} 天后`}</li>`).join('')}</ul>`:'<p class="caption">未来 7 天暂无生日提醒；学生填写生日后会自动出现在这里。</p>'}</div>`; };
+async function load() {}
+const loadWithBirthdayWatch = load;
+load = async function() { await loadWithBirthdayWatch(); try { const response=await fetch(`${adminBase}/admin/overview`,{headers:authHeaders()}); if(response.ok) renderOverviewWithBirthdays(await response.json()); } catch {} };
+const loadWithStudentSyncStatus = load;
+load = async function() { await loadWithStudentSyncStatus(); const status=$('#student-sync-status'); if(status && adminBase) status.textContent=`学生端档案已自动同步 · 最近刷新 ${new Date().toLocaleTimeString('zh-CN',{hour:'2-digit',minute:'2-digit',second:'2-digit'})}`; };
+
+const selfTestRobotActions = $('#self-test-robot-form .robot-actions');
+if (selfTestRobotActions && !$('#test-self-test-robot')) {
+  selfTestRobotActions.insertAdjacentHTML('afterbegin', '<button class="secondary" type="button" id="test-self-test-robot">测试自测出题</button>');
+  selfTestRobotActions.insertAdjacentHTML('afterend', '<pre class="robot-test-output" id="self-test-robot-output"></pre>');
+  $('#test-self-test-robot').onclick = async () => {
+    if (!adminBase) return alert('请稍候，正在加载教学数据。');
+    const button = $('#test-self-test-robot'), note = $('#self-test-robot-message'), output = $('#self-test-robot-output');
+    button.disabled = true; button.textContent = '正在测试…'; note.textContent = '正在调用文本模型，生成一份不写入学生档案的日测。'; output.classList.remove('show');
+    try {
+      const response = await fetch(`${adminBase}/admin/robots/self-test-test`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: '{}' });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || result.error || '测试失败');
+      output.textContent = JSON.stringify(result.question, null, 2); output.classList.add('show');
+      note.textContent = `测试通过：已生成 ${result.question?.items?.length || 0} 道日测题，未写入任何学生档案。`;
+    } catch (error) {
+      note.textContent = `测试失败：${error.message}`;
+    } finally {
+      button.disabled = false; button.textContent = '测试自测出题';
+    }
+  };
+}
+
+const modelConnectionForm = $('#settings-form');
+if (modelConnectionForm && !$('#model-connection-tests')) {
+  modelConnectionForm.insertAdjacentHTML('beforeend', `<section id="model-connection-tests" class="model-connection-tests"><div><b>模型连接测试</b><small>先保存对应配置，再单独测试。测试不会读取学生资料，也不会生成或写入学习内容。</small></div><div class="model-test-actions"><button type="button" class="secondary" data-model-role-test="text">测试文本模型</button><button type="button" class="secondary" data-model-role-test="vision">测试视觉模型</button><button type="button" class="secondary" data-model-role-test="search">测试搜索模型</button></div><output id="model-test-result">尚未执行连接测试。</output></section>`);
+  document.head.insertAdjacentHTML('beforeend', '<style>.model-connection-tests{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:13px 14px;border:1px solid #b8d6c2;border-radius:7px;background:#f5fbf6}.model-connection-tests b,.model-connection-tests small{display:block}.model-connection-tests b{color:var(--deep);font-size:13px}.model-connection-tests small{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.5}.model-test-actions{display:flex;flex-wrap:wrap;gap:7px}.model-test-actions button{white-space:nowrap}.model-connection-tests output{grid-column:1/-1;padding-top:10px;border-top:1px solid #dcebe0;color:#50675a;font-size:11px;line-height:1.55}@media(max-width:760px){.model-connection-tests{grid-template-columns:1fr}.model-test-actions{width:100%}}</style>');
+  modelConnectionForm.querySelectorAll('[data-model-role-test]').forEach(button => button.onclick = async () => {
+    if (!adminBase) return alert('请稍候，正在加载教学数据，再测试模型连接。');
+    const role = button.dataset.modelRoleTest, resultNode = $('#model-test-result');
+    button.disabled = true; resultNode.textContent = `正在测试${button.textContent}…`;
+    try {
+      const response = await fetch(`${adminBase}/admin/models/test`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify({ role }) });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || result.error || '连接失败');
+      resultNode.textContent = `${button.textContent}通过：${result.model}，耗时 ${result.latencyMs} ms。`;
+    } catch (error) {
+      resultNode.textContent = `${button.textContent}失败：${error.message}`;
+    } finally {
+      button.disabled = false;
+    }
+  });
+}
+
+const teacherApiBase = window.location.protocol === 'file:' || ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+  ? 'http://127.0.0.1:8000/api'
+  : `${window.location.origin}/api`;
+
+async function fetchTeacherData(url, options = {}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), options.timeoutMs || 5000);
+  try {
+    const { timeoutMs, ...requestOptions } = options;
+    return await fetch(url, { ...requestOptions, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function renderStudentReadError(message = '学生档案暂时无法读取。') {
+  const body = $('#students-body');
+  if (body) {
+    body.innerHTML = `<tr><td colspan="9" class="caption">${escapeHtml(message)} <button class="secondary" type="button" id="retry-student-list">重新读取</button></td></tr>`;
+    $('#retry-student-list').onclick = () => loadTeacherWorkspace();
+  }
+  const status = $('#student-sync-status');
+  if (status) status.textContent = message;
+}
+
+async function loadTeacherWorkspace() {
+  const base = teacherApiBase;
+  adminBase = base;
+  adminToken = '';
+  const initialStatus = $('#student-sync-status');
+  if (initialStatus) initialStatus.textContent = '正在连接本地教学服务…';
+  let requests;
+  try {
+    const health = await fetchTeacherData(`${base}/health`, { headers: authHeaders(), cache: 'no-store', timeoutMs: 2500 });
+    if (!health.ok) throw new Error(`教学服务返回 HTTP ${health.status}`);
+    requests = await Promise.allSettled([
+      fetchTeacherData(`${base}/admin/overview`, { headers: authHeaders(), cache: 'no-store' }),
+      fetchTeacherData(`${base}/admin/students`, { headers: authHeaders(), cache: 'no-store' }),
+      fetchTeacherData(`${base}/admin/knowledge-base`, { headers: authHeaders(), cache: 'no-store' }),
+      fetchTeacherData(`${base}/admin/settings`, { headers: authHeaders(), cache: 'no-store' }),
+    ]);
+  } catch (error) {
+    console.error('Teacher API is unavailable:', error);
+    renderStudentReadError('教学服务未启动。请启动 server.py 后重新读取。');
+    $('#roles').innerHTML = row('教学服务', false, '未启动');
+    $('#caps').innerHTML = '';
+    return;
+  }
+  const responseAt = index => requests[index]?.status === 'fulfilled' && requests[index].value.ok ? requests[index].value : null;
+  const [overviewResponse, studentsResponse, knowledgeResponse, settingsResponse] = [0, 1, 2, 3].map(responseAt);
+  let studentLoaded = false;
+  try {
+    if (studentsResponse) {
+      const studentData = await studentsResponse.json();
+      renderStudents(studentData.students || []);
+      studentLoaded = true;
+    }
+  } catch (error) { console.error('Student roster refresh failed:', error); }
+  if (!studentLoaded) {
+    renderStudentReadError('学生档案暂时无法读取，请重新读取。');
+  }
+  try {
+    const [data, knowledgeData, settings] = await Promise.all([
+      overviewResponse ? overviewResponse.json() : Promise.resolve({}),
+      knowledgeResponse ? knowledgeResponse.json() : Promise.resolve({}),
+      settingsResponse ? settingsResponse.json() : Promise.resolve({}),
+    ]);
+    const docs = data.documents || {}, service = data.service || {}, students = data.students || {};
+    const roles = Object.entries(service.modelRoles || {}).map(([name, config]) => row(name, config.configured, config.model || ''));
+    $('#student-total').textContent = students.total ?? 0;
+    $('#active-students').textContent = students.activeThisWeek ?? 0;
+    $('#learning-days').textContent = students.learningDays ?? 0;
+    $('#doc-total').textContent = docs.total ?? 0;
+    $('#doc-meta').textContent = `文本 ${docs.byKind?.text || 0} · 试卷 ${docs.byKind?.exam || 0}`;
+    $('#parse-status').textContent = (docs.byStatus?.needs_ocr || 0) ? `待 OCR ${docs.byStatus.needs_ocr} 份` : '解析状态正常';
+    $('#knowledge-count').textContent = `${data.knowledgeBase?.entries || 0} 个归档`;
+    $('#roles').innerHTML = roles.join('') || row('模型服务', false);
+    $('#caps').innerHTML = [row('联网搜索', service.webSearchConfigured), row('OCR', service.ocrConfigured)].join('');
+    const capabilityNotes = service.capabilityNotes || {};
+    $('#operations-roles').innerHTML = [
+      row(`文本模型（${capabilityNotes.text || '学习工具调用'}）`, service.modelRoles?.text?.configured, service.modelRoles?.text?.displayName || service.modelRoles?.text?.model || ''),
+      row(`视觉模型（${capabilityNotes.vision || '图片识别'}）`, service.modelRoles?.vision?.configured, service.modelRoles?.vision?.displayName || service.modelRoles?.vision?.model || ''),
+      row(`检索结果归纳模型（${capabilityNotes.search || '网页证据归纳'}）`, service.modelRoles?.search?.configured, service.modelRoles?.search?.displayName || service.modelRoles?.search?.model || ''),
+      row(`网页搜索（${capabilityNotes.webSearch || '网页证据'}）`, service.webSearchConfigured),
+      row('OCR（扫描 PDF、图片文字识别）', service.ocrConfigured),
+      row('学习事件采集（任务完成、时长、工具使用）', true),
+    ].join('');
+    $('#course-docs').textContent = `当前共 ${docs.total || 0} 份资料：文本 ${docs.byKind?.text || 0} 份，考试试卷 ${docs.byKind?.exam || 0} 份，已解析 ${docs.byStatus?.parsed || 0} 份，待 OCR ${docs.byStatus?.needs_ocr || 0} 份。`;
+    renderKnowledge(knowledgeData.entries || []);
+    if (settingsResponse) fillSettings(settings);
+  } catch (error) {
+    console.error('Teacher workspace data refresh failed:', error);
+    $('#roles').innerHTML = row('教学数据', false, '暂时无法读取');
+    $('#caps').innerHTML = '';
+    $('#parse-status').textContent = '待更新';
+    $('#knowledge-count').textContent = '待更新';
+  }
+}
+
+load = loadTeacherWorkspace;
+loadTeacherWorkspace();
+setInterval(()=>{if(!$('#student-editor').classList.contains('open'))loadTeacherWorkspace()},10000);
+
+const teacherPolish = document.createElement('style');
+teacherPolish.textContent = `
+  .model-hub{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0 0 14px}
+  .model-entry{min-height:132px;padding:16px;border:1px solid var(--line);border-radius:7px;background:#fff;text-align:left}
+  .model-entry:hover,.model-entry.active{border-color:#5f9b78;background:#f2faf4;box-shadow:0 7px 18px #173d2510}
+  .model-entry span,.model-entry small{display:block}.model-entry span{color:var(--green);font:800 10px "DM Mono",monospace}.model-entry b{display:block;margin:9px 0 5px;color:var(--deep);font-size:15px}.model-entry small{color:var(--muted);font-size:11px;line-height:1.55}
+  .model-editor{padding:18px;border:1px solid var(--line);border-radius:7px;background:#fbfdfb}.model-editor-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;margin-bottom:15px}.model-editor-head h3{margin:0;color:var(--deep);font-size:16px}.model-editor-head p{margin:5px 0 0;color:var(--muted);font-size:11px;line-height:1.55}.model-editor-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.model-editor-grid label{display:grid;gap:6px;color:#52675d;font-size:11px;font-weight:800}.model-editor-grid input{width:100%;height:38px;padding:0 10px;border:1px solid var(--line);border-radius:5px;background:#fff;color:var(--ink);font:inherit}.model-editor-grid .wide{grid-column:1/-1}.model-editor-actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:15px}.model-editor-note{font-size:11px;line-height:1.55;color:var(--muted)}
+  .robot-stack{display:grid;gap:10px}.robot-accordion{border:1px solid var(--line);border-radius:7px;background:#fff;overflow:hidden}.robot-accordion>summary{display:grid;grid-template-columns:32px minmax(0,1fr) auto;align-items:center;gap:11px;min-height:74px;padding:0 16px;cursor:pointer;list-style:none}.robot-accordion>summary::-webkit-details-marker{display:none}.robot-number{display:grid;place-items:center;width:27px;height:27px;border-radius:5px;background:var(--mint);color:var(--green);font:800 10px "DM Mono",monospace}.robot-summary-copy b,.robot-summary-copy small{display:block}.robot-summary-copy b{color:var(--deep);font-size:14px}.robot-summary-copy small{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.45}.robot-status{color:#5b7568;font-size:11px;font-weight:800}.robot-accordion[open]>summary{border-bottom:1px solid var(--line);background:#f8fcf9}.robot-accordion .panel{border:0;border-radius:0}.robot-accordion .panel-head{display:none}.robot-accordion .robot-form,.robot-accordion .coordinator-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.robot-accordion .robot-form>p,.robot-accordion .robot-form>.robot-actions,.robot-accordion .robot-form>.robot-test-output,.robot-accordion .coordinator-form>.coordinator-actions,.robot-accordion .coordinator-form>label:nth-of-type(2),.robot-accordion .coordinator-form>label:nth-of-type(3){grid-column:1/-1}.robot-accordion textarea{min-height:130px}
+  @media(max-width:880px){.model-hub,.model-editor-grid,.robot-accordion .robot-form,.robot-accordion .coordinator-form{grid-template-columns:1fr}.model-editor-grid .wide{grid-column:auto}.robot-accordion .robot-form>p,.robot-accordion .robot-form>.robot-actions,.robot-accordion .robot-form>.robot-test-output,.robot-accordion .coordinator-form>.coordinator-actions,.robot-accordion .coordinator-form>label:nth-of-type(2),.robot-accordion .coordinator-form>label:nth-of-type(3){grid-column:auto}}
+`;
+document.head.append(teacherPolish);
+
+function rebuildModelConfiguration() {
+  const view = $('#system');
+  if (!view || view.dataset.rebuilt === 'true') return;
+  view.dataset.rebuilt = 'true';
+  view.innerHTML = `<h2 class="section-title">模型配置</h2><p class="section-copy">正在读取服务端模型库…</p><section class="panel"><div class="panel-body"><p class="caption">模型名称必须通过“服务地址 + API 密钥 → 获取可用模型”自动读取，不能手动填写。</p></div></section>`;
+  return;
+  view.innerHTML = `<h2 class="section-title">模型配置</h2><p class="section-copy">选择一个模型后，在同一处填写服务地址、模型名称与密钥。保存后立即用于对应功能。</p><section class="panel"><div class="panel-head"><h2>模型配置</h2><small>密钥仅保存于服务端，不会在页面回显</small></div><div class="panel-body"><div class="model-hub" id="model-hub"><button class="model-entry active" type="button" data-role="text"><span>MODEL 01</span><b>文本模型</b><small>资料解析、规划、出题、带背与机器人</small></button><button class="model-entry" type="button" data-role="vision"><span>MODEL 02</span><b>视觉模型</b><small>扫描件、图片、表格与 OCR</small></button><button class="model-entry" type="button" data-role="search"><span>MODEL 03</span><b>检索结果归纳模型</b><small>读取 Tavily 返回的网页证据并完成院校重点归纳</small></button></div><form id="model-role-form" class="model-editor"></form></div></section>`;
+  const roles = {
+    text: { title:'文本模型', description:'用于资料解析、学习规划、出题训练、带背和全部机器人。', base:'textBaseUrl', model:'textModel', key:'textApiKey', basePlaceholder:'https://你的中转站/v1', modelPlaceholder:'例如：deepseek-chat' },
+    vision: { title:'视觉模型', description:'用于 PDF 扫描件、图片、图表和 OCR。未配置时会回退到文本模型。', base:'visionBaseUrl', model:'visionModel', key:'visionApiKey', basePlaceholder:'https://你的中转站/v1', modelPlaceholder:'例如：qwen-vl-max' },
+    search: { title:'联网搜索模型', description:'仅在院校专属分析与复习规划的资料核验阶段调用。', base:'searchBaseUrl', model:'searchModel', key:'searchApiKey', basePlaceholder:'https://你的中转站/v1', modelPlaceholder:'例如：gpt-5.6' },
+  };
+  const cache = { text:{}, vision:{}, search:{} };
+  let active = 'text';
+  const form = $('#model-role-form');
+  const render = role => {
+    active = role;
+    const item = roles[role], values = cache[role] || {};
+    $('#model-hub').querySelectorAll('[data-role]').forEach(button => button.classList.toggle('active', button.dataset.role === role));
+    form.innerHTML = `<div class="model-editor-head"><div><h3>${item.title}</h3><p>${item.description}</p></div><span class="pill">独立配置</span></div><div class="model-editor-grid"><label>服务地址 / Base URL<input name="baseUrl" value="${escapeHtml(values.baseUrl || '')}" placeholder="${item.basePlaceholder}"></label><label>模型名称<input name="model" value="${escapeHtml(values.model || '')}" placeholder="${item.modelPlaceholder}"></label><label class="wide">API 密钥<input name="apiKey" type="password" placeholder="留空不会覆盖已保存的密钥"></label>${role === 'search' ? '<label class="wide">Tavily API 密钥（可选）<input name="tavilyApiKey" type="password" placeholder="仅使用 Tavily 时填写；留空不会覆盖已有配置"></label>' : ''}</div><div class="model-editor-actions"><button class="primary" type="submit">保存 ${item.title}</button><button class="secondary" type="button" id="verify-active-model">验证此模型</button><span class="model-editor-note" id="model-editor-note">填写后保存，再验证一次真实调用。</span></div>`;
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const data = new FormData(form), payload = { [item.base]:data.get('baseUrl').trim(), [item.model]:data.get('model').trim() };
+      if (data.get('apiKey').trim()) payload[item.key] = data.get('apiKey').trim();
+      if (role === 'search' && data.get('tavilyApiKey').trim()) payload.tavilyApiKey = data.get('tavilyApiKey').trim();
+      const note = $('#model-editor-note'); note.textContent = '正在保存…';
+      try { const response = await fetch(`${adminBase}/admin/settings`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify(payload)}); const result = await response.json(); if (!response.ok) throw new Error(result.message || '保存失败'); cache[role] = {baseUrl:payload[item.base],model:payload[item.model]}; note.textContent = '已保存。可以继续验证真实调用。'; } catch (error) { note.textContent = `保存失败：${error.message}`; }
+    };
+    $('#verify-active-model').onclick = async () => {
+      const note = $('#model-editor-note'); note.textContent = '正在验证模型调用…';
+      try { const response = await fetch(`${adminBase}/admin/models/test`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({role})}); const result = await response.json(); if (!response.ok) throw new Error(result.message || result.error || '验证失败'); note.textContent = `验证通过：${result.model}，耗时 ${result.latencyMs} ms。`; } catch (error) { note.textContent = `验证失败：${error.message}`; }
+    };
+  };
+  $('#model-hub').querySelectorAll('[data-role]').forEach(button => button.onclick = () => render(button.dataset.role));
+  window.applyTeacherModelSettings = settings => {
+    for (const role of Object.keys(roles)) cache[role] = { baseUrl:settings.modelRoles?.[role]?.baseUrl || '', model:settings.modelRoles?.[role]?.model || '' };
+    render(active);
+  };
+  render('text');
+}
+
+function rebuildRobotManager() {
+  const view = $('#coordinator');
+  if (!view || view.dataset.rebuilt === 'true') return;
+  const robots = [
+    {form:'#coordinator-form', number:'01', title:'动态计划调整机器人', copy:'根据完成情况和实际用时，调整未来 30 天任务。'},
+    {form:'#summary-robot-form', number:'02', title:'学习总结机器人', copy:'生成日、周、月总结，并发送到学生首页。'},
+    {form:'#self-test-robot-form', number:'03', title:'自测机器人', copy:'生成日测、周测、月测并批改反馈。'},
+  ].map(item => ({...item, panel:document.querySelector(item.form)?.closest('.panel')})).filter(item => item.panel);
+  if (robots.length !== 3) return;
+  view.dataset.rebuilt = 'true';
+  const stack = document.createElement('section'); stack.className = 'robot-stack';
+  robots.forEach(item => {
+    item.panel.classList.remove('robot-editor-panel', 'active');
+    const detail = document.createElement('details'); detail.className = 'robot-accordion';
+    detail.innerHTML = `<summary><span class="robot-number">${item.number}</span><span class="robot-summary-copy"><b>${item.title}</b><small>${item.copy}</small></span><span class="robot-status">点击配置</span></summary>`;
+    detail.append(item.panel); stack.append(detail);
+  });
+  view.replaceChildren(Object.assign(document.createElement('h2'), {className:'section-title', textContent:'机器人管理'}), Object.assign(document.createElement('p'), {className:'section-copy', textContent:'每个机器人独立配置提示词、限制词和启用状态。默认折叠，点击后展开。'}), stack);
+}
+
+rebuildModelConfiguration();
+rebuildRobotManager();
+const previousFillSettings = fillSettings;
+fillSettings = function(settings) { previousFillSettings(settings); window.applyTeacherModelSettings?.(settings); };
+$('#new-student').onclick = async () => { if (!adminBase) await loadTeacherWorkspace(); openStudentEditor(); };
+
+const renderStudentsWithVisibleSync = renderStudents;
+renderStudents = function(students) {
+  renderStudentsWithVisibleSync(students);
+  const status = $('#student-sync-status');
+  if (status) status.textContent = `已同步 ${students.length} 名学生 · ${new Date().toLocaleTimeString('zh-CN', { hour:'2-digit', minute:'2-digit', second:'2-digit' })}`;
+};
+
+/* The student only submits a four-field course request.  Keep those fields
+   immediately beside the approval action so a teacher can review the request
+   without opening the student editor or relying on an AI-generated profile. */
+const renderStudentsWithBaseCourseRequest = renderStudents;
+renderStudents = function(students) {
+  renderStudentsWithBaseCourseRequest(students);
+  const body = $('#students-body');
+  body?.querySelectorAll('.course-base').forEach(button => {
+    const student = currentStudents.find(item => item.id === button.dataset.studentId);
+    if (!student || student.permissionRequestStatus !== 'pending' || student.baseCourseEnabled) return;
+    const profile = student.requestedCourseProfile || {};
+    const actionHost = button.closest('.student-actions');
+    if (!actionHost || actionHost.querySelector('.base-course-request-detail')) return;
+    const detail = document.createElement('small');
+    detail.className = 'base-course-request-detail';
+    detail.innerHTML = `<b>待审核申请</b><br>院校：${escapeHtml(profile.school || '未填写')}<br>招生学院：${escapeHtml(profile.college || '未填写')}<br>专业课：${escapeHtml(profile.courseName || '未填写')}<br>专业课代码：${escapeHtml(profile.subjectCode || '未填写')}`;
+    actionHost.append(detail);
+  });
+};
+
+const showWithStudentRefresh = show;
+show = function(view) {
+  showWithStudentRefresh(view);
+  if (view !== 'students') return;
+  const body = $('#students-body');
+  if (body && !body.children.length) body.innerHTML = '<tr><td colspan="9" class="caption">正在更新学生档案…</td></tr>';
+  loadTeacherWorkspace();
+};
+
+/* Model library, routing and student cost ledger.  These controls deliberately
+   live only in teacher.html; students never receive model names, keys or costs. */
+const studentDetailWithCostLedger = renderStudentTaskDetail;
+renderStudentTaskDetail = function(detail) {
+  studentDetailWithCostLedger(detail);
+  const host = $('#student-task-detail .panel-body');
+  if (!host || host.querySelector('.model-cost-ledger')) return;
+  const tokens = detail.tokenUsage || {}, byTool = tokens.byTool || {}, byModel = tokens.byModel || {};
+  const priority = ['带背', '思维导图', '答题训练', '答题批改'];
+  const rows = priority.map(name => {
+    const stat = byTool[name] || {};
+    const minutes = detail.toolMinutes?.[name];
+    return `<tr><td>${name}</td><td>${stat.calls || 0} 次</td><td>${minutes ? `${minutes} 分钟` : '--'}</td><td>${Number(stat.total || 0).toLocaleString()}</td><td>¥${Number(stat.estimatedCost || 0).toFixed(4)}</td></tr>`;
+  }).join('');
+  const models = Object.values(byModel).map(item => `<tr><td>${escapeHtml(item.name || '未标记模型')}</td><td>${escapeHtml(item.role || 'text')}</td><td>${item.calls || 0} 次</td><td>${Number(item.total || 0).toLocaleString()}</td><td>¥${Number(item.estimatedCost || 0).toFixed(4)}</td></tr>`).join('') || '<tr><td colspan="5">尚无已返回 Token 的模型调用记录</td></tr>';
+  host.insertAdjacentHTML('beforeend', `<section class="ledger-section model-cost-ledger"><h3>核心工具使用与模型成本</h3><table class="ledger-table"><thead><tr><th>工具</th><th>调用</th><th>使用时长</th><th>Token</th><th>预估成本</th></tr></thead><tbody>${rows}</tbody></table><p class="caption">总计：输入 ${Number(tokens.prompt || 0).toLocaleString()} · 输出 ${Number(tokens.completion || 0).toLocaleString()} · 合计 ${Number(tokens.total || 0).toLocaleString()} Token · 预估 ¥${Number(tokens.estimatedCost || 0).toFixed(4)}。单价由模型库填写；未填写单价时成本显示为 ¥0。</p><h3>实际调用模型</h3><table class="ledger-table"><thead><tr><th>模型</th><th>能力</th><th>调用</th><th>Token</th><th>预估成本</th></tr></thead><tbody>${models}</tbody></table></section>`);
+};
+
+const modelLibraryStyle = document.createElement('style');
+modelLibraryStyle.textContent = `.model-library-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.model-library-card{min-height:130px;padding:14px;border:1px solid var(--line);border-radius:7px;background:#fff;text-align:left}.model-library-card:hover{border-color:#69a483;background:#f5fbf6}.model-library-card b,.model-library-card small,.model-library-card span{display:block}.model-library-card span{color:var(--green);font:800 10px 'DM Mono',monospace}.model-library-card b{margin:8px 0 5px;color:var(--deep);font-size:14px}.model-library-card small{color:var(--muted);font-size:11px;line-height:1.5}.model-library-add{display:grid;place-items:center;border:1px dashed #8dbda0;background:#f8fcf9;color:var(--green);font-weight:800}.model-editor-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.route-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.route-grid label{display:grid;gap:6px;color:var(--deep);font-size:12px;font-weight:800}.route-grid small{color:var(--muted);font-weight:400;line-height:1.5}.route-grid select,.library-form input,.library-form select{height:39px;border:1px solid var(--line);border-radius:5px;padding:0 9px;background:#fff}.library-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.library-form label{display:grid;gap:6px;color:var(--deep);font-size:12px;font-weight:800}.library-form .wide{grid-column:1/-1}.runtime-state{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:7px;background:#fbfdfb}.runtime-state h3{margin:0 0 6px;color:var(--deep);font-size:13px}.runtime-state p{margin:0 0 10px;color:var(--muted);font-size:11px;line-height:1.55}.runtime-state ul{display:grid;gap:7px;margin:0;padding:0;list-style:none}.runtime-state li{display:flex;gap:10px;align-items:flex-start;font-size:12px}.runtime-state li b{min-width:104px;color:var(--deep)}.runtime-state li span{color:var(--muted);line-height:1.45}.model-cost-ledger{border-top:2px solid #dceade;padding-top:16px}.model-cost-ledger h3{margin:14px 0 8px;color:var(--deep);font-size:13px}@media(max-width:880px){.model-library-grid,.route-grid,.library-form{grid-template-columns:1fr}.library-form .wide{grid-column:auto}}`;
+document.head.append(modelLibraryStyle);
+const savedConnectionRecordStyle=document.createElement('style');savedConnectionRecordStyle.textContent='.saved-connection-record{grid-column:1/-1;margin:0;padding:11px 12px;border:1px solid #c9e0d0;border-left:3px solid var(--green);border-radius:5px;background:#f5fbf6}.saved-connection-record b,.saved-connection-record span{display:block}.saved-connection-record b{color:var(--deep);font-size:12px}.saved-connection-record span{margin-top:4px;color:var(--muted);font-size:11px;line-height:1.55}';document.head.append(savedConnectionRecordStyle);
+
+function modelOptions(settings, capability, selected) {
+  const records = (settings.modelLibrary || []).filter(item => item.capability === capability && item.enabled);
+  return `<option value="">使用当前默认配置</option>${records.map(item => `<option value="${escapeHtml(item.id)}" ${item.id === selected ? 'selected' : ''}>${escapeHtml(item.displayName)} · ${escapeHtml(item.upstreamModel)}</option>`).join('')}`;
+}
+function saveTeacherSettings(payload) {
+  return fetch(`${adminBase}/admin/settings`, {method:'POST', headers:{'Content-Type':'application/json', ...authHeaders()}, body:JSON.stringify(payload)}).then(async response => { const body = await response.json(); if (!response.ok) throw new Error(body.message || '保存失败'); return body; });
+}
+function upgradeModelLibrary(settings) {
+  const view = $('#system'); if (!view) return;
+  const signature = JSON.stringify({ library: settings.modelLibrary || [], routes: settings.modelRoutes || {}, webSearchConfigured: Boolean(settings.webSearchConfigured) });
+  if (view.dataset.modelLibrarySignature === signature) return;
+  view.dataset.modelLibrarySignature = signature;
+  view.innerHTML = `<h2 class="section-title">模型配置</h2><p class="section-copy">连接配置由教师端统一管理。输入 Base URL 和 API Key 后点击“获取可用模型”，模型名称会从该服务的 <code>/models</code> 接口自动读取，不再手动输入。</p><section class="panel"><div class="panel-head"><h2>模型库</h2><small>密钥只保存于服务端；发现模型时不会落盘</small></div><div class="panel-body"><div id="model-library-list" class="model-library-grid"></div></div></section><section class="panel" style="margin-top:14px"><div class="panel-head"><h2>功能默认模型</h2><small>未为机器人单独指定时使用这里的默认模型</small></div><form class="panel-body route-grid" id="model-route-form"><label>文本学习工具<select name="textModelId">${modelOptions(settings,'text',settings.modelRoutes?.text)}</select><small>资料解析、思维导图、规划、出题、带背、批改</small></label><label>视觉与 OCR<select name="visionModelId">${modelOptions(settings,'vision',settings.modelRoutes?.vision)}</select><small>扫描 PDF、图片、表格识别</small></label><label>检索结果归纳<select name="searchModelId">${modelOptions(settings,'search',settings.modelRoutes?.search)}</select><small>用于归纳 Tavily 返回的网页证据；不负责自行抓取网页</small></label><div><button class="primary" type="submit">保存功能路由</button><small id="model-route-note" class="caption"></small></div></form></section><section class="panel" style="margin-top:14px" id="model-library-editor" hidden></section><section class="panel" style="margin-top:14px" id="tavily-service"><div class="panel-head"><div><h2>网页搜索服务</h2><small>由 Tavily 抓取网页证据；文本模型只负责阅读、归纳和生成学习结论</small></div><span class="pill">${settings.webSearchConfigured ? '已配置' : '未配置'}</span></div><form class="panel-body library-form" id="tavily-form"><label class="wide">Tavily API Key<input name="tavilyApiKey" type="password" placeholder="粘贴 Tavily API Key；密钥仅保存到服务端"></label><p class="wide caption">配置后仅在“院校专属画像、真题与备考资料核验”阶段执行网页搜索；画像锁定后停止搜索。MiniMax M3 不会替代这个网页抓取服务。</p><div class="wide model-editor-actions"><button class="primary" type="submit">保存并验证 Tavily</button><button class="secondary" type="button" id="test-tavily" ${settings.webSearchConfigured ? '' : 'disabled'}>验证已保存的 Key</button><small class="caption" id="tavily-note">${settings.webSearchConfigured ? '已保存 Key，可验证连接。' : '请填写 Tavily API Key。'}</small></div></form></section>`;
+    const tavilyForm = $('#tavily-form');
+  if (tavilyForm) {
+    const connectionName = settings.webSearch?.connectionName || 'Tavily 网页搜索';
+    tavilyForm.insertAdjacentHTML('afterbegin', `<div class="saved-connection-record"><b>${escapeHtml(connectionName)}</b><span>${settings.webSearchConfigured ? 'Tavily API 密钥已保存于服务端，可随时点击“验证已保存的 Key”。' : '尚未保存 API 密钥。'}</span></div><label class="wide">连接名称<input name="tavilyConnectionName" required maxlength="120" value="${escapeHtml(connectionName)}" placeholder="例如：Tavily 院校检索"></label>`);
+  }const list = $('#model-library-list');
+  const records = settings.modelLibrary || [];
+  list.innerHTML = records.map(item => { const updated=item.updatedAt?new Date(item.updatedAt).toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}):'--'; return `<button class="model-library-card" type="button" data-model-id="${escapeHtml(item.id)}"><span>${item.capability.toUpperCase()} · ${item.enabled ? '启用' : '停用'} · ${item.apiKeyPresent?'密钥已保存':'缺少密钥'}</span><b>${escapeHtml(item.displayName)}</b><small>实际模型：${escapeHtml(item.upstreamModel)}<br>${escapeHtml(item.baseUrl)}<br>保存于：${escapeHtml(updated)}</small></button>`; }).join('') + '<button class="model-library-card model-library-add" type="button" id="add-model-library">＋ 添加模型</button>';
+  const openEditor = record => {
+    const panel = $('#model-library-editor'); panel.hidden = false;
+    panel.innerHTML = `<div class="panel-head"><h2>${record ? '编辑模型连接' : '添加模型连接'}</h2><button type="button" class="secondary" id="close-model-editor">关闭</button></div><form class="panel-body library-form" id="library-model-form"><input type="hidden" name="id" value="${escapeHtml(record?.id || '')}"><label class="wide">连接名称<input name="connectionName" required maxlength="120" value="${escapeHtml(record?.displayName || '')}" placeholder="例如：MiniMax 主文本模型"></label><label>能力类型<select name="capability"><option value="text" ${record?.capability==='text'?'selected':''}>文本</option><option value="vision" ${record?.capability==='vision'?'selected':''}>视觉 / OCR</option><option value="search" ${record?.capability==='search'?'selected':''}>检索归纳</option></select></label><label>服务地址 / Base URL<input name="baseUrl" required value="${escapeHtml(record?.baseUrl || '')}" placeholder="https://你的中转站 或 /v1"></label><label class="wide">API 密钥<input name="apiKey" type="password" placeholder="${record ? '重新获取模型需填写 API 密钥' : '必须填写 API 密钥'}"></label><div class="wide discover-row"><button class="secondary" type="button" id="discover-models" disabled>获取可用模型</button><span id="discover-status" class="caption">${record ? `当前模型：${escapeHtml(record.upstreamModel)}（可重新获取）` : '先填写地址和密钥'}</span></div><label class="wide">从服务返回的模型中选择<select name="upstreamModel" id="discovered-model" required ${record ? '' : 'disabled'}>${record ? `<option value="${escapeHtml(record.upstreamModel)}" selected>${escapeHtml(record.upstreamModel)}</option>` : '<option value="">请先获取模型列表</option>'}</select></label><label>输入单价（元 / 百万 Token）<input name="inputCostPerMillion" type="number" min="0" step="0.0001" value="${record?.inputCostPerMillion || 0}"></label><label>输出单价（元 / 百万 Token）<input name="outputCostPerMillion" type="number" min="0" step="0.0001" value="${record?.outputCostPerMillion || 0}"></label><div class="wide model-editor-actions"><button class="primary" type="submit">保存已选择模型</button>${record ? `<button class="secondary" type="button" id="verify-library-model">验证连接</button>` : ''}<small id="library-model-note" class="caption"></small></div></form>`;
+    $('#close-model-editor').onclick = () => { panel.hidden = true; };
+    const capability = $('#library-model-form').elements.capability;
+    const discovered = $('#discovered-model');
+    const baseUrlField = $('#library-model-form').elements.baseUrl, apiKeyField = $('#library-model-form').elements.apiKey, discoverButton = $('#discover-models'), discoverStatus = $('#discover-status');
+    const refreshDiscoverState = () => { const ready = Boolean(baseUrlField.value.trim() && apiKeyField.value.trim()); discoverButton.disabled = !ready; if (!ready) discoverStatus.textContent = !baseUrlField.value.trim() ? '请先填写服务地址，再填写 API 密钥' : '请先填写 API 密钥后获取模型列表'; };
+    baseUrlField.addEventListener('input', refreshDiscoverState); apiKeyField.addEventListener('input', refreshDiscoverState); refreshDiscoverState();
+    capability.onchange = () => { discovered.disabled = true; discovered.innerHTML = '<option value="">请重新获取模型列表</option>'; $('#discover-status').textContent = '能力类型已改变，请重新获取'; };
+    $('#discover-models').onclick = async () => { const baseUrl=$('#library-model-form').elements.baseUrl.value.trim(), apiKey=$('#library-model-form').elements.apiKey.value.trim(), status=$('#discover-status'), button=$('#discover-models'); if(!baseUrl||!apiKey){status.textContent='为保护密钥，请填写服务地址和 API 密钥后再获取';return} button.disabled=true; status.textContent='正在读取 /models…'; try { const response=await fetch(`${adminBase}/admin/models/discover`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({baseUrl,apiKey})}); const result=await response.json(); if(!response.ok) throw new Error(result.message||result.error||'获取模型失败'); discovered.disabled=false; discovered.innerHTML=result.models.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.label)}${item.ownedBy?` · ${escapeHtml(item.ownedBy)}`:''}</option>`).join(''); if(result.resolvedBaseUrl) $('#library-model-form').elements.baseUrl.value=result.resolvedBaseUrl; status.textContent=`已读取 ${result.count} 个可用模型，请选择后保存`; } catch(error){status.textContent=`获取失败：${error.message}`} finally{button.disabled=false} };
+    $('#library-model-form').onsubmit = async event => { event.preventDefault(); const data=Object.fromEntries(new FormData(event.currentTarget).entries()); const note=$('#library-model-note'); if(!data.upstreamModel){note.textContent='请先获取并选择模型';return} note.textContent='正在保存…'; try { const next=await saveTeacherSettings({modelRecord:data}); fillSettings(next); note.textContent='已保存。'; } catch(error) { note.textContent=`保存失败：${error.message}`; } };
+    $('#verify-library-model')?.addEventListener('click', async () => { const note=$('#library-model-note'); note.textContent='正在验证…'; try { const result=await fetch(`${adminBase}/admin/models/test`, {method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:JSON.stringify({role:record.capability,modelId:record.id})}).then(r=>r.json()); note.textContent=result.ok ? `验证通过：${result.displayName||record.displayName} · 实际模型 ${result.model} · ${result.role}` : `验证失败：${result.message||'请检查配置'}`; } catch(error) { note.textContent=`验证失败：${error.message}`; } });
+    panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  };
+  list.querySelectorAll('[data-model-id]').forEach(button => button.onclick = () => openEditor(records.find(item => item.id === button.dataset.modelId)));
+  $('#add-model-library').onclick = () => openEditor(null);
+  $('#model-route-form').onsubmit = async event => { event.preventDefault(); const note=$('#model-route-note'); note.textContent='正在保存…'; try { const next=await saveTeacherSettings(Object.fromEntries(new FormData(event.currentTarget).entries())); fillSettings(next); note.textContent='已保存。'; } catch(error) { note.textContent=`保存失败：${error.message}`; } };
+  const runTavilyTest = async () => { const note=$('#tavily-note'); note.textContent='正在验证 Tavily…'; try { const response=await fetch(`${adminBase}/admin/web-search/test`,{method:'POST',headers:{'Content-Type':'application/json',...authHeaders()},body:'{}'}); const result=await response.json(); if(!response.ok) throw new Error(result.message||'Tavily 验证失败'); const used=result.keyUsage?.used, limit=result.keyUsage?.limit; note.textContent=`Tavily 已连接${used!==undefined&&limit!==undefined?`：已用 ${used} / ${limit}`:''}`; } catch(error) { note.textContent=`Tavily 验证失败：${error.message}`; } };
+  $('#tavily-form').onsubmit = async event => { event.preventDefault(); const key=event.currentTarget.elements.tavilyApiKey.value.trim(), name=event.currentTarget.elements.tavilyConnectionName.value.trim(), note=$('#tavily-note'); if(!key){note.textContent='请先填写 Tavily API Key。';return} if(!name){note.textContent='请先填写连接名称。';return} note.textContent='正在保存 Tavily Key…'; try { const next=await saveTeacherSettings({tavilyApiKey:key,tavilyConnectionName:name}); fillSettings(next); await runTavilyTest(); } catch(error) { note.textContent=`保存失败：${error.message}`; } };
+  $('#test-tavily').onclick = runTavilyTest;
+}
+
+function renderRuntimeRoutePicker(settings) {
+  const view = $('#tasks'); if (!view) return;
+  let panel = $('#runtime-model-routes');
+  if (!panel) { panel = document.createElement('section'); panel.id = 'runtime-model-routes'; panel.className = 'panel'; view.querySelector('.data-grid')?.after(panel); }
+  const current = settings.modelRoutes || {};
+  const library = settings.modelLibrary || [];
+  const modelName = id => { const item = library.find(model => model.id === id); return item ? item.displayName : '未分配'; };
+  const robotState = (label, id) => `<li><b>${label}</b><span>${id ? `已分配：${escapeHtml(modelName(id))}` : `继承文本默认模型：${escapeHtml(modelName(current.text))}`}；等待学生任务或定时规则触发</span></li>`;
+  const signature = JSON.stringify({ current, library });
+  if (panel.dataset.routeSignature === signature) return;
+  panel.dataset.routeSignature = signature;
+  panel.innerHTML = `<div class="panel-head"><div><h2>运行能力模型路由</h2><small>这里选择默认模型；机器人可在机器人管理中单独覆盖</small></div></div><form class="panel-body route-grid" id="runtime-route-form"><label>文本能力<select name="textModelId">${modelOptions(settings,'text',current.text)}</select><small>资料解析、思维导图、规划、出题、带背和批改</small></label><label>视觉 / OCR<select name="visionModelId">${modelOptions(settings,'vision',current.vision)}</select><small>扫描 PDF、图片和表格识别</small></label><label>检索结果归纳<select name="searchModelId">${modelOptions(settings,'search',current.search)}</select><small>只归纳 Tavily 网页证据；画像锁定后停止网页搜索</small></label><div><button class="primary" type="submit">保存运行路由</button><small id="runtime-route-note" class="caption"></small></div></form><section class="runtime-state"><h3>真实运行状态</h3><p>“已配置”表示密钥与模型已保存；“已分配”表示某个功能会调用它；只有学生发起操作或定时规则到点后才会产生实际调用。</p><ul><li><b>文本学习工具</b><span>${current.text ? `已分配：${escapeHtml(modelName(current.text))}` : '未分配文本默认模型'}</span></li><li><b>视觉 / OCR</b><span>${current.vision ? `已分配：${escapeHtml(modelName(current.vision))}` : '未分配视觉模型'}</span></li><li><b>网页搜索</b><span>${settings.webSearchConfigured ? '已配置独立网页搜索服务' : '未配置独立网页搜索服务；模型本身不会自动抓网页'}</span></li>${robotState('任务监管机器人', settings.taskCoordinator?.modelId)}${robotState('学习总结机器人', settings.summaryRobot?.modelId)}${robotState('自测机器人', settings.selfTestRobot?.modelId)}</ul></section>`;
+  $('#runtime-route-form').onsubmit = async event => { event.preventDefault(); const note=$('#runtime-route-note'); note.textContent='正在保存…'; try { const next=await saveTeacherSettings(Object.fromEntries(new FormData(event.currentTarget).entries())); fillSettings(next); note.textContent='运行路由已保存。'; } catch(error) { note.textContent=`保存失败：${error.message}`; } };
+}
+
+const finalFillSettingsWithModelLibrary = fillSettings;
+fillSettings = function(settings) {
+  window.latestTeacherSettings = settings;
+  window.applyTeacherModelSettings = () => {};
+  finalFillSettingsWithModelLibrary(settings);
+  upgradeModelLibrary(settings);
+  renderRuntimeRoutePicker(settings);
+  const robotModels = [
+    ['#coordinator-form','taskCoordinatorModelId',settings.taskCoordinator?.modelId],
+    ['#summary-robot-form','summaryRobotModelId',settings.summaryRobot?.modelId],
+    ['#self-test-robot-form','selfTestRobotModelId',settings.selfTestRobot?.modelId],
+  ];
+  robotModels.forEach(([selector,name,selected]) => { const form=$(selector); if(!form) return; if(!form.elements[name]) { const label=document.createElement('label'); label.innerHTML=`调用模型<select name="${name}"></select><small class="caption"></small>`; form.prepend(label); } const select=form.elements[name]; select.innerHTML=modelOptions(settings,'text',selected); select.value=selected || ''; const hint=select.parentElement.querySelector('small'); const textModels=(settings.modelLibrary||[]).filter(item=>item.capability==='text'&&item.enabled); if(hint) hint.textContent=textModels.length?'只显示“模型配置”中已启用的文本模型；留空则使用文本默认模型。':'还没有可供机器人使用的文本模型，请先在“模型配置”中添加并验证。'; });
+};
+if (window.latestTeacherSettings) fillSettings(window.latestTeacherSettings);
+setTimeout(() => { if (adminBase) loadTeacherWorkspace(); }, 80);
+/* Model-library controls: connection deletion and unambiguous verification output. */
+function installModelLibraryDeletion() {
+  const panel = $('#model-library-editor');
+  const form = $('#library-model-form');
+  if (!panel || !form || panel.hidden || form.dataset.deleteReady === '1') return;
+  form.dataset.deleteReady = '1';
+  const id = String(form.elements.id?.value || '').trim();
+  if (!id) return;
+  const actions = form.querySelector('.model-editor-actions');
+  if (!actions) return;
+  const remove = document.createElement('button');
+  remove.type = 'button'; remove.className = 'secondary'; remove.id = 'delete-library-model'; remove.textContent = '删除此模型';
+  actions.insertBefore(remove, actions.firstChild);
+  remove.onclick = async () => {
+    const name = form.elements.connectionName?.value.trim() || '该模型连接';
+    if (!confirm(`确定删除“${name}”吗？\n\n会解除使用它的默认路由和机器人绑定；学生、资料和学习记录不会受影响。`)) return;
+    remove.disabled = true;
+    const note = $('#library-model-note'); if (note) note.textContent = '正在删除…';
+    try {
+      const response = await fetch(`${adminBase}/admin/models/${encodeURIComponent(id)}`, { method: 'DELETE', headers: authHeaders() });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.message || '删除失败');
+      panel.hidden = true;
+      fillSettings(result.settings || await fetch(`${adminBase}/admin/settings`, { headers: authHeaders() }).then(item => item.json()));
+    } catch (error) {
+      remove.disabled = false;
+      if (note) note.textContent = `删除失败：${error.message}`;
+    }
+  };
+  const verify = $('#verify-library-model');
+  if (verify) verify.addEventListener('click', () => {
+    const note = $('#library-model-note');
+    if (note) note.textContent = `正在验证“${form.elements.connectionName?.value.trim() || '当前连接'}”及模型 ${form.elements.upstreamModel?.value || '—'}…`;
+  }, true);
+}
+const modelLibraryObserver = new MutationObserver(installModelLibraryDeletion);
+modelLibraryObserver.observe(document.body, { childList: true, subtree: true });
+installModelLibraryDeletion();
+
+const renderStudentsWithMajorRequestDetails = renderStudents;
+renderStudents = function(students) {
+  renderStudentsWithMajorRequestDetails(students);
+  $('#students-body')?.querySelectorAll('.course-base').forEach(button => {
+    const student = currentStudents.find(item => item.id === button.dataset.studentId);
+    const detail = button.closest('.student-actions')?.querySelector('.base-course-request-detail');
+    if (!student || !detail || student.permissionRequestStatus !== 'pending') return;
+    const request = student.requestedCourseProfile || {};
+    detail.innerHTML = `<b>待审核申请</b><br>院校：${escapeHtml(request.school || '未填写')}<br>招生学院：${escapeHtml(request.college || '未填写')}<br>专业名称：${escapeHtml(request.major || '未填写')}<br>专业代码：${escapeHtml(request.majorCode || '未填写')}<br>专业课名称：${escapeHtml(request.courseName || '未填写')}<br>专业课代码：${escapeHtml(request.subjectCode || '未填写')}`;
+  });
+};

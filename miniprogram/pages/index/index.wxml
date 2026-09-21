@@ -21,13 +21,17 @@
   <view class="feature-card card">
     <view class="section-title">快速入口</view>
     <view class="feature-grid">
+      <view class="feature-item" bindtap="onVocabularyTap">
+        <view class="feature-icon feature-icon--course">Aa</view>
+        <view class="feature-name">英语词汇</view>
+      </view>
       <view class="feature-item" wx:if="{{ onlineCoursesVisible }}" bindtap="onMoreCourses">
         <view class="feature-icon feature-icon--course">📚</view>
         <view class="feature-name">全部课程</view>
       </view>
       <view class="feature-item" bindtap="onQuestionTap">
         <view class="feature-icon feature-icon--question">📝</view>
-        <view class="feature-name">题库</view>
+        <view class="feature-name">政治刷题</view>
       </view>
       <view class="feature-item" bindtap="onWrongBookTap">
         <view class="feature-icon feature-icon--wrong">📕</view>

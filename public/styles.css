@@ -214,6 +214,7 @@ button {
   white-space: nowrap;
   transition: background 0.15s, color 0.15s;
   position: relative;
+  text-decoration: none;
 }
 
 .nav-link:hover {

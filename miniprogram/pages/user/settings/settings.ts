@@ -1,3 +1,10 @@
+import {
+  formatWxSubscribeError,
+  getWxSubscribeConfig,
+  requestWxSubscribePermission,
+  sendWxSubscribeTest,
+} from '../../../services/wx-subscribe.service';
+
 const STUDY_STORAGE_KEYS = [
   'ky_study_progress',
   'ky_study_progress_synced',
@@ -20,10 +27,60 @@ Page({
   data: {
     storageSize: '0 KB',
     version: '0.1.0',
+    subscribeTemplateId: '',
+    subscribeReady: false,
+    subscribeRunning: false,
+    subscribeStatus: '正在读取微信提醒状态',
   },
 
   onShow() {
     this.setData({ storageSize: getStorageSizeLabel() });
+    this.loadSubscribeConfig();
+  },
+
+  async loadSubscribeConfig() {
+    try {
+      const config = await getWxSubscribeConfig();
+      this.setData({
+        subscribeTemplateId: config.templateId,
+        subscribeReady: config.configured && Boolean(config.templateId),
+        subscribeStatus: config.configured ? '长期订阅测试已就绪' : '服务器尚未完成微信提醒配置',
+      });
+    } catch (error) {
+      this.setData({
+        subscribeReady: false,
+        subscribeStatus: formatWxSubscribeError(error),
+      });
+    }
+  },
+
+  async onSubscribeTest() {
+    if (!this.data.subscribeReady || !this.data.subscribeTemplateId || this.data.subscribeRunning) {
+      wx.showToast({ title: this.data.subscribeStatus, icon: 'none' });
+      return;
+    }
+    this.setData({ subscribeRunning: true, subscribeStatus: '等待微信授权' });
+    try {
+      const status = await requestWxSubscribePermission(this.data.subscribeTemplateId);
+      if (status !== 'accept') {
+        const message = status === 'ban' ? '该模板已被禁止，请在小程序设置中重新开启。' : '你没有同意接收测试消息。';
+        this.setData({ subscribeRunning: false, subscribeStatus: message });
+        wx.showModal({ title: '未开启微信提醒', content: message, showCancel: false });
+        return;
+      }
+      this.setData({ subscribeStatus: '正在发送测试消息' });
+      await sendWxSubscribeTest();
+      this.setData({ subscribeRunning: false, subscribeStatus: '测试消息已发送至服务通知' });
+      wx.showModal({
+        title: '发送成功',
+        content: '请在微信“服务通知”中查看“存折更换”测试消息。',
+        showCancel: false,
+      });
+    } catch (error) {
+      const message = formatWxSubscribeError(error);
+      this.setData({ subscribeRunning: false, subscribeStatus: message });
+      wx.showModal({ title: '发送失败', content: message, showCancel: false });
+    }
   },
 
   onOpenPermissions() {

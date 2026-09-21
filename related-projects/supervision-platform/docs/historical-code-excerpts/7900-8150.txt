@@ -1,0 +1,251 @@
+7900	  return `${subject} 正确率 ${ratio}%，考研基础掌握较好，可以按老师安排进入提高阶段训练。`;
+7901	}
+7902	
+7903	function AiCenter({open}) {return <><section className="page-head"><div><span className="eyebrow">统一 AI 能力与治理</span><h1>让模型成为能力层，不成为数据孤岛。</h1><p>统一接入不同模型供应商、知识库、工具、任务与审计；能力输出默认先由规则和老师约束。</p></div><button className="primary" onClick={() => open('ai-provider')}><Settings2 size={16}/>配置模型服务</button></section><div className="ai-grid">{aiCapabilities.map((x,i)=><article className="ai-card" key={x.name}><span>0{i+1}</span><BrainCircuit size={24}/><h3>{x.name}</h3><p>{x.description}</p><button className="quiet-button" onClick={() => open('ai-detail')}>配置规则<ChevronRight size={15}/></button></article>)}</div><section className="panel architecture"><PanelHead title="AI 数据与安全边界"/><div className="architecture-flow"><div>学习事件<br/><small>看课、任务、作答、工具</small></div><ChevronRight/><div>学习画像<br/><small>可追溯指标</small></div><ChevronRight/><div>AI 编排层<br/><small>权限、提示词、模型、工具</small></div><ChevronRight/><div>人工确认<br/><small>老师发布或复核</small></div></div><p>所有生成内容应保留版本、输入数据范围、模型提供商、人工状态与操作日志；不将学生敏感信息直接用于未授权模型服务。</p></section></>}
+7904	function Moderation({posts,setPosts,notify}) {
+7905	  const pendingPosts = (posts || []).filter(post => post.state === '待审核');
+7906	  const review = async (id, state) => {
+7907	    const note = state === '已公开' ? '审核通过' : '审核驳回';
+7908	    if (isApiConfigured()) {
+7909	      const target = (posts || []).find(p => String(p.id) === String(id));
+7910	      if (target?.isServerManaged) {
+7911	        try {
+7912	          await apiRequest(`/api/admin/posts/${id}/review`, {
+7913	            method: 'POST',
+7914	            body: { state, reviewNote: note }
+7915	          });
+7916	        } catch (error) {
+7917	          notify(error?.message || '审核操作失败，请稍后重试');
+7918	          return;
+7919	        }
+7920	      }
+7921	    }
+7922	    setPosts(current => current.map(post => post.id === id ? {...post, state, reviewedAt:new Date().toISOString()} : post));
+7923	    notify(state === '已公开' ? '帖子已通过并公开' : '帖子已驳回，审核记录已保留');
+7924	  };
+7925	  return <><section className="page-head"><div><span className="eyebrow">人工审核为最终边界</span><h1>先筛选风险，再保护讨论氛围。</h1><p>提交内容仅在老师审核通过后才会公开；驳回记录会保留在后台。</p></div></section><section className="panel"><PanelHead title="待审核队列" action={`${pendingPosts.length} 条待处理`}/>{pendingPosts.length ? pendingPosts.map(p => <div className="review" key={p.id}><div className="avatar">{p.author.slice(0,1)}</div><div className="review-main"><span>{p.author} · {p.topic} · {p.time}</span><h3>{p.title}</h3><p>{p.body}</p></div><div className="review-actions"><button className="secondary" onClick={() => review(p.id, '已驳回')}>驳回</button><button className="primary" onClick={() => review(p.id, '已公开')}>通过并公开</button></div></div>) : <div className="empty-line"><Check size={20}/><span>当前没有待审核的社区内容。</span></div>}</section></>}
+7926	
+7927	/**
+7928	 * 审计日志面板：仅 admin 角色可访问。展示后端 audit_logs 接口。
+7929	 */
+7930	function AuditLogsPanel({notify}) {
+7931	  const [logs, setLogs] = useState([]);
+7932	  const [loading, setLoading] = useState(false);
+7933	  const [error, setError] = useState('');
+7934	  const [filterAction, setFilterAction] = useState('');
+7935	  const [filterEntityType, setFilterEntityType] = useState('');
+7936	  const [limit, setLimit] = useState(100);
+7937	
+7938	  const load = async () => {
+7939	    if (!isApiConfigured()) {
+7940	      setError('当前未连接后端服务，无法查看审计日志');
+7941	      return;
+7942	    }
+7943	    setLoading(true);
+7944	    setError('');
+7945	    try {
+7946	      const params = new URLSearchParams();
+7947	      params.set('limit', String(limit));
+7948	      if (filterAction.trim()) params.set('action', filterAction.trim());
+7949	      if (filterEntityType.trim()) params.set('entityType', filterEntityType.trim());
+7950	      const data = await apiRequest(`/api/admin/audit-logs?${params.toString()}`);
+7951	      setLogs(Array.isArray(data) ? data : []);
+7952	    } catch (err) {
+7953	      setError(err?.message || '加载审计日志失败');
+7954	      notify(err?.message || '加载审计日志失败');
+7955	    } finally {
+7956	      setLoading(false);
+7957	    }
+7958	  };
+7959	
+7960	  useEffect(() => { load(); }, [limit]);
+7961	
+7962	  const exportCsv = () => {
+7963	    if (!logs.length) return notify('当前无可导出的审计日志');
+7964	    const header = ['id', 'created_at', 'actor_account_id', 'action', 'entity_type', 'entity_id', 'metadata'];
+7965	    const escape = value => {
+7966	      const s = value == null ? '' : String(value);
+7967	      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+7968	    };
+7969	    const lines = [header.join(',')];
+7970	    logs.forEach(log => {
+7971	      lines.push([
+7972	        log.id,
+7973	        log.created_at,
+7974	        log.actor_account_id,
+7975	        log.action,
+7976	        log.entity_type,
+7977	        log.entity_id,
+7978	        JSON.stringify(log.metadata || {})
+7979	      ].map(escape).join(','));
+7980	    });
+7981	    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8' });
+7982	    const url = URL.createObjectURL(blob);
+7983	    const link = document.createElement('a');
+7984	    link.href = url;
+7985	    link.download = `audit-logs-${new Date().toISOString().slice(0, 10)}.csv`;
+7986	    link.click();
+7987	    URL.revokeObjectURL(url);
+7988	  };
+7989	
+7990	  return (
+7991	    <section className="panel">
+7992	      <div className="panel-head" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+7993	        <div>
+7994	          <h2>审计日志</h2>
+7995	          <small>仅超级管理员可查看；记录最近 {limit} 条关键业务操作。</small>
+7996	        </div>
+7997	        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+7998	          <button type="button" className="secondary" onClick={load} disabled={loading}>{loading ? '加载中…' : '刷新'}</button>
+7999	          <button type="button" className="secondary" onClick={exportCsv} disabled={!logs.length}>导出 CSV</button>
+8000	        </div>
+8001	      </div>
+8002	      <div className="exam-send-grid" style={{ marginTop: 12 }}>
+8003	        <label>操作类型<input value={filterAction} onChange={event => setFilterAction(event.target.value)} placeholder="例如：审核订单通过"/></label>
+8004	        <label>实体类型<input value={filterEntityType} onChange={event => setFilterEntityType(event.target.value)} placeholder="例如：order / student"/></label>
+8005	        <label>查询条数<select value={limit} onChange={event => setLimit(Number(event.target.value))}><option value={50}>50</option><option value={100}>100</option><option value={200}>200</option><option value={500}>500</option></select></label>
+8006	        <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+8007	          <button type="button" className="primary" onClick={load} disabled={loading}>应用筛选</button>
+8008	        </div>
+8009	      </div>
+8010	      {error ? <div className="empty-line"><AlertTriangle size={18}/><span>{error}</span></div> : null}
+8011	      {logs.length ? (
+8012	        <div style={{ marginTop: 12, overflowX: 'auto' }}>
+8013	          <table>
+8014	            <thead>
+8015	              <tr>
+8016	                <th>时间</th>
+8017	                <th>操作</th>
+8018	                <th>实体</th>
+8019	                <th>操作人</th>
+8020	                <th>详情</th>
+8021	              </tr>
+8022	            </thead>
+8023	            <tbody>
+8024	              {logs.map(log => (
+8025	                <tr key={log.id}>
+8026	                  <td><small>{log.created_at ? new Date(log.created_at).toLocaleString('zh-CN') : '—'}</small></td>
+8027	                  <td>{log.action}</td>
+8028	                  <td>{log.entity_type}{log.entity_id ? ` · ${log.entity_id}` : ''}</td>
+8029	                  <td>{log.actor_account_id || '系统'}</td>
+8030	                  <td><code style={{ fontSize: 12 }}>{JSON.stringify(log.metadata || {})}</code></td>
+8031	                </tr>
+8032	              ))}
+8033	            </tbody>
+8034	          </table>
+8035	        </div>
+8036	      ) : !loading && !error ? (
+8037	        <div className="empty-line"><ClipboardCheck size={20}/><span>当前没有匹配的审计日志。</span></div>
+8038	      ) : null}
+8039	    </section>
+8040	  );
+8041	}
+8042	
+8043	/**
+8044	 * 监管机器人：侧栏一级入口。列表点卡片 → 进入子详情页，
+8045	 * 配置第三方模型 + 系统提示词 + 限制词（密钥仅服务端环境变量）。
+8046	 */
+8047	function SupervisionRobots({aiSettings, setAiSettings, notify}) {
+8048	  const [selectedRobotId, setSelectedRobotId] = useState(null);
+8049	  const [draft, setDraft] = useState(null);
+8050	  const [restrictionText, setRestrictionText] = useState('');
+8051	  const models = getConfiguredModels(aiSettings);
+8052	  const readyCount = countReadyAiSlots(aiSettings);
+8053	  const groups = [
+8054	    ['纯文本监管', AI_MODEL_SLOTS.filter(item => item.capability === 'text')],
+8055	    ['读图 / OCR 监管', AI_MODEL_SLOTS.filter(item => item.capability === 'vision')],
+8056	    ['向量 / 检索', AI_MODEL_SLOTS.filter(item => item.capability === 'embedding')],
+8057	  ];
+8058	  const openRobot = robotId => {
+8059	    const config = getAiSlotConfig(aiSettings, robotId);
+8060	    setSelectedRobotId(robotId);
+8061	    setDraft(config);
+8062	    setRestrictionText((config.restrictionWords || []).join('，'));
+8063	  };
+8064	  const back = () => { setSelectedRobotId(null); setDraft(null); setRestrictionText(''); };
+8065	  const save = () => {
+8066	    if (!selectedRobotId || !draft) return;
+8067	    if (isApiConfigured()) return notify('生产模式暂不保存浏览器机器人配置；请先接入服务端监管机器人配置接口');
+8068	    const meta = getRobotMeta(selectedRobotId);
+8069	    if (!draft.modelId) return notify('请先在系统设置的「模型管理」中配置模型，再在此选择');
+8070	    if (!String(draft.systemPrompt || '').trim()) return notify('请填写系统提示词');
+8071	    const model = getConfiguredModel(aiSettings, draft.modelId);
+8072	    if (!model) return notify('所选模型已停用或删除，请重新选择');
+8073	    const next = {
+8074	      ...defaultAiSlotConfig(meta), ...draft,
+8075	      modelId: model.id, model: model.model, endpoint: model.endpoint,
+8076	      provider: model.provider, secretRef: model.secretRef,
+8077	      systemPrompt: String(draft.systemPrompt).trim(),
+8078	      restrictionWords: normalizeRestrictionWords(restrictionText),
+8079	      lastSavedAt: new Date().toISOString(),
+8080	    };
+8081	    setAiSettings(current => ({...defaultAiSettings(), ...current, version:4, slots:{...(current.slots || {}), [selectedRobotId]:next}}));
+8082	    setDraft(next); setRestrictionText(next.restrictionWords.join('，'));
+8083	    notify(`已保存「${meta.robotName}」`);
+8084	  };
+8085	  if (selectedRobotId && draft) {
+8086	    const meta = getRobotMeta(selectedRobotId);
+8087	    const selectedModel = getConfiguredModel(aiSettings, draft.modelId);
+8088	    const compatibleModels = models.filter(item => item.category === meta.capability || (meta.capability === 'vision' && item.category === 'image') || (meta.capability === 'embedding' && item.category === 'other'));
+8089	    const selectableModels = compatibleModels.length ? compatibleModels : models;
+8090	    return <><section className="page-head"><div><span className="eyebrow">监管机器人 · 配置</span><h1>{meta.robotName}</h1><p>{meta.purpose}</p></div><button className="secondary" onClick={back}><ChevronLeft size={16}/>返回机器人列表</button></section><section className="panel robot-detail-panel"><div className="robot-detail-head"><div><span className={`ai-modality-tag modality-${meta.capability}`}>{meta.modality}</span><h2>模型选择 · 提示词 · 限制词</h2><p>模型统一由系统设置中的「模型管理」维护；这里仅选择已配置的模型。</p></div><span className={`badge ${selectedModel && draft.enabled ? 'ok' : 'warn'}`}>{selectedModel && draft.enabled ? '业务可用' : '未就绪'}</span></div><div className="robot-detail-section"><h3>1. 模型选择</h3><label className="robot-prompt-label"><span>已配置模型</span><select className="robot-model-select" value={draft.modelId || ''} onChange={event => { const model = getConfiguredModel(aiSettings, event.target.value); setDraft(current => ({...current, modelId:event.target.value, model:model?.model || '', endpoint:model?.endpoint || '', provider:model?.provider || '', secretRef:model?.secretRef || ''})); }}><option value="">请选择已配置模型</option>{selectableModels.map(model => <option key={model.id} value={model.id}>{model.name} · {model.model}</option>)}</select></label>{!models.length ? <div className="robot-config-empty"><Settings2 size={18}/><span>还没有可选模型。请先到「系统设置 → 模型管理」新增并测试模型。</span></div> : null}</div><div className="robot-detail-section"><div className="robot-detail-section-head"><h3>2. 系统提示词</h3><button type="button" className="quiet-button" onClick={() => setDraft(current => ({...current, systemPrompt:meta.defaultSystemPrompt || ''}))}>恢复默认</button></div><textarea className="robot-prompt-box" value={draft.systemPrompt || ''} onChange={event => setDraft(current => ({...current, systemPrompt:event.target.value}))} rows={10}/></div><div className="robot-detail-section"><h3>3. 限制词 / 禁用词</h3><textarea className="robot-prompt-box is-restriction" value={restrictionText} onChange={event => setRestrictionText(event.target.value)} rows={4}/><div className="robot-restriction-preview">{normalizeRestrictionWords(restrictionText).map(word => <span key={word}>{word}</span>)}</div></div><div className="ai-switch-row ai-switch-row-prominent"><AiToggle label={draft.enabled ? '已启用' : '启用该机器人'} enabled={!!draft.enabled} onChange={value => setDraft(current => ({...current, enabled:value}))}/></div><div className="form-footer"><button type="button" className="secondary" onClick={back}>返回列表</button><button type="button" className="primary" onClick={save}>保存机器人配置</button></div></section></>;
+8091	  }
+8092	  return <><section className="page-head"><div><span className="eyebrow">教师后台 · 监管机器人</span><h1>按业务用途调用已配置模型</h1><p>模型只在「系统设置 → 模型管理」中新增、测试、停用或删除；机器人只负责选择模型、设置提示词与限制词。</p></div><span className="badge ok">{readyCount}/{AI_MODEL_SLOTS.length} 已就绪</span></section><section className="panel robot-list-panel">{groups.map(([title, robots]) => <div className="robot-group" key={title}><div className="robot-group-head"><h3>{title}</h3><small>{robots.filter(robot => isAiSlotReady(aiSettings, robot.id)).length}/{robots.length} 已就绪</small></div><div className="robot-card-grid">{robots.map(robot => { const config=getAiSlotConfig(aiSettings,robot.id), model=getConfiguredModel(aiSettings,config.modelId), ready=isAiSlotReady(aiSettings,robot.id); return <button type="button" key={robot.id} className={`robot-card ${ready?'is-ready':''}`} onClick={() => openRobot(robot.id)}><div className="robot-card-top"><span className={`ai-modality-tag modality-${robot.capability}`}>{robot.modality}</span><span className={`badge ${ready?'ok':'warn'}`}>{ready?'已接入':config.enabled?'未填全':'未启用'}</span></div><div className="robot-card-icon"><Bot size={22}/></div><b>{robot.robotName}</b><p>{robot.purpose}</p><div className="robot-card-meta"><small>{model ? `${model.name} · ${model.model}` : '未选择模型'}</small></div><span className="robot-card-enter">进入配置 <ChevronRight size={14}/></span></button>; })}</div></div>)}</section></>;
+8093	}
+8094	
+8095	function ServerProviderManagement({ aiSettings, setAiSettings, notify }) {
+8096	  const [providers, setProviders] = useState([]);
+8097	  const [selectedId, setSelectedId] = useState('');
+8098	  const [form, setForm] = useState({ id: '', name: '', capability: 'text', baseUrl: '', secretRef: '', status: 'configured', timeoutMs: 10000, maxRetries: 1 });
+8099	  const [state, setState] = useState({ loading: true, saving: false, error: '' });
+8100	  const load = async () => {
+8101	    setState(current => ({ ...current, loading: true, error: '' }));
+8102	    try {
+8103	      const result = await apiRequest('/api/admin/ai/providers', { cache: 'no-store' });
+8104	      setProviders(Array.isArray(result) ? result : []);
+8105	      setState(current => ({ ...current, loading: false }));
+8106	    } catch (error) { setState({ loading: false, saving: false, error: error?.message || 'Provider 加载失败' }); }
+8107	  };
+8108	  useEffect(() => { load(); }, []);
+8109	  const select = provider => {
+8110	    setSelectedId(provider.id);
+8111	    setForm({ id: provider.id, name: provider.name || '', capability: provider.capability || 'text', baseUrl: provider.baseUrl || '', secretRef: provider.secretRef || '', status: provider.status || 'configured', timeoutMs: provider.timeoutMs || 10000, maxRetries: provider.maxRetries || 1 });
+8112	  };
+8113	  const save = async () => {
+8114	    const id = String(form.id || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '-');
+8115	    if (!id || id.length < 2) return notify('请填写至少 2 位 Provider 标识');
+8116	    if (!form.name.trim() || !form.baseUrl.trim() || !form.secretRef.trim()) return notify('请填写名称、服务地址和服务端密钥引用');
+8117	    setState(current => ({ ...current, saving: true, error: '' }));
+8118	    try {
+8119	      const saved = await apiRequest(`/api/admin/ai/providers/${encodeURIComponent(id)}`, { method: 'PUT', body: { ...form, id, name: form.name.trim(), baseUrl: form.baseUrl.trim(), secretRef: form.secretRef.trim(), timeoutMs: Number(form.timeoutMs) || 10000, maxRetries: Number(form.maxRetries) || 0 } });
+8120	      setProviders(current => [saved, ...current.filter(item => item.id !== saved.id)]);
+8121	      setSelectedId(saved.id); setForm(current => ({ ...current, id: saved.id }));
+8122	      setState(current => ({ ...current, saving: false }));
+8123	      notify('Provider 配置已保存；密钥仅由服务端读取');
+8124	    } catch (error) { setState(current => ({ ...current, saving: false, error: error?.message || 'Provider 保存失败' })); notify(error?.message || 'Provider 保存失败'); }
+8125	  };
+8126	  const test = async () => {
+8127	    if (!selectedId) return notify('请先保存并选择 Provider');
+8128	    setState(current => ({ ...current, saving: true, error: '' }));
+8129	    try { const result = await apiRequest(`/api/admin/ai/providers/${encodeURIComponent(selectedId)}/test`, { method: 'POST' }); notify(result?.message || 'Provider 测试完成'); await load(); }
+8130	    catch (error) { setState(current => ({ ...current, saving: false, error: error?.message || 'Provider 测试失败' })); notify(error?.message || 'Provider 测试失败'); }
+8131	  };
+8132	  return <section className="panel model-management-panel server-provider-panel">
+8133	    <div className="model-management-head"><div><span className="eyebrow">服务端 AI 配置</span><h2>Provider 管理</h2><p>浏览器只提交服务地址和服务端环境变量引用，不接收、不保存、不回显真实 API Key。</p></div><button type="button" className="secondary" onClick={load} disabled={state.loading}>{state.loading ? '加载中…' : '刷新'}</button></div>
+8134	    {state.error && <div className="inline-error" role="alert"><span>{state.error}</span><button type="button" className="secondary" onClick={load}>重试</button></div>}
+8135	    <div className="server-provider-layout"><div className="model-row-list">{providers.length ? providers.map(provider => <button type="button" className={`server-provider-row ${selectedId === provider.id ? 'is-selected' : ''}`} key={provider.id} onClick={() => select(provider)}><span><b>{provider.name}</b><small>{provider.id} · {provider.capability} · {provider.status}</small></span><em>{provider.lastTestStatus === 'passed' ? '测试通过' : provider.lastTestStatus === 'failed' ? '测试失败' : '未测试'}</em></button>) : !state.loading ? <div className="empty-line"><Bot size={19}/><span>尚未配置 Provider。</span></div> : null}</div><div className="server-provider-form"><label>Provider 标识<input value={form.id} onChange={event => setForm(current => ({ ...current, id: event.target.value }))} placeholder="例如 periodic-text"/></label><label>管理名称<input value={form.name} onChange={event => setForm(current => ({ ...current, name: event.target.value }))} placeholder="例如：主力文本服务"/></label><label>能力<select value={form.capability} onChange={event => setForm(current => ({ ...current, capability: event.target.value }))}><option value="text">文本</option><option value="vision">读图</option><option value="embedding">向量</option></select></label><label>服务地址<input value={form.baseUrl} onChange={event => setForm(current => ({ ...current, baseUrl: event.target.value }))} placeholder="https://provider.example/v1"/></label><label>服务端密钥引用<input value={form.secretRef} onChange={event => setForm(current => ({ ...current, secretRef: event.target.value }))} placeholder="例如 AI_PROVIDER_KEY" autoComplete="off"/><small>仅变量名；请勿粘贴 API Key。</small></label><label>状态<select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value }))}><option value="disabled">停用</option><option value="configured">已配置</option><option value="enabled">启用</option></select></label><div className="form-footer"><button type="button" className="secondary" onClick={test} disabled={state.saving || !selectedId}>服务端测试</button><button type="button" className="primary" onClick={save} disabled={state.saving}>{state.saving ? '正在保存…' : '保存 Provider'}</button></div></div></div>
+8136	  </section>;
+8137	}
+8138	
+8139	function ModelManagement({aiSettings, setAiSettings, notify}) {
+8140	  const [draft, setDraft] = useState({category:'text', name:'', provider:'第三方 OpenAI 兼容接口', endpoint:'', model:'', apiKey:''});
+8141	  const [models, setModels] = useState([]);
+8142	  const [state, setState] = useState({status:'idle', message:''});
+8143	  const configured = Array.isArray(aiSettings?.models) ? aiSettings.models : [];
+8144	  const discover = async () => {
+8145	    if (isApiConfigured()) return setState({ status: 'error', message: '生产模式不会从浏览器访问 Provider；请由管理员在服务端配置 Provider 后再测试。' });
+8146	    setState({status:'loading',message:'正在读取服务商 /models 列表…'});
+8147	    try { const result=await discoverOpenAiModels({endpoint:draft.endpoint,apiKey:draft.apiKey}); setModels(result.models); setDraft(current=>({...current,endpoint:result.baseUrl,model:''})); setState({status:'success',message:`已获取 ${result.models.length} 个模型，请选择一个后保存。`}); }
+8148	    catch(error) { setModels([]); setState({status:'error',message:String(error?.message||'获取失败')}); }
+8149	  };
+8150	  const test = async () => {

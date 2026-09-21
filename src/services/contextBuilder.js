@@ -36,7 +36,8 @@ function queryRecentMessages(roomid, beforeTimeMs, limit = STM_MAX_MESSAGES) {
     const rows = db.prepare(`
       SELECT from_user, content, msgtime_ms, msgtype
       FROM wecom_archive_messages
-      WHERE roomid = ? AND msgtime_ms < ? AND msgtype = 'text' AND content != ''
+      WHERE roomid = ? AND msgtime_ms < ?
+        AND msgtype IN ('text', 'image', 'voice', 'file') AND content != ''
       ORDER BY msgtime_ms DESC
       LIMIT ?
     `).all(roomid, beforeTimeMs, limit);

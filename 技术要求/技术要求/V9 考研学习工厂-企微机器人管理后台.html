@@ -1,0 +1,1603 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>考研学习工厂 · 企微机器人管理后台</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700;900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-page: #f5f1ea;
+    --bg-surface: #ffffff;
+    --bg-sidebar: #1a2332;
+    --bg-sidebar-hover: #243349;
+    --bg-active: #2d3f5a;
+    --bg-soft: #faf6ef;
+    --bg-code: #f0ebe2;
+    --text-primary: #1a2332;
+    --text-secondary: #5a6478;
+    --text-tertiary: #8b94a6;
+    --text-inverse: #f5f1ea;
+    --text-sidebar: #b8c2d4;
+    --text-sidebar-active: #ffffff;
+    --accent-cinnabar: #c8392f;
+    --accent-ink: #2d3f5a;
+    --accent-gold: #b8954a;
+    --accent-jade: #5a8270;
+    --accent-amber: #d4a04c;
+    --accent-rust: #b85a3e;
+    --accent-slate: #6b7a8f;
+    --border-subtle: #e8e2d6;
+    --border-default: #d6cfbf;
+    --border-strong: #1a2332;
+    --text-xs: 11px;
+    --text-sm: 12px;
+    --text-base: 13px;
+    --text-md: 14px;
+    --text-lg: 16px;
+    --text-xl: 20px;
+    --text-2xl: 26px;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
+    --radius-lg: 10px;
+    --font-display: 'Noto Serif SC', 'Songti SC', 'STSong', serif;
+    --font-body: 'Inter', -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    --font-mono: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg-page); color: var(--text-primary);
+    font-family: var(--font-body); font-size: var(--text-base); line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  button, input, select, textarea { font-family: inherit; font-size: inherit; color: inherit; }
+  a { color: inherit; text-decoration: none; cursor: pointer; }
+
+  .app {
+    display: grid; grid-template-columns: 200px 1fr; grid-template-rows: 56px 1fr;
+    grid-template-areas: "sidebar topbar" "sidebar main"; height: 100vh;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    grid-area: sidebar; background: var(--bg-sidebar); color: var(--text-sidebar);
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  .brand { padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--bg-active); flex-shrink: 0; }
+  .brand-mark {
+    font-family: var(--font-display); font-size: 17px; font-weight: 900;
+    color: var(--text-inverse); letter-spacing: 0.04em;
+  }
+  .brand-mark::after { content: "·"; color: var(--accent-cinnabar); margin-left: 2px; }
+  .brand-sub { font-size: 10px; color: var(--text-tertiary); letter-spacing: 0.15em; text-transform: uppercase; margin-top: 4px; }
+  .nav { flex: 1; padding: var(--space-3) 0; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; gap: var(--space-3);
+    padding: 6px var(--space-5); color: var(--text-sidebar); cursor: pointer; position: relative;
+  }
+  .nav-item:hover { background: var(--bg-sidebar-hover); }
+  .nav-item.active { background: var(--bg-active); color: var(--text-sidebar-active); }
+  .nav-item.active::before {
+    content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--accent-cinnabar);
+  }
+  .nav-icon { width: 14px; height: 14px; flex-shrink: 0; }
+  .nav-label { flex: 1; font-size: 13px; }
+  .nav-badge {
+    background: var(--accent-cinnabar); color: var(--text-inverse);
+    font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600;
+    min-width: 18px; text-align: center;
+  }
+  .nav-badge-soft { background: rgba(255,255,255,0.08); color: var(--text-sidebar); }
+
+  /* Topbar */
+  .topbar {
+    grid-area: topbar; background: var(--bg-surface); border-bottom: 1px solid var(--border-subtle);
+    display: flex; align-items: center; padding: 0 var(--space-6); gap: var(--space-4);
+  }
+  .breadcrumb { display: flex; align-items: center; gap: var(--space-2); color: var(--text-secondary); font-size: var(--text-md); }
+  .breadcrumb-current { color: var(--text-primary); font-weight: 500; }
+  .breadcrumb a { cursor: pointer; }
+  .breadcrumb a:hover { color: var(--accent-ink); }
+  .topbar-spacer { flex: 1; }
+  .search { position: relative; width: 240px; }
+  .search input {
+    width: 100%; height: 30px; border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    padding: 0 var(--space-3) 0 30px; background: var(--bg-soft); font-size: var(--text-base);
+  }
+  .search input:focus { outline: none; border-color: var(--accent-ink); background: var(--bg-surface); }
+  .search-icon { position: absolute; left: 9px; top: 50%; transform: translateY(-50%); color: var(--text-tertiary); width: 13px; height: 13px; }
+  .topbar-btn {
+    width: 30px; height: 30px; border: none; background: transparent; border-radius: var(--radius-md);
+    cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-secondary); position: relative;
+  }
+  .topbar-btn:hover { background: var(--bg-soft); }
+  .topbar-btn-dot {
+    position: absolute; top: 6px; right: 6px; width: 6px; height: 6px;
+    background: var(--accent-cinnabar); border-radius: 50%; border: 1.5px solid var(--bg-surface);
+  }
+  .role-switch {
+    display: flex; align-items: center; background: var(--bg-soft); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md); padding: 2px; height: 30px;
+  }
+  .role-tab {
+    padding: 0 10px; height: 24px; border: none; background: transparent; border-radius: 3px;
+    font-size: 12px; color: var(--text-secondary); cursor: pointer; font-weight: 500;
+  }
+  .role-tab.active { background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 1px 2px rgba(26,35,50,0.06); }
+  .user-chip { display: flex; align-items: center; gap: var(--space-2); padding: 4px 10px 4px 4px; border-radius: 20px; cursor: pointer; }
+  .user-chip:hover { background: var(--bg-soft); }
+  .avatar {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: linear-gradient(135deg, #c8392f, #b8954a);
+    display: flex; align-items: center; justify-content: center; color: var(--text-inverse);
+    font-family: var(--font-display); font-weight: 700; font-size: 12px;
+  }
+  .user-chip-name { font-size: var(--text-md); color: var(--text-primary); font-weight: 500; }
+  .user-chip-role { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+  /* Main */
+  .main { grid-area: main; overflow-y: auto; padding: var(--space-6) var(--space-8); }
+  .page-header {
+    display: flex; align-items: flex-end; justify-content: space-between;
+    margin-bottom: var(--space-5); padding-bottom: var(--space-4); border-bottom: 1px solid var(--border-subtle);
+  }
+  .page-title { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; margin: 0; color: var(--text-primary); letter-spacing: 0.01em; }
+  .page-subtitle { color: var(--text-secondary); font-size: var(--text-md); margin-top: 4px; }
+  .page-actions { display: flex; gap: var(--space-2); }
+  .btn {
+    height: 30px; padding: 0 var(--space-4); border: 1px solid var(--border-default);
+    background: var(--bg-surface); color: var(--text-primary); border-radius: var(--radius-md);
+    font-size: var(--text-md); font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: var(--space-2);
+    transition: all 0.12s;
+  }
+  .btn:hover { border-color: var(--text-primary); }
+  .btn:active { transform: translateY(1px); }
+  .btn-primary { background: var(--accent-ink); color: var(--text-inverse); border-color: var(--accent-ink); }
+  .btn-primary:hover { background: var(--bg-sidebar); }
+  .btn-ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
+  .btn-ghost:hover { background: var(--bg-soft); border-color: transparent; }
+  .btn-cinnabar { background: var(--accent-cinnabar); color: var(--text-inverse); border-color: var(--accent-cinnabar); }
+  .btn-cinnabar:hover { background: #b0332a; }
+  .btn-sm { height: 26px; padding: 0 10px; font-size: var(--text-sm); }
+  .ico { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* KPI */
+  .kpi-strip { display: grid; grid-template-columns: repeat(5, 1fr); gap: var(--space-3); margin-bottom: var(--space-5); }
+  .kpi-card {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    padding: var(--space-4); border-radius: var(--radius-md); position: relative; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .kpi-card:hover { box-shadow: 0 2px 8px rgba(26,35,50,0.08); border-color: var(--border-default); }
+  .kpi-card::before { content: ""; position: absolute; top: 0; left: 0; width: 2px; height: 20px; background: var(--accent-cinnabar); }
+  .kpi-card.kpi-warn::before { background: var(--accent-amber); }
+  .kpi-card.kpi-good::before { background: var(--accent-jade); }
+  .kpi-card.kpi-info::before { background: var(--accent-ink); }
+  .kpi-card.kpi-gold::before { background: var(--accent-gold); }
+  .kpi-label { font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-2); display: flex; align-items: center; justify-content: space-between; }
+  .kpi-value { font-family: var(--font-display); font-size: var(--text-2xl); font-weight: 700; color: var(--text-primary); line-height: 1; }
+  .kpi-unit { font-size: var(--text-md); color: var(--text-secondary); margin-left: 2px; font-family: var(--font-body); font-weight: 400; }
+  .kpi-delta { margin-top: var(--space-2); font-size: var(--text-xs); color: var(--text-tertiary); line-height: 1.5; }
+  .kpi-delta strong { color: var(--text-primary); font-weight: 600; }
+  .kpi-delta .warn { color: var(--accent-amber); font-weight: 600; }
+
+  /* Section */
+  .section { margin-bottom: var(--space-5); }
+  .section-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--space-3); }
+  .section-title { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; margin: 0; }
+  .section-meta { font-size: var(--text-sm); color: var(--text-secondary); }
+  .section-actions { display: flex; gap: var(--space-2); }
+
+  /* Filter */
+  .filter-bar {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    padding: var(--space-2) var(--space-3); margin-bottom: var(--space-3);
+    display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap;
+  }
+  .filter-label { font-size: var(--text-sm); color: var(--text-secondary); font-weight: 500; }
+  .chip-group { display: flex; gap: 4px; }
+  .chip {
+    height: 26px; padding: 0 12px; border: 1px solid var(--border-subtle);
+    background: var(--bg-surface); color: var(--text-secondary); border-radius: 13px;
+    font-size: var(--text-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+    transition: all 0.12s; user-select: none;
+  }
+  .chip:hover { border-color: var(--border-default); }
+  .chip.active { background: var(--bg-sidebar); color: var(--text-inverse); border-color: var(--bg-sidebar); }
+  .chip-count {
+    background: rgba(255,255,255,0.2); padding: 0 6px; border-radius: 8px;
+    font-size: 10px; font-family: var(--font-mono);
+  }
+  .chip:not(.active) .chip-count { background: var(--bg-soft); color: var(--text-tertiary); }
+  .filter-spacer { flex: 1; }
+  .filter-search { position: relative; width: 200px; }
+  .filter-search input {
+    width: 100%; height: 26px; border: 1px solid var(--border-subtle); border-radius: 13px;
+    padding: 0 12px 0 28px; font-size: var(--text-sm); background: var(--bg-soft);
+  }
+  .filter-search input:focus { outline: none; border-color: var(--accent-ink); background: var(--bg-surface); }
+  .filter-search-icon {
+    position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+    color: var(--text-tertiary); width: 12px; height: 12px;
+  }
+
+  /* Table */
+  .table { background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); overflow: hidden; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: var(--text-base); }
+  .data-table thead th {
+    text-align: left; font-weight: 500; color: var(--text-tertiary); padding: 10px var(--space-4);
+    border-bottom: 1px solid var(--border-subtle); background: var(--bg-soft);
+    font-size: var(--text-xs); letter-spacing: 0.05em; text-transform: uppercase;
+  }
+  .data-table tbody td {
+    padding: 10px var(--space-4); border-bottom: 1px solid var(--border-subtle); vertical-align: middle;
+  }
+  .data-table tbody tr:last-child td { border-bottom: none; }
+  .data-table tbody tr { cursor: pointer; }
+  .data-table tbody tr:hover td { background: var(--bg-soft); }
+  .data-table tbody tr.selected td { background: rgba(45, 63, 90, 0.06); box-shadow: inset 2px 0 0 var(--accent-cinnabar); }
+  .data-table tbody tr.row-draft td { background: rgba(212, 160, 76, 0.03); }
+  .data-table tbody tr.row-draft:hover td { background: rgba(212, 160, 76, 0.08); }
+  .col-name { width: 28%; }
+  .col-status { width: 100px; }
+  .col-num { width: 80px; text-align: right; font-family: var(--font-mono); color: var(--text-secondary); font-size: 12px; }
+  .col-update { width: 80px; text-align: right; font-family: var(--font-mono); color: var(--text-tertiary); font-size: 11px; }
+  .col-action { width: 60px; text-align: right; }
+
+  .robot-cell { display: flex; align-items: center; gap: var(--space-3); }
+  .robot-mark {
+    width: 30px; height: 30px; border-radius: var(--radius-md);
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-weight: 700; font-size: 13px;
+    color: var(--text-inverse); flex-shrink: 0;
+    border: 1.5px solid var(--bg-surface); box-shadow: 0 0 0 1px var(--border-subtle);
+  }
+  .robot-mark-draft {
+    background: transparent !important; color: var(--text-tertiary) !important;
+    border: 1.5px dashed var(--border-default); box-shadow: none; font-weight: 400;
+  }
+  .robot-info { line-height: 1.3; min-width: 0; }
+  .robot-info-name { font-weight: 600; color: var(--text-primary); display: flex; align-items: center; gap: 8px; }
+  .robot-info-id { font-family: var(--font-mono); font-size: 10px; color: var(--text-tertiary); letter-spacing: 0.05em; font-weight: 400; }
+  .robot-info-role { font-size: var(--text-sm); color: var(--text-secondary); margin-top: 2px; }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 5px; font-size: var(--text-xs);
+    padding: 2px 8px; border-radius: 10px; font-weight: 500; white-space: nowrap;
+    cursor: pointer; user-select: none;
+  }
+  .status-pill:hover { transform: scale(1.02); }
+  .status-online { background: rgba(90, 130, 112, 0.1); color: var(--accent-jade); }
+  .status-online::before { content: ""; width: 6px; height: 6px; background: var(--accent-jade); border-radius: 50%; }
+  .status-degraded { background: rgba(212, 160, 76, 0.12); color: var(--accent-amber); }
+  .status-degraded::before { content: ""; width: 6px; height: 6px; background: var(--accent-amber); border-radius: 50%; }
+  .status-draft { background: rgba(212, 160, 76, 0.06); color: var(--accent-amber); border: 1px dashed var(--accent-amber); }
+  .status-draft::before { content: ""; width: 6px; height: 6px; border: 1px solid var(--accent-amber); border-radius: 50%; }
+  .status-maint { background: var(--bg-soft); color: var(--text-tertiary); }
+  .status-maint::before { content: ""; width: 6px; height: 6px; background: var(--text-tertiary); border-radius: 50%; }
+
+  .row-action { color: var(--text-secondary); cursor: pointer; padding: 4px 8px; border-radius: var(--radius-sm); font-size: var(--text-sm); }
+  .row-action:hover { background: var(--bg-page); color: var(--text-primary); }
+
+  /* Lower grid */
+  .lower-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: var(--space-4); }
+  .panel {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .panel-head {
+    padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--border-subtle);
+    display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  }
+  .panel-head-left { display: flex; align-items: center; gap: var(--space-2); }
+  .panel-title { font-family: var(--font-display); font-size: var(--text-md); font-weight: 700; margin: 0; }
+  .panel-tag {
+    font-size: 10px; padding: 1px 6px; background: var(--bg-soft); color: var(--text-secondary);
+    border-radius: 3px; font-family: var(--font-mono);
+  }
+  .panel-body { padding: var(--space-3); flex: 1; overflow-y: auto; max-height: 360px; }
+
+  .issue-list, .config-list, .ticket-list { list-style: none; margin: 0; padding: 0; }
+  .issue-item {
+    padding: var(--space-3); border-radius: var(--radius-md);
+    display: flex; gap: var(--space-3); align-items: flex-start; cursor: pointer;
+    border: 1px solid transparent;
+  }
+  .issue-item:hover { background: var(--bg-soft); border-color: var(--border-subtle); }
+  .issue-icon {
+    width: 26px; height: 26px; border-radius: var(--radius-md);
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .issue-icon.severity-error { background: rgba(200, 57, 47, 0.1); color: var(--accent-cinnabar); }
+  .issue-icon.severity-warn { background: rgba(212, 160, 76, 0.12); color: var(--accent-amber); }
+  .issue-icon.severity-info { background: rgba(45, 63, 90, 0.08); color: var(--accent-ink); }
+  .issue-content { flex: 1; min-width: 0; }
+  .issue-title { font-size: 13px; color: var(--text-primary); font-weight: 500; margin-bottom: 3px; line-height: 1.4; }
+  .issue-meta { font-size: var(--text-xs); color: var(--text-tertiary); display: flex; gap: var(--space-2); flex-wrap: wrap; }
+  .issue-meta .meta-key { font-family: var(--font-mono); background: var(--bg-soft); padding: 0 4px; border-radius: 2px; }
+
+  .config-item {
+    padding: var(--space-3); border-bottom: 1px dashed var(--border-subtle);
+    display: flex; gap: var(--space-3); align-items: flex-start;
+  }
+  .config-item:last-child { border-bottom: none; }
+  .config-time {
+    font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary);
+    width: 42px; flex-shrink: 0; padding-top: 2px;
+  }
+  .config-content { flex: 1; min-width: 0; }
+  .config-text { font-size: 13px; color: var(--text-primary); margin-bottom: 4px; line-height: 1.5; }
+  .config-text strong { color: var(--accent-ink); font-weight: 600; }
+  .config-diff {
+    font-family: var(--font-mono); font-size: 11px; background: var(--bg-code);
+    padding: 4px 8px; border-radius: var(--radius-sm); color: var(--text-secondary); line-height: 1.6;
+  }
+  .config-diff .diff-add { color: var(--accent-jade); }
+  .config-diff .diff-del { color: var(--accent-rust); }
+
+  .ticket-item {
+    padding: var(--space-3); border-bottom: 1px dashed var(--border-subtle);
+    display: flex; gap: var(--space-3); align-items: flex-start; cursor: pointer;
+  }
+  .ticket-item:last-child { border-bottom: none; }
+  .ticket-item:hover { background: var(--bg-soft); }
+  .ticket-prio { width: 4px; height: 28px; border-radius: 2px; flex-shrink: 0; margin-top: 2px; }
+  .ticket-prio-high { background: var(--accent-cinnabar); }
+  .ticket-prio-med { background: var(--accent-amber); }
+  .ticket-prio-low { background: var(--accent-slate); }
+  .ticket-content { flex: 1; min-width: 0; }
+  .ticket-head { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; flex-wrap: wrap; }
+  .ticket-student { font-weight: 600; color: var(--text-primary); font-size: 13px; }
+  .ticket-from {
+    font-size: 11px; padding: 1px 6px; background: var(--bg-soft); border-radius: 3px;
+    color: var(--text-secondary); border: 1px solid var(--border-subtle); font-family: var(--font-mono);
+  }
+  .ticket-snippet {
+    font-size: 12px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 4px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .ticket-meta { font-size: 11px; color: var(--text-tertiary); display: flex; gap: var(--space-2); }
+  .ticket-meta .wait-time { color: var(--accent-cinnabar); font-weight: 600; }
+
+  .swatch-1 { background: var(--accent-cinnabar); }
+  .swatch-2 { background: #2d5a87; }
+  .swatch-3 { background: #6b8e23; }
+  .swatch-4 { background: #c8451e; }
+  .swatch-5 { background: #5a4a8c; }
+  .swatch-6 { background: var(--accent-gold); }
+  .swatch-7 { background: var(--accent-jade); }
+  .swatch-8 { background: #8b6f47; }
+  .swatch-9 { background: #4a7c8c; }
+  .swatch-10 { background: #9c4a6a; }
+
+  .main::-webkit-scrollbar, .panel-body::-webkit-scrollbar, .nav::-webkit-scrollbar { width: 8px; }
+  .main::-webkit-scrollbar-track, .panel-body::-webkit-scrollbar-track, .nav::-webkit-scrollbar-track { background: transparent; }
+  .main::-webkit-scrollbar-thumb, .panel-body::-webkit-scrollbar-thumb, .nav::-webkit-scrollbar-thumb {
+    background: var(--border-default); border-radius: 4px;
+  }
+  .main::-webkit-scrollbar-thumb:hover, .panel-body::-webkit-scrollbar-thumb:hover, .nav::-webkit-scrollbar-thumb:hover {
+    background: var(--text-tertiary);
+  }
+  .nav::-webkit-scrollbar { width: 6px; }
+
+  /* Welcome banner */
+  .welcome-banner {
+    background: linear-gradient(135deg, #1a2332 0%, #2d3f5a 100%);
+    color: var(--text-inverse); padding: var(--space-3) var(--space-5);
+    border-radius: var(--radius-md); margin-bottom: var(--space-5);
+    display: flex; align-items: center; justify-content: space-between;
+    position: relative; overflow: hidden;
+  }
+  .welcome-banner::before {
+    content: ""; position: absolute; right: -40px; top: -40px;
+    width: 160px; height: 160px; border-radius: 50%; background: rgba(200, 57, 47, 0.1);
+  }
+  .welcome-text { position: relative; z-index: 1; }
+  .welcome-greeting { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; margin-bottom: 2px; }
+  .welcome-hint { font-size: 13px; color: rgba(245, 241, 234, 0.7); }
+  .welcome-cta { position: relative; z-index: 1; display: flex; gap: var(--space-2); }
+  .btn-on-dark { background: rgba(255,255,255,0.1); color: var(--text-inverse); border-color: rgba(255,255,255,0.2); }
+  .btn-on-dark:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.3); }
+
+  /* Modal */
+  .modal-mask {
+    position: fixed; inset: 0; background: rgba(26, 35, 50, 0.4); z-index: 100;
+    display: none; align-items: center; justify-content: center;
+  }
+  .modal-mask.show { display: flex; }
+  .modal {
+    background: var(--bg-surface); border-radius: var(--radius-lg);
+    width: 560px; max-width: 90vw; max-height: 90vh; overflow: auto;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  }
+  .modal-head {
+    padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--border-subtle);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-title { font-family: var(--font-display); font-size: var(--text-lg); font-weight: 700; margin: 0; }
+  .modal-close {
+    width: 24px; height: 24px; border: none; background: transparent; cursor: pointer;
+    color: var(--text-secondary); border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { background: var(--bg-soft); color: var(--text-primary); }
+  .modal-body { padding: var(--space-5); }
+  .modal-foot {
+    padding: var(--space-3) var(--space-5); border-top: 1px solid var(--border-subtle);
+    display: flex; justify-content: flex-end; gap: var(--space-2);
+  }
+  .form-field { margin-bottom: var(--space-4); }
+  .form-label {
+    display: block; font-size: var(--text-sm); font-weight: 500; color: var(--text-primary);
+    margin-bottom: var(--space-2);
+  }
+  .form-label .req { color: var(--accent-cinnabar); }
+  .form-input, .form-select, .form-textarea {
+    width: 100%; height: 32px; padding: 0 var(--space-3);
+    border: 1px solid var(--border-default); border-radius: var(--radius-md);
+    background: var(--bg-surface); font-size: var(--text-base); color: var(--text-primary);
+  }
+  .form-textarea { height: auto; padding: var(--space-2) var(--space-3); resize: vertical; min-height: 80px; line-height: 1.5; }
+  .form-input:focus, .form-select:focus, .form-textarea:focus {
+    outline: none; border-color: var(--accent-ink); box-shadow: 0 0 0 3px rgba(45, 63, 90, 0.08);
+  }
+  .form-hint { font-size: var(--text-xs); color: var(--text-tertiary); margin-top: 4px; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
+
+  /* Detail page tabs */
+  .tabs {
+    display: flex; gap: 0; border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: var(--space-4);
+  }
+  .tab {
+    padding: var(--space-3) var(--space-4); cursor: pointer; color: var(--text-secondary);
+    font-size: var(--text-md); font-weight: 500; position: relative;
+    border-bottom: 2px solid transparent; transition: all 0.15s;
+  }
+  .tab:hover { color: var(--text-primary); }
+  .tab.active { color: var(--text-primary); }
+  .tab.active::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px;
+    height: 2px; background: var(--accent-cinnabar);
+  }
+  .tab-count {
+    font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-tertiary);
+    margin-left: 6px;
+  }
+  .tab.active .tab-count { color: var(--accent-cinnabar); }
+
+  /* Detail page content blocks */
+  .push-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--space-3);
+  }
+  .push-card {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md); padding: var(--space-4);
+    transition: all 0.15s;
+  }
+  .push-card:hover { box-shadow: 0 2px 8px rgba(26,35,50,0.06); }
+  .push-card-head {
+    display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: var(--space-2);
+  }
+  .push-card-title { font-weight: 600; font-size: var(--text-md); color: var(--text-primary); }
+  .push-card-desc { font-size: var(--text-sm); color: var(--text-secondary); line-height: 1.5; margin-bottom: var(--space-3); }
+  .push-card-meta {
+    display: flex; gap: var(--space-3); font-size: var(--text-xs); color: var(--text-tertiary);
+    padding-top: var(--space-2); border-top: 1px dashed var(--border-subtle);
+  }
+  .push-card-meta strong { color: var(--text-primary); font-weight: 600; }
+
+  /* Toggle switch */
+  .switch {
+    position: relative; width: 36px; height: 20px; background: var(--border-default);
+    border-radius: 10px; cursor: pointer; transition: background 0.2s; flex-shrink: 0;
+  }
+  .switch::after {
+    content: ""; position: absolute; top: 2px; left: 2px;
+    width: 16px; height: 16px; background: white; border-radius: 50%;
+    transition: all 0.2s; box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  }
+  .switch.on { background: var(--accent-jade); }
+  .switch.on::after { left: 18px; }
+
+  /* Detail page summary cards */
+  .summary-row {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--space-3); margin-bottom: var(--space-5);
+  }
+  .summary-card {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md); padding: var(--space-4);
+  }
+  .summary-label {
+    font-size: var(--text-sm); color: var(--text-secondary); margin-bottom: var(--space-2);
+  }
+  .summary-value {
+    font-family: var(--font-display); font-size: var(--text-xl); font-weight: 700;
+    color: var(--text-primary); line-height: 1; margin-bottom: var(--space-2);
+  }
+  .summary-meta { font-size: var(--text-xs); color: var(--text-tertiary); }
+
+  /* Template list */
+  .tpl-group {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md); margin-bottom: var(--space-3); overflow: hidden;
+  }
+  .tpl-group-head {
+    padding: var(--space-3) var(--space-4); background: var(--bg-soft);
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; user-select: none;
+  }
+  .tpl-group-head:hover { background: var(--bg-code); }
+  .tpl-group-title {
+    font-family: var(--font-display); font-weight: 700; font-size: var(--text-md);
+    display: flex; align-items: center; gap: var(--space-2);
+  }
+  .tpl-group-arrow { transition: transform 0.2s; }
+  .tpl-group.open .tpl-group-arrow { transform: rotate(90deg); }
+  .tpl-group-body { display: none; padding: var(--space-2) 0; }
+  .tpl-group.open .tpl-group-body { display: block; }
+  .tpl-item {
+    padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-subtle);
+    display: grid; grid-template-columns: 1fr 100px 80px 80px; gap: var(--space-3);
+    align-items: center; cursor: pointer;
+  }
+  .tpl-item:hover { background: var(--bg-soft); }
+  .tpl-item-info { min-width: 0; }
+  .tpl-item-name { font-weight: 500; color: var(--text-primary); font-size: var(--text-md); margin-bottom: 2px; }
+  .tpl-item-preview {
+    font-size: var(--text-xs); color: var(--text-secondary);
+    display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden;
+    font-family: var(--font-mono);
+  }
+  .tpl-source {
+    font-family: var(--font-mono); font-size: 11px; padding: 1px 6px;
+    background: var(--bg-code); color: var(--text-secondary); border-radius: 2px;
+    text-align: center;
+  }
+  .tpl-source-llm { background: rgba(184, 149, 74, 0.12); color: var(--accent-gold); }
+  .tpl-meta { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); text-align: right; }
+
+  /* Keyword list */
+  .kw-group { margin-bottom: var(--space-4); }
+  .kw-group-title {
+    font-family: var(--font-display); font-weight: 700; font-size: var(--text-md);
+    margin-bottom: var(--space-2); display: flex; align-items: center; gap: var(--space-2);
+  }
+  .kw-table {
+    background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-md);
+    overflow: hidden;
+  }
+  .kw-row {
+    padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-subtle);
+    display: grid; grid-template-columns: 1fr 100px 80px 80px; gap: var(--space-3);
+    align-items: center;
+  }
+  .kw-row:first-child { border-top: none; }
+  .kw-row:hover { background: var(--bg-soft); }
+  .kw-keyword {
+    font-family: var(--font-mono); font-size: var(--text-sm); color: var(--text-primary);
+    padding: 2px 8px; background: var(--bg-code); border-radius: 3px; display: inline-block;
+  }
+  .kw-template { font-size: var(--text-sm); color: var(--text-secondary); }
+  .kw-priority { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); text-align: right; }
+
+  /* Page transitions */
+  .view { display: none; }
+  .view.active { display: block; }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%);
+    background: var(--bg-sidebar); color: var(--text-inverse); padding: 10px 20px;
+    border-radius: var(--radius-md); font-size: var(--text-md); z-index: 200;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2); opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">考研工厂</div>
+      <div class="brand-sub">Admin · v1.0</div>
+    </div>
+    <nav class="nav" id="sidebar-nav"></nav>
+  </aside>
+
+  <header class="topbar">
+    <div class="breadcrumb" id="breadcrumb"></div>
+    <div class="topbar-spacer"></div>
+    <div class="search">
+      <svg class="ico search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input type="text" placeholder="搜索机器人 / 模板 / 关键词" id="global-search" />
+    </div>
+    <div class="role-switch" id="role-switch">
+      <button class="role-tab" data-role="admin">管理员</button>
+      <button class="role-tab active" data-role="ops">运营</button>
+      <button class="role-tab" data-role="cs">客服</button>
+    </div>
+    <button class="topbar-btn" title="刷新" onclick="location.reload()">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.7 1 6.4 2.6"/><path d="M21 3v6h-6"/></svg>
+    </button>
+    <button class="topbar-btn" title="告警" onclick="navigate('alerts')">
+      <svg class="ico" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="topbar-btn-dot"></span>
+    </button>
+    <div class="user-chip">
+      <div class="avatar" id="user-avatar">李</div>
+      <div>
+        <div class="user-chip-name" id="user-name">李运营</div>
+        <div class="user-chip-role" id="user-role">运营 · 高级</div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main" id="main-content"></main>
+</div>
+
+<!-- Modal -->
+<div class="modal-mask" id="modal-mask">
+  <div class="modal" id="modal"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+  // ============ State ============
+  const state = {
+    role: 'ops',
+    filter: 'all',
+    selectedRobot: 'R-07',
+    selectedTab: 'templates',
+    nav: 'robots',
+  };
+
+  const robots = [
+    { id: 'R-01', name: '小研 · 入口大管家', role: '首触接待 · 销售线索 · 政策报名', mark: '研', swatch: 1, status: 'online', templates: 26, keywords: 18, prompts: 5, pushSlots: 3, update: '2h' },
+    { id: 'R-07', name: '小铃 · 每日任务', role: '推送 + 打卡 + 汇总 · 早 8 / 晚 10 / 周报', mark: '铃', swatch: 7, status: 'online', templates: 42, keywords: 15, prompts: 12, pushSlots: 4, update: '1h' },
+    { id: 'R-02', name: '小数 · 数学答疑', role: '学科答疑 · 每日一题 / 错题回炉预留', mark: '数', swatch: 2, status: 'online', templates: 34, keywords: 32, prompts: 7, pushSlots: 6, update: '5h' },
+    { id: 'R-03', name: '小英 · 英语答疑', role: '学科答疑 · 单词打卡预留', mark: '英', swatch: 3, status: 'online', templates: 28, keywords: 22, prompts: 6, pushSlots: 6, update: '1d' },
+    { id: 'R-05', name: '小专 · 专业课答疑', role: '院校绑定答疑 · 资料包推送', mark: '专', swatch: 5, status: 'online', templates: 21, keywords: 14, prompts: 5, pushSlots: 4, update: '8h' },
+    { id: 'R-04', name: '小政 · 政治答疑', role: '学科答疑 · 阶段切换 / 时效内容', mark: '政', swatch: 4, status: 'degraded', templates: 24, keywords: 16, prompts: 6, pushSlots: 6, update: '3d' },
+    { id: 'R-06', name: '小校 · 择校决策', role: '院校推荐 · 分数线 / 报录比查询', mark: '校', swatch: 6, status: 'maint', templates: 18, keywords: 12, prompts: 4, pushSlots: 2, update: '12d' },
+    { id: 'R-08', name: '资料检索员', role: '终端知识库全文检索', mark: '?', swatch: null, status: 'draft', templates: 0, keywords: 0, prompts: 0, pushSlots: 0, update: '新建' },
+    { id: 'R-09', name: '心态树洞', role: '情绪陪伴 · 心理疏导入口', mark: '?', swatch: null, status: 'draft', templates: 0, keywords: 0, prompts: 0, pushSlots: 0, update: '昨天' },
+    { id: 'R-10', name: '复试陪练', role: '复试模拟 · 自我介绍训练', mark: '?', swatch: null, status: 'draft', templates: 0, keywords: 0, prompts: 0, pushSlots: 0, update: '3天前' },
+  ];
+
+  const navItems = [
+    { key: 'robots', label: '机器人管理', icon: '<rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="9" cy="13" r="1.5"/><circle cx="15" cy="13" r="1.5"/><path d="M12 3v3"/>' },
+    { key: 'dashboard', label: '工作状态', icon: '<path d="M3 3v18h18"/><path d="M7 12l3-3 4 4 5-5"/>' },
+    { key: 'templates', label: '消息模板库', icon: '<path d="M4 6h16M4 12h12M4 18h8"/>', badge: '238', badgeSoft: true },
+    { key: 'keywords', label: '关键词快答库', icon: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>', badge: '129', badgeSoft: true },
+    { key: 'tasks', label: '任务库', icon: '<path d="M3 7l9-4 9 4-9 4-9-4z"/><path d="M3 12l9 4 9-4M3 17l9 4 9-4"/>' },
+    { key: 'prompts', label: 'Prompt 库', icon: '<circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.2 4.2l2.8 2.8M17 17l2.8 2.8"/>', badge: '45', badgeSoft: true },
+    { key: 'styles', label: '风格模板', icon: '<path d="M5 4h14v16H5z"/><path d="M9 8h6M9 12h6M9 16h4"/>', badge: '7', badgeSoft: true },
+    { key: 'plans', label: '任务计划', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+    { key: 'tickets', label: '转人工工单', icon: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11h-6M19 8v6"/>', badge: '12' },
+    { key: 'monitor', label: '运行监控', icon: '<path d="M3 12h4l3-9 4 18 3-9h4"/>' },
+    { key: 'audit', label: '配置审计', icon: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>' },
+    { key: 'gray', label: '灰度发布', icon: '<path d="M21 12a9 9 0 1 1-9-9c2.5 0 4.7 1 6.4 2.6"/><path d="M21 3v6h-6"/>' },
+    { key: 'settings', label: '系统设置', icon: '<path d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z"/>' },
+  ];
+
+  const robotTemplates = {
+    'R-07': [
+      { group: '欢迎类', items: [
+        { name: '加好友欢迎语', preview: '宝子~我是小铃,从今天起每天早上 8 点我会给你推任务,晚上 10 点收作业...', source: '任务库', updated: '昨天', enabled: true },
+        { name: '阶段开启 · 基础', preview: '学弟/学妹,从今天开始进入基础阶段,重点是搭建知识框架,每天 3h 即可~', source: '任务库', updated: '3 天前', enabled: true },
+        { name: '阶段开启 · 强化', preview: '学弟/学妹,基础阶段结束,从今天起进入强化,每天 5h,刷题为王~', source: '任务库', updated: '1 周前', enabled: true },
+      ]},
+      { group: '任务推送类', items: [
+        { name: '早 8 任务清单', preview: '{{姓名}} 学弟/学妹,{{日期}} 今日任务:📐 数学:...完成后回"打卡"...', source: '任务库', updated: '1 小时前', enabled: true },
+        { name: '今日重点 · 模考日', preview: '{{姓名}} 今天是模考日,上午 9:00-12:00 模考,下午对答案,晚上讲解...', source: '任务库', updated: '昨天', enabled: true },
+      ]},
+      { group: '提醒类', items: [
+        { name: '打卡提醒', preview: '学弟/学妹,别忘了打卡~已完成 {{已完成}}/{{总任务}} 项...', source: '任务库', updated: '2 天前', enabled: true },
+        { name: '逾期提醒', preview: '{{姓名}},{{学科}} 的任务已经逾期 {{N}} 天,要不要安排个补课时间?', source: '大模型', updated: '3 天前', enabled: true },
+        { name: '模考倒计时', preview: '{{姓名}},距离 {{模考名}} 还有 {{N}} 天,建议本周完成 {{任务}}...', source: '任务库', updated: '5 天前', enabled: true },
+      ]},
+      { group: '反馈类', items: [
+        { name: '打卡完成反馈', preview: '已完成 {{已完成}}/{{总任务}} 项,{{学科}} 表现不错,继续保持~', source: '任务库', updated: '1 小时前', enabled: true },
+        { name: '周报', preview: '{{姓名}} 学弟/学妹,本周完成率 {{百分比}}%,最高频未完成 {{学科}}...', source: '大模型', updated: '1 天前', enabled: true },
+        { name: '月报', preview: '{{姓名}},{{月份}} 整体完成率 {{百分比}}%,各科进度:数学 {{进度}},英语 {{进度}}...', source: '大模型', updated: '1 月前', enabled: true },
+      ]},
+      { group: '答疑回复类', items: [
+        { name: '通用答疑开头', preview: '学弟/学妹,这是学科问题,问 {{对应机器人}} 最合适,我这里只管任务~', source: '任务库', updated: '1 周前', enabled: true },
+        { name: '答案后追问', preview: '看完之后有没有更清楚一点?有不懂可以再问我~', source: '任务库', updated: '1 周前', enabled: true },
+        { name: '转人工提示', preview: '学弟/学妹,这个问题我帮你转给老师,稍后回复你~', source: '任务库', updated: '2 周前', enabled: true },
+      ]},
+      { group: '引导分流类', items: [
+        { name: '引导到小数(数学)', preview: '宝子~"今天复习什么"这种安排问题,问小铃最合适,我这里只做答疑~', source: '任务库', updated: '1 周前', enabled: true },
+        { name: '引导到小英(英语)', preview: '宝子~"今天背什么"问小铃最合适,我这里专心答疑~', source: '任务库', updated: '1 周前', enabled: true },
+        { name: '引导到小专(专业课)', preview: '参考书的具体使用节奏问小铃,我这里负责答疑~', source: '任务库', updated: '1 周前', enabled: true },
+      ]},
+    ],
+  };
+
+  const robotKeywords = {
+    'R-07': [
+      { group: '打卡词', items: [
+        { kw: '打卡', tpl: '打卡完成反馈', priority: 'P1', updated: '1d' },
+        { kw: '完成', tpl: '打卡完成反馈', priority: 'P1', updated: '1d' },
+        { kw: '没完成', tpl: '逾期提醒', priority: 'P2', updated: '3d' },
+        { kw: '今日任务', tpl: '早 8 任务清单', priority: 'P1', updated: '1d' },
+        { kw: '忘了', tpl: '逾期提醒', priority: 'P2', updated: '3d' },
+        { kw: '补课', tpl: '逾期提醒', priority: 'P2', updated: '3d' },
+        { kw: '补打卡', tpl: '打卡完成反馈', priority: 'P2', updated: '3d' },
+      ]},
+      { group: '复盘词', items: [
+        { kw: '周报', tpl: '周报', priority: 'P1', updated: '1d' },
+        { kw: '月报', tpl: '月报', priority: 'P1', updated: '1d' },
+        { kw: '进度', tpl: '早 8 任务清单', priority: 'P2', updated: '1d' },
+      ]},
+      { group: '引导分流', items: [
+        { kw: '数学', tpl: '引导到小数(数学)', priority: 'P1', updated: '1w' },
+        { kw: '英语', tpl: '引导到小英(英语)', priority: 'P1', updated: '1w' },
+        { kw: '政治', tpl: '引导到小政(政治)', priority: 'P1', updated: '1w' },
+        { kw: '专业课', tpl: '引导到小专(专业课)', priority: 'P1', updated: '1w' },
+      ]},
+      { group: '兜底', items: [
+        { kw: '人工', tpl: '转人工提示', priority: 'P0', updated: '1w' },
+        { kw: '老师', tpl: '转人工提示', priority: 'P0', updated: '1w' },
+      ]},
+    ],
+  };
+
+  const pushSlots = {
+    'R-07': [
+      { name: '每日一题', desc: '每天推送 1 道学科题,默认关闭,需学员订阅', enabled: false, trigger: '定时 每天 8:30', source: '任务库', subs: 0 },
+      { name: '考点速记', desc: '每周推送 1-2 个高频考点速记卡片,默认关闭', enabled: false, trigger: '定时 每周一/四 9:00', source: '任务库', subs: 0 },
+      { name: '错题回炉', desc: '学员标记"不懂"的题,3 天后自动回炉重推', enabled: false, trigger: '事件 + 定时', source: '大模型', subs: 0 },
+      { name: '阶段切换提醒', desc: '学员阶段切换时推送新阶段学习重点,仅一次', enabled: true, trigger: '事件', source: '任务库', subs: 2318 },
+      { name: '模考/真题推送', desc: '模考报名期、考前一周等节点推送', enabled: true, trigger: '定时 + 事件', source: '任务库', subs: 1456 },
+      { name: '时效性内容(仅政治)', desc: '重大时政事件、考前押题节点推送', enabled: false, trigger: '手动触发', source: '大模型', subs: 0 },
+    ],
+    'R-01': [
+      { name: '报名节点提醒', desc: '预报名/正式报名/网上确认/打印准考证等关键节点', enabled: true, trigger: '定时 cron', source: '任务库', subs: 3218 },
+      { name: '未报名培育 D1', desc: '加好友 1 天后,自我介绍 + 学习干货', enabled: true, trigger: '事件', source: '任务库', subs: 156 },
+      { name: '未报名培育 D3', desc: '加好友 3 天后,目标专业常见问题 + 资源引导', enabled: true, trigger: '事件', source: '任务库', subs: 124 },
+      { name: '未报名培育 D7', desc: '加好友 7 天后,阶段学习节奏建议 + 试听入口', enabled: true, trigger: '事件', source: '任务库', subs: 98 },
+      { name: '未报名培育 D15', desc: '加好友 15 天后,优惠窗口 + 最后引导', enabled: false, trigger: '事件', source: '任务库', subs: 42 },
+      { name: '阶段切换提醒', desc: '学员阶段切换时推送新阶段学习重点', enabled: false, trigger: '事件', source: '任务库', subs: 0 },
+    ],
+    'R-02': [
+      { name: '每日一题', desc: '数学每日一题,默认关闭', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '考点速记', desc: '数学高频考点速记', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '错题回炉', desc: '学员标记"不懂"的题,3 天后回炉', enabled: false, trigger: '事件 + 定时', source: '大模型', subs: 0 },
+      { name: '阶段切换提醒', desc: '学员阶段切换', enabled: false, trigger: '事件', source: '任务库', subs: 0 },
+      { name: '模考/真题', desc: '数学模考报名/真题推送', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '时效内容', desc: '(本机器人未启用)', enabled: false, trigger: '-', source: '-', subs: 0 },
+    ],
+    'R-03': [
+      { name: '单词打卡提醒', desc: '英语单词打卡提醒,可订阅', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '每日一题', desc: '英语每日一题,默认关闭', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '考点速记', desc: '英语高频考点', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '错题回炉', desc: '英语错题回炉', enabled: false, trigger: '事件 + 定时', source: '大模型', subs: 0 },
+      { name: '阶段切换', desc: '学员阶段切换', enabled: false, trigger: '事件', source: '任务库', subs: 0 },
+      { name: '模考/真题', desc: '英语模考/真题', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+    ],
+    'R-04': [
+      { name: '每日一题', desc: '政治每日一题', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '考点速记', desc: '政治考点', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '错题回炉', desc: '政治错题回炉', enabled: false, trigger: '事件 + 定时', source: '大模型', subs: 0 },
+      { name: '阶段切换', desc: '学员阶段切换', enabled: true, trigger: '事件', source: '任务库', subs: 982 },
+      { name: '模考/真题', desc: '政治模考', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '时效内容', desc: '重大时政事件、考前押题', enabled: false, trigger: '手动触发', source: '大模型', subs: 0 },
+    ],
+    'R-05': [
+      { name: '首次绑院校欢迎', desc: '首次绑定目标院校推送资料包', enabled: true, trigger: '事件', source: '任务库', subs: 1432 },
+      { name: '每日一题', desc: '专业课每日一题', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+      { name: '错题回炉', desc: '专业课错题回炉', enabled: false, trigger: '事件 + 定时', source: '大模型', subs: 0 },
+      { name: '模考/真题', desc: '专业课真题推送', enabled: false, trigger: '定时', source: '任务库', subs: 0 },
+    ],
+    'R-06': [
+      { name: '未定校学员月提醒', desc: '未定校学员每月一次提醒', enabled: false, trigger: '定时', source: '任务库', subs: 128 },
+      { name: '院校分数线更新', desc: '院校分数线数据更新推送', enabled: false, trigger: '事件', source: '任务库', subs: 684 },
+    ],
+  };
+
+  const roleContent = {
+    admin: {
+      avatar: '沈', name: '沈老师', role: '超级管理员',
+      greeting: '管理员视图 · 沈老师下午好',
+      hint: '3 个生产告警 · 1 个严重 · 建议优先处理 R-04 Prompt 调用失败',
+      panels: ['alerts'],
+    },
+    ops: {
+      avatar: '李', name: '李运营', role: '运营 · 高级',
+      greeting: '下午好,李运营',
+      hint: '3 条配置变更待你审核 · 关键词"多少钱"命中异常已检测',
+      panels: ['audit'],
+    },
+    cs: {
+      avatar: '王', name: '王客服', role: '客服 · 主管',
+      greeting: '客服视图 · 王客服下午好',
+      hint: '12 个工单待响应 · 4 个超 30 分钟 · 建议优先处理高优线索',
+      panels: ['tickets'],
+    },
+  };
+
+  // ============ Navigation ============
+  function navigate(key, params = {}) {
+    state.nav = key;
+    if (params.robot) state.selectedRobot = params.robot;
+    if (params.tab) state.selectedTab = params.tab;
+    render();
+    window.scrollTo(0, 0);
+  }
+
+  function setFilter(f) {
+    state.filter = f;
+    render();
+  }
+
+  function setRole(r) {
+    state.role = r;
+    render();
+    showToast(`已切换到 ${roleContent[r].role} 视图`);
+  }
+
+  function setTab(t) {
+    state.selectedTab = t;
+    render();
+  }
+
+  function cycleStatus(robotId) {
+    const r = robots.find(x => x.id === robotId);
+    if (!r || r.status === 'draft') return;
+    const order = ['online', 'degraded', 'maint', 'online'];
+    const next = order[(order.indexOf(r.status) + 1) % (order.length - 1)];
+    // 上面写法略 tricky,改成简单版
+    const cycle = { online: 'degraded', degraded: 'maint', maint: 'online' };
+    r.status = cycle[r.status] || 'online';
+    render();
+    showToast(`${r.name} 状态已切换为 ${statusLabel(r.status)}`);
+  }
+
+  function statusLabel(s) {
+    return { online: '在线', degraded: '降级', maint: '维护', draft: '未配置' }[s];
+  }
+
+  function togglePushSlot(robotId, slotName) {
+    const slots = pushSlots[robotId];
+    if (!slots) return;
+    const slot = slots.find(s => s.name === slotName);
+    if (!slot) return;
+    slot.enabled = !slot.enabled;
+    render();
+    showToast(`${slotName} 已${slot.enabled ? '启用' : '停用'}`);
+  }
+
+  function toggleTemplate(robotId, groupIdx, itemIdx) {
+    const groups = robotTemplates[robotId];
+    if (!groups) return;
+    const item = groups[groupIdx].items[itemIdx];
+    item.enabled = !item.enabled;
+    render();
+    showToast(`${item.name} 已${item.enabled ? '启用' : '停用'}`);
+  }
+
+  // ============ Render ============
+  function render() {
+    renderSidebar();
+    renderBreadcrumb();
+    renderMain();
+    renderRole();
+  }
+
+  function renderSidebar() {
+    const nav = document.getElementById('sidebar-nav');
+    nav.innerHTML = navItems.map(item => {
+      const active = state.nav === item.key || (state.nav === 'robot-detail' && item.key === 'robots') ? 'active' : '';
+      const badge = item.badge ? `<span class="nav-badge ${item.badgeSoft ? 'nav-badge-soft' : ''}">${item.badge}</span>` : '';
+      return `
+        <div class="nav-item ${active}" onclick="navigate('${item.key}')">
+          <svg class="nav-icon ico" viewBox="0 0 24 24">${item.icon}</svg>
+          <span class="nav-label">${item.label}</span>
+          ${badge}
+        </div>`;
+    }).join('');
+  }
+
+  function renderBreadcrumb() {
+    const bc = document.getElementById('breadcrumb');
+    const labels = { robots: '机器人管理', 'robot-detail': '机器人管理' };
+    if (state.nav === 'robot-detail') {
+      const r = robots.find(x => x.id === state.selectedRobot);
+      bc.innerHTML = `<a onclick="navigate('robots')">机器人管理</a>
+        <svg class="ico" width="11" height="11" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+        <span class="breadcrumb-current">${r ? r.name : ''}</span>`;
+    } else if (state.nav === 'templates') bc.innerHTML = `<span class="breadcrumb-current">消息模板库</span>`;
+    else if (state.nav === 'keywords') bc.innerHTML = `<span class="breadcrumb-current">关键词快答库</span>`;
+    else if (state.nav === 'tasks') bc.innerHTML = `<span class="breadcrumb-current">任务库</span>`;
+    else if (state.nav === 'prompts') bc.innerHTML = `<span class="breadcrumb-current">Prompt 库</span>`;
+    else if (state.nav === 'styles') bc.innerHTML = `<span class="breadcrumb-current">风格模板</span>`;
+    else if (state.nav === 'plans') bc.innerHTML = `<span class="breadcrumb-current">任务计划</span>`;
+    else if (state.nav === 'tickets') bc.innerHTML = `<span class="breadcrumb-current">转人工工单</span>`;
+    else if (state.nav === 'monitor') bc.innerHTML = `<span class="breadcrumb-current">运行监控</span>`;
+    else if (state.nav === 'audit') bc.innerHTML = `<span class="breadcrumb-current">配置审计</span>`;
+    else if (state.nav === 'gray') bc.innerHTML = `<span class="breadcrumb-current">灰度发布</span>`;
+    else if (state.nav === 'settings') bc.innerHTML = `<span class="breadcrumb-current">系统设置</span>`;
+    else bc.innerHTML = `<span class="breadcrumb-current">${labels[state.nav] || '机器人管理'}</span>`;
+  }
+
+  function renderDashboard() {
+    var now = new Date();
+    var hh = now.getHours();
+    var mm = now.getMinutes();
+    var timeStr = (hh < 10 ? '0' : '') + hh + ':' + (mm < 10 ? '0' : '') + mm;
+    var dashboard = robots.map(function(r) {
+      var seed = r.id.charCodeAt(2) * 7 + r.id.charCodeAt(3) * 13 + (hh * 60 + mm);
+      var sessions = 50 + (seed % 200);
+      var msgCount = 200 + (seed % 800);
+      var hitRate = 75 + (seed % 20);
+      var transCount = (seed % 30);
+      var avgResp = 200 + (seed % 400);
+      var label = r.status === 'online' ? '在线' : (r.status === 'degraded' ? '降级' : (r.status === 'maint' ? '维护' : '草稿'));
+      var color = r.status === 'online' ? 'var(--accent-jade)' : (r.status === 'degraded' ? 'var(--accent-amber)' : 'var(--text-tertiary)');
+      var bg = r.status === 'online' ? 'rgba(90,130,112,0.1)' : (r.status === 'degraded' ? 'rgba(212,160,76,0.12)' : 'var(--bg-soft)');
+      return { robot: r, label: label, color: color, bg: bg, sessions: sessions, msgCount: msgCount, hitRate: hitRate, transCount: transCount, avgResp: avgResp };
+    });
+    var totalSessions = dashboard.reduce(function(a, d) { return a + d.sessions; }, 0);
+    var totalMsg = dashboard.reduce(function(a, d) { return a + d.msgCount; }, 0);
+    var totalTrans = dashboard.reduce(function(a, d) { return a + d.transCount; }, 0);
+    var onlineCount = dashboard.filter(function(d) { return d.robot.status === 'online'; }).length;
+    var rows = dashboard.map(function(d) {
+      return '<tr onclick="navigate(\'robot-detail\', {robot: \'' + d.robot.id + \'})">' +
+        '<td class="col-name"><div class="robot-cell"><div class="robot-mark swatch-' + (d.robot.swatch || 1) + '">' + d.robot.mark + '</div><div class="robot-info"><div class="robot-info-name">' + d.robot.name + '</div><div class="robot-info-role">' + d.robot.role + '</div></div></div></td>' +
+        '<td><span class="status-pill" style="background:' + d.bg + ';color:' + d.color + ';">' + d.label + '</span></td>' +
+        '<td class="col-num">' + d.sessions + '</td>' +
+        '<td class="col-num">' + d.msgCount + '</td>' +
+        '<td class="col-num">' + d.hitRate + '%</td>' +
+        '<td class="col-num">' + d.transCount + '</td>' +
+        '<td class="col-num">' + d.avgResp + 'ms</td>' +
+        '<td class="col-update">' + d.robot.update + '</td>' +
+        '<td class="col-action"><span class="row-action">详情 →</span></td>' +
+        '</tr>';
+    }).join('');
+    return '<div class="page-header"><div><h1 class="page-title">工作状态</h1><div class="page-subtitle">每个机器人当前运行状态 · 今日 ' + timeStr + ' · ' + onlineCount + '/' + robots.length + ' 在线</div></div></div>' +
+      '<div class="kpi-strip">' +
+        kpiCard('今日会话', totalSessions.toLocaleString(), '次', 'good', null, '<strong>' + onlineCount + '</strong> / ' + robots.length + ' 机器人在线') +
+        kpiCard('今日消息', totalMsg.toLocaleString(), '条', 'info', null, '<strong>' + Math.round(totalMsg / robots.length) + '</strong> 条 / 机器人均') +
+        kpiCard('平均命中率', '78.3', '%', 'good', null, '<strong>↑ 2.1%</strong> vs 昨日') +
+        kpiCard('转人工', totalTrans, '次', 'warn', null, '<strong>' + Math.round(totalTrans / totalSessions * 100) + '%</strong> 转人工率') +
+      '</div>' +
+      '<div class="section-head"><div><h2 class="section-title">机器人运行状态</h2><div class="section-meta">点行进入详情页 · 每个机器人独立的模板/关键词/语料/推送/风格/限定词</div></div></div>' +
+      '<div class="table"><table class="data-table">' +
+        '<thead><tr><th class="col-name">机器人</th><th class="col-status">状态</th><th class="col-num">今日会话</th><th class="col-num">今日消息</th><th class="col-num">命中率</th><th class="col-num">转人工</th><th class="col-num">平均响应</th><th class="col-update">最后更新</th><th class="col-action"></th></tr></thead>' +
+        '<tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function renderRole() {
+    document.querySelectorAll('.role-tab').forEach(t => t.classList.toggle('active', t.dataset.role === state.role));
+    const u = roleContent[state.role];
+    document.getElementById('user-avatar').textContent = u.avatar;
+    document.getElementById('user-name').textContent = u.name;
+    document.getElementById('user-role').textContent = u.role;
+  }
+
+  function renderMain() {
+    const main = document.getElementById('main-content');
+    if (state.nav === 'robots') main.innerHTML = renderRobotList();
+    else if (state.nav === 'robot-detail') main.innerHTML = renderRobotDetail();
+    else if (state.nav === 'templates') main.innerHTML = renderTemplates();
+    else if (state.nav === 'keywords') main.innerHTML = renderKeywords();
+    else if (state.nav === 'tasks') main.innerHTML = renderTasks();
+    else if (state.nav === 'prompts') main.innerHTML = renderPrompts();
+    else if (state.nav === 'styles') main.innerHTML = renderStyles();
+    else if (state.nav === 'plans') main.innerHTML = renderPlans();
+    else if (state.nav === 'tickets') main.innerHTML = renderTickets();
+    else if (state.nav === 'monitor') main.innerHTML = renderMonitor();
+    else if (state.nav === 'audit') main.innerHTML = renderAudit();
+    else if (state.nav === 'gray') main.innerHTML = renderGray();
+    else if (state.nav === 'settings') main.innerHTML = renderSettings();
+  }
+
+  // ============ Pages ============
+  function renderRobotList() {
+    const u = roleContent[state.role];
+    const filtered = state.filter === 'all' ? robots : robots.filter(r => r.status === state.filter);
+    return `
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">机器人管理</h1>
+          <div class="page-subtitle">${robots.length} 个机器人 · ${robots.filter(r => r.status === 'online').length} 已上线 · ${robots.filter(r => r.status === 'draft').length} 待配置 · 点击进入配置详情</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-ghost"><svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>导出</button>
+          <button class="btn btn-primary" onclick="openNewRobotModal()"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新建机器人</button>
+        </div>
+      </div>
+      <div class="welcome-banner">
+        <div class="welcome-text">
+          <div class="welcome-greeting">${u.greeting}</div>
+          <div class="welcome-hint">${u.hint}</div>
+        </div>
+        <div class="welcome-cta">
+          <button class="btn btn-on-dark" onclick="setFilter('all')">全部机器人</button>
+          <button class="btn btn-on-cinnabar" onclick="openNewRobotModal()">新建机器人</button>
+        </div>
+      </div>
+      <div class="kpi-strip">
+        ${kpiCard('运行状态', '5', '/ 10', '在线', null, '<strong>5</strong> 在线 · <strong>1</strong> 降级 · <strong>1</strong> 维护 · <strong>3</strong> 待配')}
+        ${kpiCard('关键词覆盖率', '82', '%', 'good', null, '命中 <strong>9,847</strong> / 总 <strong>12,016</strong> · ↑ 4.2%')}
+        ${kpiCard('配置待审', '3', '条', 'warn', null, '24h 内 · <span class="warn">1 条涉关键路径</span>')}
+        ${kpiCard('转人工工单', '12', '条', 'info', null, '待响应 · <strong>4</strong> 超 30 分钟')}
+        ${kpiCard('运行告警', '5', '条', 'gold', null, '<strong>1</strong> 严重 · <strong>2</strong> 警告 · <strong>2</strong> 提示')}
+      </div>
+      <div class="section">
+        <div class="filter-bar">
+          <span class="filter-label">状态</span>
+          <div class="chip-group">
+            ${chip('all', '全部', robots.length, state.filter === 'all')}
+            ${chip('online', '在线', robots.filter(r => r.status === 'online').length, state.filter === 'online')}
+            ${chip('degraded', '降级', robots.filter(r => r.status === 'degraded').length, state.filter === 'degraded')}
+            ${chip('maint', '维护', robots.filter(r => r.status === 'maint').length, state.filter === 'maint')}
+            ${chip('draft', '未配置', robots.filter(r => r.status === 'draft').length, state.filter === 'draft')}
+          </div>
+          <div class="filter-spacer"></div>
+          <div class="filter-search">
+            <svg class="ico filter-search-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+            <input type="text" placeholder="按名称 / ID 筛选" onkeyup="filterRobotsByText(this.value)" />
+          </div>
+        </div>
+        <div class="table">
+          <table class="data-table">
+            <thead>
+              <tr><th class="col-name">机器人</th><th class="col-status">状态</th><th class="col-num">模板</th><th class="col-num">关键词</th><th class="col-num">Prompt</th><th class="col-num">推送位</th><th class="col-update">更新</th><th class="col-action"></th></tr>
+            </thead>
+            <tbody id="robot-tbody">
+              ${filtered.map(r => robotRow(r)).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="lower-grid" id="lower-grid">
+        ${state.role === 'admin' ? panelAlerts() : ''}
+        ${state.role === 'ops' || state.role === 'admin' ? panelAudit() : ''}
+        ${state.role === 'cs' || state.role === 'admin' ? panelTickets() : ''}
+      </div>
+    `;
+  }
+
+  let _filterText = '';
+  function filterRobotsByText(v) {
+    _filterText = v.toLowerCase();
+    const filtered = (state.filter === 'all' ? robots : robots.filter(r => r.status === state.filter))
+      .filter(r => !_filterText || r.name.toLowerCase().includes(_filterText) || r.id.toLowerCase().includes(_filterText));
+    document.getElementById('robot-tbody').innerHTML = filtered.map(r => robotRow(r)).join('');
+  }
+
+  function robotRow(r) {
+    const isDraft = r.status === 'draft';
+    const markClass = isDraft ? 'robot-mark-draft' : `swatch-${r.swatch}`;
+    return `
+      <tr class="${isDraft ? 'row-draft' : ''}" onclick="navigate('robot-detail', {robot: '${r.id}'})">
+        <td class="col-name">
+          <div class="robot-cell">
+            <div class="robot-mark ${markClass}">${r.mark}</div>
+            <div class="robot-info">
+              <div class="robot-info-name">${r.name} <span class="robot-info-id">${r.id}</span></div>
+              <div class="robot-info-role">${r.role}</div>
+            </div>
+          </div>
+        </td>
+        <td><span class="status-pill status-${r.status}" onclick="event.stopPropagation();cycleStatus('${r.id}')">${statusLabel(r.status)}</span></td>
+        <td class="col-num" style="${isDraft ? 'color:var(--text-tertiary);' : ''}">${r.templates}</td>
+        <td class="col-num" style="${isDraft ? 'color:var(--text-tertiary);' : ''}">${r.keywords}</td>
+        <td class="col-num" style="${isDraft ? 'color:var(--text-tertiary);' : ''}">${r.prompts}</td>
+        <td class="col-num" style="${isDraft ? 'color:var(--text-tertiary);' : ''}">${r.pushSlots}</td>
+        <td class="col-update">${r.update}</td>
+        <td class="col-action"><span class="row-action" onclick="event.stopPropagation();navigate('robot-detail', {robot: '${r.id}'})">→</span></td>
+      </tr>`;
+  }
+
+  function renderRobotDetail() {
+    const r = robots.find(x => x.id === state.selectedRobot);
+    if (!r) return '<div>机器人不存在</div>';
+    const groups = robotTemplates[r.id] || [];
+    const kwGroups = robotKeywords[r.id] || [];
+    const slots = pushSlots[r.id] || [];
+
+    return `
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">${r.name}</h1>
+          <div class="page-subtitle">${r.role} · 已运行 128 天 · QPS 23</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-ghost" onclick="cycleStatus('${r.id}')">
+            <svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4"/></svg>
+            切换状态
+          </button>
+          <button class="btn">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            导出配置
+          </button>
+          <button class="btn btn-primary" onclick="openEditRobotModal('${r.id}')">
+            <svg class="ico" viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 1 1 3 3L7 19l-4 1 1-4z"/></svg>
+            编辑
+          </button>
+        </div>
+      </div>
+
+      <div class="summary-row">
+        <div class="summary-card">
+          <div class="summary-label">状态</div>
+          <div class="summary-value"><span class="status-pill status-${r.status}">${statusLabel(r.status)}</span></div>
+          <div class="summary-meta">点击切换 · 在线 / 降级 / 维护</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">消息模板</div>
+          <div class="summary-value">${r.templates}</div>
+          <div class="summary-meta">8 个分类 · 双源生成</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">关键词</div>
+          <div class="summary-value">${r.keywords}</div>
+          <div class="summary-meta">${r.id === 'R-07' ? '4 个匹配类型' : '精确 / 模糊 / 正则'}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-label">主动推送位</div>
+          <div class="summary-value">${slots.filter(s => s.enabled).length} <span style="font-size:14px;color:var(--text-secondary);">/ ${slots.length}</span></div>
+          <div class="summary-meta">${slots.filter(s => s.enabled).map(s => s.name).join(' / ') || '全部关闭'}</div>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <div class="tab ${state.selectedTab === 'templates' ? 'active' : ''}" onclick="setTab('templates')">消息模板 <span class="tab-count">${groups.reduce((a, g) => a + g.items.length, 0)}</span></div>
+        <div class="tab ${state.selectedTab === 'keywords' ? 'active' : ''}" onclick="setTab('keywords')">关键词快答 <span class="tab-count">${kwGroups.reduce((a, g) => a + g.items.length, 0)}</span></div>
+        <div class="tab ${state.selectedTab === 'push' ? 'active' : ''}" onclick="setTab('push')">主动推送窗口 <span class="tab-count">${slots.length}</span></div>
+      </div>
+
+      ${state.selectedTab === 'templates' ? renderTemplatesTab(r, groups) : ''}
+      ${state.selectedTab === 'keywords' ? renderKeywordsTab(r, kwGroups) : ''}
+      ${state.selectedTab === 'push' ? renderPushTab(r, slots) : ''}
+    `;
+  }
+
+  function renderTemplatesTab(r, groups) {
+    return `
+      <div class="section-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="section-meta">${groups.reduce((a, g) => a + g.items.length, 0)} 条 · 按分类折叠 · 双源生成(任务库 / 大模型)</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-ghost">导出</button>
+          <button class="btn btn-sm btn-primary" onclick="openNewTemplateModal('${r.id}')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增模板</button>
+        </div>
+      </div>
+      ${groups.map((g, gi) => `
+        <div class="tpl-group open">
+          <div class="tpl-group-head" onclick="this.parentElement.classList.toggle('open')">
+            <div class="tpl-group-title">
+              <svg class="ico tpl-group-arrow" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>
+              ${g.group}
+              <span class="tab-count">${g.items.length}</span>
+            </div>
+            <span style="font-size:11px;color:var(--text-tertiary);">${g.items.filter(i => i.enabled).length} / ${g.items.length} 启用</span>
+          </div>
+          <div class="tpl-group-body">
+            ${g.items.map((item, ii) => `
+              <div class="tpl-item">
+                <div class="tpl-item-info">
+                  <div class="tpl-item-name">${item.name}</div>
+                  <div class="tpl-item-preview">${item.preview}</div>
+                </div>
+                <div><span class="tpl-source ${item.source === '大模型' ? 'tpl-source-llm' : ''}">${item.source}</span></div>
+                <div class="tpl-meta">${item.updated}</div>
+                <div><span class="status-pill status-${item.enabled ? 'online' : 'maint'}" onclick="toggleTemplate('${r.id}', ${gi}, ${ii})" style="cursor:pointer;">${item.enabled ? '启用' : '停用'}</span></div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    `;
+  }
+
+  function renderKeywordsTab(r, groups) {
+    return `
+      <div class="section-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="section-meta">${groups.reduce((a, g) => a + g.items.length, 0)} 条 · 按分组 · 命中优先级 P0 > P1 > P2</div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm btn-ghost">批量导入</button>
+          <button class="btn btn-sm btn-primary" onclick="openNewKeywordModal('${r.id}')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增关键词</button>
+        </div>
+      </div>
+      ${groups.map(g => `
+        <div class="kw-group">
+          <div class="kw-group-title">${g.group} <span class="tab-count">${g.items.length}</span></div>
+          <div class="kw-table">
+            ${g.items.map(i => `
+              <div class="kw-row">
+                <div><span class="kw-keyword">${i.kw}</span></div>
+                <div class="kw-template">→ ${i.tpl}</div>
+                <div class="kw-priority">${i.priority}</div>
+                <div class="kw-priority">${i.updated}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('')}
+    `;
+  }
+
+  function renderPushTab(r, slots) {
+    return `
+      <div class="section-head" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <div class="section-meta">${slots.length} 个推送位 · 单机器人每日上限 1 条 · 跨机器人每日上限 3 条 · 推送窗口 9:00-21:00</div>
+        <button class="btn btn-sm btn-ghost">限频规则配置</button>
+      </div>
+      <div class="push-grid">
+        ${slots.map(s => `
+          <div class="push-card">
+            <div class="push-card-head">
+              <div class="push-card-title">${s.name}</div>
+              <div class="switch ${s.enabled ? 'on' : ''}" onclick="togglePushSlot('${r.id}', '${s.name}')"></div>
+            </div>
+            <div class="push-card-desc">${s.desc}</div>
+            <div class="push-card-meta">
+              <span>触发: <strong>${s.trigger}</strong></span>
+              <span>来源: <strong>${s.source}</strong></span>
+              <span>订阅: <strong>${s.subs}</strong></span>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  // ============ Other Pages (placeholders with real structure) ============
+  function renderTemplates() {
+    return `
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">消息模板库</h1>
+          <div class="page-subtitle">238 条 · 跨 10 个机器人 · 8 个分类 · 双源生成</div>
+        </div>
+        <div class="page-actions">
+          <button class="btn btn-primary" onclick="openNewTemplateModal('all')"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增模板</button>
+        </div>
+      </div>
+      <div class="table">
+        <table class="data-table">
+          <thead><tr><th class="col-name">模板名</th><th class="col-status">机器人</th><th class="col-num">分类</th><th class="col-num">来源</th><th class="col-update">更新</th><th class="col-action"></th></tr></thead>
+          <tbody>
+            <tr onclick="navigate('robot-detail', {robot: 'R-07', tab: 'templates'})"><td class="col-name"><div class="tpl-item-name">早 8 任务清单</div><div class="tpl-item-preview">{{姓名}} 学弟/学妹,{{日期}} 今日任务:...</div></td><td><span class="tag" style="font-size:11px;padding:1px 6px;background:rgba(90,130,112,0.1);color:var(--accent-jade);border-radius:3px;">小铃 R-07</span></td><td class="col-num">任务推送</td><td><span class="tpl-source">任务库</span></td><td class="col-update">1h</td><td class="col-action"><span class="row-action">→</span></td></tr>
+            <tr onclick="navigate('robot-detail', {robot: 'R-07', tab: 'templates'})"><td class="col-name"><div class="tpl-item-name">周报</div><div class="tpl-item-preview">{{姓名}} 学弟/学妹,本周完成率 {{百分比}}%...</div></td><td><span class="tag" style="font-size:11px;padding:1px 6px;background:rgba(90,130,112,0.1);color:var(--accent-jade);border-radius:3px;">小铃 R-07</span></td><td class="col-num">反馈</td><td><span class="tpl-source tpl-source-llm">大模型</span></td><td class="col-update">1d</td><td class="col-action"><span class="row-action">→</span></td></tr>
+            <tr onclick="navigate('robot-detail', {robot: 'R-01', tab: 'templates'})"><td class="col-name"><div class="tpl-item-name">加好友欢迎语</div><div class="tpl-item-preview">宝子~我是小研,负责帮你对接资源和课程...</div></td><td><span class="tag" style="font-size:11px;padding:1px 6px;background:rgba(200,57,47,0.08);color:var(--accent-cinnabar);border-radius:3px;">小研 R-01</span></td><td class="col-num">欢迎</td><td><span class="tpl-source">任务库</span></td><td class="col-update">2h</td><td class="col-action"><span class="row-action">→</span></td></tr>
+            <tr onclick="navigate('robot-detail', {robot: 'R-02', tab: 'templates'})"><td class="col-name"><div class="tpl-item-name">数学答疑 · 知识点</div><div class="tpl-item-preview">宝子~这块你听我打个比方:求积分就像问'这块面积怎么算'...</div></td><td><span class="tag" style="font-size:11px;padding:1px 6px;background:rgba(45,90,135,0.1);color:#2d5a87;border-radius:3px;">小数 R-02</span></td><td class="col-num">答疑</td><td><span class="tpl-source tpl-source-llm">大模型</span></td><td class="col-update">5h</td><td class="col-action"><span class="row-action">→</span></td></tr>
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderKeywords() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">关键词快答库</h1><div class="page-subtitle">129 条 · 跨 7 个机器人 · 命中规则:精确 / 模糊 / 正则</div></div></div>
+      <div class="table"><table class="data-table">
+        <thead><tr><th class="col-name">关键词</th><th class="col-status">机器人</th><th class="col-num">类型</th><th class="col-num">命中模板</th><th class="col-update">更新</th></tr></thead>
+        <tbody>
+          <tr><td class="col-name"><span class="kw-keyword">多少钱</span></td><td>小研 R-01</td><td class="col-num">精确</td><td class="col-num">反问信息</td><td class="col-update">2h</td></tr>
+          <tr><td class="col-name"><span class="kw-keyword">课程介绍</span></td><td>小研 R-01</td><td class="col-num">精确</td><td class="col-num">课程引导</td><td class="col-update">2h</td></tr>
+          <tr><td class="col-name"><span class="kw-keyword">积分</span></td><td>小数 R-02</td><td class="col-num">模糊</td><td class="col-num">数学答疑</td><td class="col-update">5h</td></tr>
+          <tr><td class="col-name"><span class="kw-keyword">打卡</span></td><td>小铃 R-07</td><td class="col-num">精确</td><td class="col-num">打卡反馈</td><td class="col-update">1d</td></tr>
+          <tr><td class="col-name"><span class="kw-keyword">人工</span></td><td>全部</td><td class="col-num">精确</td><td class="col-num">转人工</td><td class="col-update">3d</td></tr>
+        </tbody>
+      </table></div>
+    `;
+  }
+
+  function renderTasks() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">任务库</h1><div class="page-subtitle">42 条 · 双源生成(任务库 / 大模型)· 按分类管理</div></div>
+      <div class="page-actions"><button class="btn btn-primary"><svg class="ico" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>新增任务</button></div></div>
+      <div class="table"><table class="data-table">
+        <thead><tr><th class="col-name">任务名</th><th class="col-status">类型</th><th class="col-num">使用机器人</th><th class="col-num">来源</th><th class="col-update">更新</th></tr></thead>
+        <tbody>
+          <tr><td class="col-name"><div class="tpl-item-name">早 8 任务清单</div></td><td>定时</td><td class="col-num">小铃</td><td><span class="tpl-source">任务库</span></td><td class="col-update">1h</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">晚 10 催收</div></td><td>定时</td><td class="col-num">小铃</td><td><span class="tpl-source">任务库</span></td><td class="col-update">1d</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">错题回炉</div></td><td>事件</td><td class="col-num">5 个学科机器人</td><td><span class="tpl-source tpl-source-llm">大模型</span></td><td class="col-update">2d</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">周报</div></td><td>定时</td><td class="col-num">小铃</td><td><span class="tpl-source tpl-source-llm">大模型</span></td><td class="col-update">1d</td></tr>
+        </tbody>
+      </table></div>
+    `;
+  }
+
+  function renderPrompts() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">Prompt 库</h1><div class="page-subtitle">45 个 · 按机器人分组 · 4 段式结构(角色/上下文/任务/输出规范) · 版本管理</div></div></div>
+      <div class="table"><table class="data-table">
+        <thead><tr><th class="col-name">Prompt 名</th><th class="col-status">机器人</th><th class="col-num">场景</th><th class="col-num">版本</th><th class="col-update">更新</th></tr></thead>
+        <tbody>
+          <tr><td class="col-name"><div class="tpl-item-name">小数 · 总 Prompt(全局人设)</div></td><td>小数 R-02</td><td class="col-num">全局</td><td class="col-num">v3.2.1</td><td class="col-update">5h</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">小数 · 学科答疑</div></td><td>小数 R-02</td><td class="col-num">答疑</td><td class="col-num">v2.4.0</td><td class="col-update">1d</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">小数 · 错题回炉</div></td><td>小数 R-02</td><td class="col-num">推送</td><td class="col-num">v1.8.2</td><td class="col-update">3d</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">小英 · 单词打卡反馈</div></td><td>小英 R-03</td><td class="col-num">推送</td><td class="col-num">v2.1.0</td><td class="col-update">1d</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">小政 · 大题模板讲解</div></td><td>小政 R-04</td><td class="col-num">答疑</td><td class="col-num">v1.5.3</td><td class="col-update">3d</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">小铃 · 早 8 任务清单</div></td><td>小铃 R-07</td><td class="col-num">推送</td><td class="col-num">v4.0.1</td><td class="col-update">1h</td></tr>
+        </tbody>
+      </table></div>
+    `;
+  }
+
+  function renderStyles() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">风格模板</h1><div class="page-subtitle">7 套 · 5 维度(人设/称谓/称呼学员/称呼自己/收尾) · 跨机器人统一</div></div></div>
+      <div class="push-grid">
+        <div class="push-card"><div class="push-card-title">暖心学姐</div><div class="push-card-desc">人设亲切,称学员"宝子",收尾鼓励式("加油呀~")</div><div class="push-card-meta"><span>使用: <strong>小数/小英</strong></span></div></div>
+        <div class="push-card"><div class="push-card-title">严肃班主任</div><div class="push-card-desc">人设严肃,称学员"同学",收尾中立式("好的")</div><div class="push-card-meta"><span>使用: <strong>小政</strong></span></div></div>
+        <div class="push-card"><div class="push-card-title">活泼同学</div><div class="push-card-desc">人设活泼,称学员"学弟学妹",收尾鼓励式</div><div class="push-card-meta"><span>使用: <strong>小铃</strong></span></div></div>
+        <div class="push-card"><div class="push-card-title">中立老师</div><div class="push-card-desc">人设中立,称学员"你",收尾简洁</div><div class="push-card-meta"><span>使用: <strong>小专</strong></span></div></div>
+        <div class="push-card"><div class="push-card-title">销售顾问</div><div class="push-card-desc">人设专业,称学员"你",收尾引导式</div><div class="push-card-meta"><span>使用: <strong>小研/小校</strong></span></div></div>
+      </div>
+    `;
+  }
+
+  function renderPlans() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">任务计划</h1><div class="page-subtitle">所有机器人的主动推送位 · 支持定时/事件/手动三种触发</div></div></div>
+      <div class="table"><table class="data-table">
+        <thead><tr><th class="col-name">推送位</th><th class="col-status">机器人</th><th class="col-num">类型</th><th class="col-num">来源</th><th class="col-num">订阅</th><th class="col-update">下次触发</th></tr></thead>
+        <tbody>
+          <tr><td class="col-name"><div class="tpl-item-name">早 8 任务清单</div></td><td>小铃 R-07</td><td class="col-num">定时</td><td><span class="tpl-source">任务库</span></td><td class="col-num">2,318</td><td class="col-update">明天 08:00</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">晚 10 催收</div></td><td>小铃 R-07</td><td class="col-num">定时</td><td><span class="tpl-source">任务库</span></td><td class="col-num">1,842</td><td class="col-update">今天 22:00</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">报名节点提醒</div></td><td>小研 R-01</td><td class="col-num">定时</td><td><span class="tpl-source">任务库</span></td><td class="col-num">3,218</td><td class="col-update">10/08</td></tr>
+          <tr><td class="col-name"><div class="tpl-item-name">错题回炉</div></td><td>小数 R-02</td><td class="col-num">事件</td><td><span class="tpl-source tpl-source-llm">大模型</span></td><td class="col-num">86</td><td class="col-update">实时</td></tr>
+        </tbody>
+      </table></div>
+    `;
+  }
+
+  function renderTickets() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">转人工工单池</h1><div class="page-subtitle">12 待响应 · 4 超 30 分钟 · 按优先级排序</div></div></div>
+      <div class="panel" style="max-width:none;"><div class="panel-body" style="max-height:none;">
+        <ul class="ticket-list">
+          <li class="ticket-item"><div class="ticket-prio ticket-prio-high"></div><div class="ticket-content"><div class="ticket-head"><span class="ticket-student">赵同学</span><span class="ticket-from">来自 小英</span></div><div class="ticket-snippet">老师,我作文写了一篇关于诚信的,想让老师帮我批改一下,我自己改了三遍都不满意……</div><div class="ticket-meta"><span class="wait-time">待响应 4 分</span><span>已绑定 班主任 王老师</span></div></div></li>
+          <li class="ticket-item"><div class="ticket-prio ticket-prio-high"></div><div class="ticket-content"><div class="ticket-head"><span class="ticket-student">陈学姐</span><span class="ticket-from">来自 小研</span></div><div class="ticket-snippet">想问一下全程班的具体费用,我和室友一起报有没有优惠?</div><div class="ticket-meta"><span class="wait-time">待响应 12 分</span><span>未分配 · 高意向线索</span></div></div></li>
+          <li class="ticket-item"><div class="ticket-prio ticket-prio-med"></div><div class="ticket-content"><div class="ticket-head"><span class="ticket-student">孙同学</span><span class="ticket-from">来自 小专</span></div><div class="ticket-snippet">请问 985 院校的自命题资料什么时候能更新?我看还是去年的版本……</div><div class="ticket-meta"><span class="wait-time">待响应 28 分</span><span>已绑定 班主任 刘老师</span></div></div></li>
+          <li class="ticket-item"><div class="ticket-prio ticket-prio-med"></div><div class="ticket-content"><div class="ticket-head"><span class="ticket-student">周同学</span><span class="ticket-from">来自 小数</span></div><div class="ticket-snippet">这道题我问了三次都没懂,能不能让老师给我语音讲一下?</div><div class="ticket-meta"><span class="wait-time">待响应 1 时</span><span>标记 高频难点 · 3 次兜底</span></div></div></li>
+        </ul>
+      </div></div>
+    `;
+  }
+
+  function renderMonitor() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">运行监控</h1><div class="page-subtitle">7 个机器人 · 实时 QPS / 错误率 / 响应时长</div></div></div>
+      <div class="push-grid">
+        <div class="push-card"><div class="push-card-title">小研 R-01</div><div class="push-card-desc">QPS 23 · 错误率 0.02% · P99 280ms</div><div class="push-card-meta"><span>状态: <strong style="color:var(--accent-jade);">●</strong> 在线</span></div></div>
+        <div class="push-card"><div class="push-card-title">小数 R-02</div><div class="push-card-desc">QPS 31 · 错误率 0.04% · P99 410ms</div><div class="push-card-meta"><span>状态: <strong style="color:var(--accent-jade);">●</strong> 在线</span></div></div>
+        <div class="push-card"><div class="push-card-title">小政 R-04</div><div class="push-card-desc">QPS 8 · 错误率 12.4% · P99 2.1s ⚠</div><div class="push-card-meta"><span>状态: <strong style="color:var(--accent-amber);">●</strong> 降级</span></div></div>
+        <div class="push-card"><div class="push-card-title">小铃 R-07</div><div class="push-card-desc">QPS 42 · 错误率 0.08% · P99 320ms</div><div class="push-card-meta"><span>状态: <strong style="color:var(--accent-jade);">●</strong> 在线</span></div></div>
+      </div>
+    `;
+  }
+
+  function renderAudit() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">配置审计</h1><div class="page-subtitle">谁在什么时候改了什么 · 带 diff 高亮 · 7 天留存</div></div></div>
+      <div class="panel" style="max-width:none;"><div class="panel-body" style="max-height:none;">
+        <ul class="config-list">
+          <li class="config-item"><div class="config-time">19:42</div><div class="config-content"><div class="config-text"><strong>沈老师</strong> 修改 R-02「小数」模板 TPL-087</div><div class="config-diff"><span class="diff-del">- "亲~今天也要加油"</span><br><span class="diff-add">+ "宝子~今天也要继续加油哦✨"</span></div></div></li>
+          <li class="config-item"><div class="config-time">18:15</div><div class="config-content"><div class="config-text"><strong>李运营</strong> 新增 R-04「小政」关键词 KW-142</div><div class="config-diff"><span class="diff-add">+ "押题" → 命中 TPL-051(精确)</span></div></div></li>
+          <li class="config-item"><div class="config-time">14:08</div><div class="config-content"><div class="config-text"><strong>沈老师</strong> 回滚 R-01 Prompt 版本</div><div class="config-diff">P-12 → <span class="diff-add">v3.2.1</span> · <span class="diff-del">v3.3.0</span></div></div></li>
+        </ul>
+      </div></div>
+    `;
+  }
+
+  function renderGray() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">灰度发布</h1><div class="page-subtitle">新模板/Prompt 上线前灰度验证 · 观察期 24h</div></div></div>
+      <div class="table"><table class="data-table">
+        <thead><tr><th class="col-name">对象</th><th class="col-status">机器人</th><th class="col-num">灰度比例</th><th class="col-num">样本数</th><th class="col-update">开始时间</th><th class="col-action"></th></tr></thead>
+        <tbody>
+          <tr><td class="col-name"><div class="tpl-item-name">TPL-094 长难句模板</div></td><td>小英 R-03</td><td class="col-num">10%</td><td class="col-num">231</td><td class="col-update">今天 11:22</td><td class="col-action"><button class="btn btn-sm btn-cinnabar">提升至 50%</button></td></tr>
+        </tbody>
+      </table></div>
+    `;
+  }
+
+  function renderSettings() {
+    return `
+      <div class="page-header"><div><h1 class="page-title">系统设置</h1><div class="page-subtitle">全局参数 · 限频规则 · 推送窗口 · 兜底配置</div></div></div>
+      <div class="push-grid">
+        <div class="push-card"><div class="push-card-title">全局推送限频</div><div class="push-card-desc">单机器人单学员每日上限 1 条 · 跨机器人每日上限 3 条 · 推送窗口 9:00-21:00 · 考试前 3 天静默</div></div>
+        <div class="push-card"><div class="push-card-title">大模型输出闸门</div><div class="push-card-desc">敏感词检测 · 字数控制 50-300 · 变量完整性 · 风格一致性 · 灰度审核</div></div>
+        <div class="push-card"><div class="push-card-title">兜底回复</div><div class="push-card-desc">单机器人兜底 + 全局兜底 + 转人工触发词(人工/老师/真人/客服/转人工/找老师)</div></div>
+        <div class="push-card"><div class="push-card-title">角色与权限</div><div class="push-card-desc">管理员(全权限)· 运营(模板/关键词/Prompt/任务)· 客服(工单/学员档案只读)</div></div>
+      </div>
+    `;
+  }
+
+  // ============ Components ============
+  function kpiCard(label, value, unit, color, badge, delta) {
+    return `
+      <div class="kpi-card ${color || ''}">
+        <div class="kpi-label">${badge ? `<span class="status-pill status-${color}">${badge}</span>` : ''}<span>${label}</span></div>
+        <div class="kpi-value">${value}<span class="kpi-unit">${unit}</span></div>
+        <div class="kpi-delta">${delta}</div>
+      </div>`;
+  }
+
+  function chip(key, label, count, active) {
+    return `<span class="chip ${active ? 'active' : ''}" onclick="setFilter('${key}')">${label} <span class="chip-count">${count}</span></span>`;
+  }
+
+  function panelAlerts() {
+    const items = [
+      { sev: 'error', title: '小政 · 时效内容 Prompt 调用失败率 12.4%', meta: ['15 分钟前', 'err=504', 'R-04'] },
+      { sev: 'warn', title: '小校 · 维护中超过 12 天,数据未更新', meta: ['1 小时前', 'data-stale', 'R-06'] },
+      { sev: 'warn', title: '小研 · "多少钱"转人工率偏高 68%', meta: ['3 小时前', 'routing', 'R-01'] },
+      { sev: 'info', title: '小铃 · 早 8 推送变量渲染失败 0.3%', meta: ['昨天', 'render', 'R-07'] },
+      { sev: 'info', title: '小数 · 关键词快答库 3 个关键词未审', meta: ['5 小时前', 'audit-pending', 'R-02'] },
+    ];
+    return `<div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><h3 class="panel-title">运行告警</h3><span class="panel-tag">管理员</span></div><button class="btn btn-ghost btn-sm">全部 →</button></div>
+      <div class="panel-body"><ul class="issue-list">
+        ${items.map(i => `<li class="issue-item" onclick="navigate('robot-detail', {robot: 'R-04'})">
+          <div class="issue-icon severity-${i.sev}"><svg class="ico" viewBox="0 0 24 24" width="13" height="13">${i.sev === 'error' ? '<circle cx="12" cy="12" r="9"/><path d="M12 7v6M12 16v.5"/>' : '<path d="M12 3 2 21h20L12 3z"/><path d="M12 10v5M12 18v.5"/>'}</svg></div>
+          <div class="issue-content"><div class="issue-title">${i.title}</div><div class="issue-meta">${i.meta.map(m => `<span>${m}</span>`).join('')}</div></div>
+        </li>`).join('')}
+      </ul></div></div>`;
+  }
+
+  function panelAudit() {
+    const items = [
+      { time: '19:42', who: '沈老师', text: '修改 R-02「小数」模板 TPL-087', diff: '<span class="diff-del">- "亲~今天也要加油"</span><br><span class="diff-add">+ "宝子~今天也要继续加油哦✨"</span>' },
+      { time: '18:15', who: '李运营', text: '新增 R-04「小政」关键词 KW-142', diff: '<span class="diff-add">+ "押题" → 命中 TPL-051(精确)</span>' },
+      { time: '16:30', who: '张老师', text: '启用 R-07 推送位 4「月报」', diff: '<span class="diff-add">+ 生成源: 大模型 · 待审核</span>' },
+      { time: '14:08', who: '沈老师', text: '回滚 R-01 Prompt 版本', diff: 'P-12 → <span class="diff-add">v3.2.1</span> · <span class="diff-del">v3.3.0</span>' },
+    ];
+    return `<div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><h3 class="panel-title">配置变更审计</h3><span class="panel-tag">运营</span></div><button class="btn btn-ghost btn-sm">导出 →</button></div>
+      <div class="panel-body"><ul class="config-list">
+        ${items.map(i => `<li class="config-item"><div class="config-time">${i.time}</div><div class="config-content"><div class="config-text"><strong>${i.who}</strong> ${i.text}</div><div class="config-diff">${i.diff}</div></div></li>`).join('')}
+      </ul></div></div>`;
+  }
+
+  function panelTickets() {
+    const items = [
+      { prio: 'high', student: '赵同学', from: '小英', snip: '老师,我作文写了一篇关于诚信的,想让老师帮我批改一下,我自己改了三遍都不满意……', wait: '待响应 4 分', bound: '已绑定 班主任 王老师' },
+      { prio: 'high', student: '陈学姐', from: '小研', snip: '想问一下全程班的具体费用,我和室友一起报有没有优惠?', wait: '待响应 12 分', bound: '未分配 · 高意向线索' },
+      { prio: 'med', student: '孙同学', from: '小专', snip: '请问 985 院校的自命题资料什么时候能更新?我看还是去年的版本……', wait: '待响应 28 分', bound: '已绑定 班主任 刘老师' },
+      { prio: 'med', student: '周同学', from: '小数', snip: '这道题我问了三次都没懂,能不能让老师给我语音讲一下?', wait: '待响应 1 时', bound: '标记 高频难点 · 3 次兜底' },
+    ];
+    return `<div class="panel">
+      <div class="panel-head"><div class="panel-head-left"><h3 class="panel-title">转人工工单池</h3><span class="panel-tag">客服</span></div><button class="btn btn-ghost btn-sm">分配 →</button></div>
+      <div class="panel-body"><ul class="ticket-list">
+        ${items.map(t => `<li class="ticket-item"><div class="ticket-prio ticket-prio-${t.prio}"></div><div class="ticket-content"><div class="ticket-head"><span class="ticket-student">${t.student}</span><span class="ticket-from">来自 ${t.from}</span></div><div class="ticket-snippet">${t.snip}</div><div class="ticket-meta"><span class="wait-time">${t.wait}</span><span>${t.bound}</span></div></div></li>`).join('')}
+      </ul></div></div>`;
+  }
+
+  // ============ Modals ============
+  function openNewRobotModal() {
+    showModal('新建机器人', `
+      <div class="form-field"><label class="form-label">机器人名 <span class="req">*</span></label><input class="form-input" id="new-name" placeholder="例如:小政 · 政治答疑" /></div>
+      <div class="form-row">
+        <div class="form-field"><label class="form-label">昵称 <span class="req">*</span></label><input class="form-input" id="new-nick" placeholder="例如:小政" /></div>
+        <div class="form-field"><label class="form-label">分配 ID</label><input class="form-input" value="R-11" disabled /></div>
+      </div>
+      <div class="form-field"><label class="form-label">角色定位 <span class="req">*</span></label>
+        <select class="form-select"><option>入口机器人(销售 + 政策)</option><option>学科答疑</option><option>决策辅助</option><option>任务推送</option></select>
+      </div>
+      <div class="form-field"><label class="form-label">初始说明</label><textarea class="form-textarea" placeholder="机器人的一句话定位描述"></textarea></div>
+      <div class="form-hint">创建后默认进入"待配置"状态,需要先配置模板/关键词/Prompt 才能上线。</div>
+    `, () => {
+      const name = document.getElementById('new-name').value || '新机器人';
+      const nick = document.getElementById('new-nick').value || '新';
+      const id = 'R-11';
+      robots.push({ id, name: `${nick} · ${name}`, role: '新建待配置', mark: nick[0], swatch: null, status: 'draft', templates: 0, keywords: 0, prompts: 0, pushSlots: 0, update: '刚刚' });
+      closeModal();
+      render();
+      showToast(`机器人 ${nick} 已创建 · ID: ${id} · 待配置`);
+    });
+  }
+
+  function openEditRobotModal(robotId) {
+    const r = robots.find(x => x.id === robotId);
+    showModal(`编辑 ${r.name}`, `
+      <div class="form-field"><label class="form-label">机器人名</label><input class="form-input" value="${r.name}" /></div>
+      <div class="form-field"><label class="form-label">角色定位</label><textarea class="form-textarea">${r.role}</textarea></div>
+      <div class="form-row">
+        <div class="form-field"><label class="form-label">状态</label><select class="form-select"><option ${r.status === 'online' ? 'selected' : ''}>在线</option><option ${r.status === 'degraded' ? 'selected' : ''}>降级</option><option ${r.status === 'maint' ? 'selected' : ''}>维护</option></select></div>
+        <div class="form-field"><label class="form-label">风格模板</label><select class="form-select"><option>暖心学姐</option><option>严肃班主任</option><option>活泼同学</option><option>中立老师</option><option>销售顾问</option></select></div>
+      </div>
+    `, () => {
+      closeModal();
+      showToast(`已保存 ${r.name} 的修改`);
+    });
+  }
+
+  function openNewTemplateModal(robotId) {
+    showModal('新增消息模板', `
+      <div class="form-row">
+        <div class="form-field"><label class="form-label">模板类型</label><select class="form-select"><option>文本</option><option>图文</option><option>链接卡片</option><option>小程序卡片</option></select></div>
+        <div class="form-field"><label class="form-label">适用机器人</label><select class="form-select"><option>${robotId === 'all' ? '全部' : robotId + ' · ' + (robots.find(r => r.id === robotId) || {}).name}</option></select></div>
+      </div>
+      <div class="form-field"><label class="form-label">场景分类</label>
+        <select class="form-select"><option>欢迎</option><option>任务推送</option><option>提醒</option><option>反馈</option><option>答疑</option><option>心态</option><option>资讯</option><option>模考</option></select>
+      </div>
+      <div class="form-field"><label class="form-label">生成源</label>
+        <select class="form-select"><option>任务库(固定文案)</option><option>大模型(动态生成)</option><option>双源混合</option></select>
+      </div>
+      <div class="form-field"><label class="form-label">模板内容</label><textarea class="form-textarea" placeholder="支持变量 {{姓名}} {{日期}} {{今日任务}} ..." rows="4"></textarea></div>
+      <div class="form-hint">保存后默认进入待审核状态 · 大模型生成需经过输出闸门</div>
+    `, () => {
+      closeModal();
+      showToast('模板已创建 · 待审核');
+    });
+  }
+
+  function openNewKeywordModal(robotId) {
+    showModal('新增关键词', `
+      <div class="form-row">
+        <div class="form-field"><label class="form-label">关键词 <span class="req">*</span></label><input class="form-input" placeholder="例如:多少钱" /></div>
+        <div class="form-field"><label class="form-label">匹配类型</label><select class="form-select"><option>精确</option><option>模糊包含</option><option>正则</option></select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-field"><label class="form-label">命中模板</label><select class="form-select"><option>TPL-001 加好友欢迎</option><option>TPL-002 课程引导</option><option>TPL-003 反问信息</option></select></div>
+        <div class="form-field"><label class="form-label">优先级</label><select class="form-select"><option>P0 · 最高</option><option>P1 · 高</option><option>P2 · 普通</option></select></div>
+      </div>
+      <div class="form-field"><label class="form-label">说明</label><textarea class="form-textarea" placeholder="为什么要加这个词..."></textarea></div>
+    `, () => {
+      closeModal();
+      showToast('关键词已创建 · 待审核');
+    });
+  }
+
+  function showModal(title, body, onOk) {
+    const m = document.getElementById('modal');
+    m.innerHTML = `
+      <div class="modal-head"><h3 class="modal-title">${title}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+      <div class="modal-body">${body}</div>
+      <div class="modal-foot">
+        <button class="btn btn-ghost" onclick="closeModal()">取消</button>
+        <button class="btn btn-primary" onclick="window._modalOk()">保存</button>
+      </div>`;
+    document.getElementById('modal-mask').classList.add('show');
+    window._modalOk = () => onOk && onOk();
+  }
+
+  function closeModal() {
+    document.getElementById('modal-mask').classList.remove('show');
+  }
+
+  // ============ Toast ============
+  function showToast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(window._toastTimer);
+    window._toastTimer = setTimeout(() => t.classList.remove('show'), 2400);
+  }
+
+  // ============ Init ============
+  document.getElementById('role-switch').addEventListener('click', e => {
+    if (e.target.dataset.role) setRole(e.target.dataset.role);
+  });
+  document.getElementById('modal-mask').addEventListener('click', e => {
+    if (e.target.id === 'modal-mask') closeModal();
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeModal();
+  });
+
+  render();
+</script>
+</body>
+</html>

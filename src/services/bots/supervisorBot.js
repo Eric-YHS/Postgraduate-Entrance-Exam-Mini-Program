@@ -1,5 +1,6 @@
 const dayjs = require('dayjs');
 const { getTasksForStudentOnDate } = require('../taskService');
+const { adjustNextDayPlan } = require('../studyPlan');
 const { renderTemplate } = require('../messageTemplate');
 const { getBotByCode, logConversation } = require('../botManager');
 const { sendAppMessage } = require('../wecom');
@@ -116,6 +117,16 @@ function formatTaskList(tasks) {
   return tasks.map((t, i) => `${i + 1}. ${t.start_time}-${t.end_time} ${t.subject}｜${t.title}`).join('\n');
 }
 
+function getGeneratedPlanItems(db, studentId, dateString) {
+  return db.prepare(`
+    SELECT * FROM study_plan_items WHERE student_id = ? AND plan_date = ? ORDER BY subject ASC, id ASC
+  `).all(studentId, dateString);
+}
+
+function formatGeneratedPlanList(items, startIndex = 0) {
+  return items.map((item, index) => `${startIndex + index + 1}. ${item.subject}｜${item.title}${item.description ? `（${item.description}）` : ''}`).join('\n');
+}
+
 async function sendToStudent(db, studentId, message, context = '') {
   const student = getStudent(db, studentId);
   if (!student) return { sent: false, reason: 'student_not_found' };
@@ -170,12 +181,16 @@ async function sendMorningPlan(db, studentId) {
 
   const dateString = dayjs().format('YYYY-MM-DD');
   const tasks = getTasksForStudentOnDate(db, studentId, dateString);
+  const generatedItems = getGeneratedPlanItems(db, studentId, dateString);
 
-  if (!tasks.length) {
+  if (!tasks.length && !generatedItems.length) {
     return { sent: false, reason: 'no_tasks_today' };
   }
 
-  const taskList = formatTaskList(tasks);
+  const taskList = [
+    tasks.length ? formatTaskList(tasks) : '',
+    generatedItems.length ? formatGeneratedPlanList(generatedItems, tasks.length) : ''
+  ].filter(Boolean).join('\n');
   const message = renderTemplate(db, 'morning_plan', {
     name: student.display_name,
     date: dateString,
@@ -252,8 +267,9 @@ async function sendEveningCheck(db, studentId) {
 
   const dateString = dayjs().format('YYYY-MM-DD');
   const tasks = getTasksForStudentOnDate(db, studentId, dateString);
+  const generatedItems = getGeneratedPlanItems(db, studentId, dateString);
 
-  if (!tasks.length) {
+  if (!tasks.length && !generatedItems.length) {
     return { sent: false, reason: 'no_tasks_today' };
   }
 
@@ -269,8 +285,17 @@ async function sendEveningCheck(db, studentId) {
     }
   }
 
-  const completedList = completedTasks.length ? formatTaskList(completedTasks) : '无';
-  const pendingList = pendingTasks.length ? formatTaskList(pendingTasks) : '无';
+  const completedGenerated = generatedItems.filter((item) => item.status === 'completed');
+  const pendingGenerated = generatedItems.filter((item) => item.status !== 'completed');
+
+  const completedList = [
+    completedTasks.length ? formatTaskList(completedTasks) : '',
+    completedGenerated.length ? formatGeneratedPlanList(completedGenerated, completedTasks.length) : ''
+  ].filter(Boolean).join('\n') || '无';
+  const pendingList = [
+    pendingTasks.length ? formatTaskList(pendingTasks) : '',
+    pendingGenerated.length ? formatGeneratedPlanList(pendingGenerated, pendingTasks.length) : ''
+  ].filter(Boolean).join('\n') || '无';
 
   const message = renderTemplate(db, 'evening_check', {
     name: student.display_name,
@@ -284,7 +309,7 @@ async function sendEveningCheck(db, studentId) {
   }
 
   // 追加询问语
-  const fullMessage = pendingTasks.length
+  const fullMessage = (pendingTasks.length || pendingGenerated.length)
     ? `${message}\n\n请回复任务编号或"完成/未完成"来更新进度。`
     : message;
 
@@ -312,8 +337,9 @@ async function handleReply(db, studentId, text) {
 
   const dateString = dayjs().format('YYYY-MM-DD');
   const tasks = getTasksForStudentOnDate(db, studentId, dateString);
+  const generatedItems = getGeneratedPlanItems(db, studentId, dateString);
 
-  if (!tasks.length) {
+  if (!tasks.length && !generatedItems.length) {
     return { success: false, message: '今天没有安排学习任务，好好休息！' };
   }
 
@@ -331,10 +357,22 @@ async function handleReply(db, studentId, text) {
       setTaskCompletion(db, task.id, studentId, dateString, completed);
       updated.push({ taskId: task.id, completed });
     }
+    const now = dayjs().toISOString();
+    db.prepare(`
+      UPDATE study_plan_items
+      SET status = ?, completed_at = ?, updated_at = ?
+      WHERE student_id = ? AND plan_date = ?
+    `).run(completed ? 'completed' : 'pending', completed ? now : null, now, studentId, dateString);
+    for (const item of generatedItems) updated.push({ planItemId: item.id, completed });
+    try {
+      adjustNextDayPlan(db, { studentId, sourceMode: 'semi_auto', fromDate: dateString });
+    } catch (error) {
+      console.error(`[supervisorBot] 次日计划微调失败 studentId=${studentId}:`, error.message);
+    }
 
     const response = completed
-      ? `太棒了，${student.display_name}！今日所有任务已标记为完成，继续保持！`
-      : `收到，${student.display_name}。未完成也没关系，明天继续加油！`;
+      ? `${student.display_name}，今天的任务已全部登记完成。明早按新计划继续。`
+      : `${student.display_name}，已记为未完成。明天的计划会优先回炉这些内容。`;
 
     logConversation({
       userId: studentId,
@@ -351,7 +389,7 @@ async function handleReply(db, studentId, text) {
   const numberStatusPatterns = [
     { regex: /(\d+)\s*(完成|是|ok|做完了|yes|1)/g, completed: true },
     { regex: /(\d+)\s*(未完成|否|没做|no|0|没|没有)/g, completed: false },
-    { regex: /(完成|做完了|yes|ok)\s*(\d+)/g, completed: true, reverse: true },
+    { regex: /(完成|做完了|yes|ok)\s*(\d+)(?!\s*(?:未完成|否|没做|no|0|没|没有))/g, completed: true, reverse: true },
     { regex: /(没做|未完成|no|否)\s*(\d+)/g, completed: false, reverse: true }
   ];
 
@@ -365,6 +403,12 @@ async function handleReply(db, studentId, text) {
         const task = tasks[taskIndex];
         setTaskCompletion(db, task.id, studentId, dateString, pattern.completed);
         updated.push({ taskId: task.id, completed: pattern.completed });
+      } else if (taskIndex >= tasks.length && taskIndex < tasks.length + generatedItems.length) {
+        const item = generatedItems[taskIndex - tasks.length];
+        const now = dayjs().toISOString();
+        db.prepare(`UPDATE study_plan_items SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?`)
+          .run(pattern.completed ? 'completed' : 'pending', pattern.completed ? now : null, now, item.id);
+        updated.push({ planItemId: item.id, completed: pattern.completed });
       }
     }
   }
@@ -380,11 +424,25 @@ async function handleReply(db, studentId, text) {
         updated.push({ taskId: task.id, completed });
       }
     }
+    for (const item of generatedItems) {
+      if (normalized.includes(String(item.title || '').toLowerCase()) || normalized.includes(String(item.subject || '').toLowerCase())) {
+        const completed = /(完成|做完|ok|yes|是|1)/.test(normalized) && !/(未完成|没做|no|否|0)/.test(normalized);
+        const now = dayjs().toISOString();
+        db.prepare(`UPDATE study_plan_items SET status = ?, completed_at = ?, updated_at = ? WHERE id = ?`)
+          .run(completed ? 'completed' : 'pending', completed ? now : null, now, item.id);
+        updated.push({ planItemId: item.id, completed });
+      }
+    }
   }
 
   if (updated.length > 0) {
     const completedCount = updated.filter(u => u.completed).length;
-    const response = `已更新 ${updated.length} 项任务进度（完成 ${completedCount} 项）。${student.display_name}，继续加油！`;
+    try {
+      adjustNextDayPlan(db, { studentId, sourceMode: 'semi_auto', fromDate: dateString });
+    } catch (error) {
+      console.error(`[supervisorBot] 次日计划微调失败 studentId=${studentId}:`, error.message);
+    }
+    const response = `已更新 ${updated.length} 项任务进度，其中完成 ${completedCount} 项。还有哪一项卡住了？`;
 
     logConversation({
       userId: studentId,

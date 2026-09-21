@@ -1,9 +1,9 @@
 /**
  * 企业微信「会话内容存档」服务
  *
- * 封装官方 C SDK（通过 ms-qywx-chat / wework-chat-node 绑定），提供：
- *   1. 拉取加密会话数据 (GetChatData)
- *   2. RSA 私钥解密随机密钥
+ * 封装官方 C SDK（通过 wework-chat-node / ms-qywx-chat 绑定），提供：
+ *   1. 拉取会话数据 (GetChatData)
+ *   2. RSA 私钥解密随机密钥（旧版 SDK）
  *   3. SDK 解密消息体 (DecryptData)
  *   4. 媒体文件下载 (GetMediaData)
  *
@@ -17,23 +17,84 @@
  */
 
 const crypto = require('crypto');
+const fs = require('fs');
 const config = require('../config');
 
 // ── SDK 加载（兼容两种包名） ──────────────────────────────────────────────
 let qywxChat = null;
 let sdkName = '';
+let sdkKind = '';
+let modernClient = null;
 
 function loadSdk() {
   if (qywxChat) return true;
-  const candidates = ['ms-qywx-chat', 'wework-chat-node'];
-  for (const name of candidates) {
-    try {
-      qywxChat = require(name);
-      sdkName = name;
+
+  // 优先使用 2026 年仍在维护、基于 Node-API 的封装。旧版 ms-qywx-chat
+  // 在 Node 22/Linux 上虽然能 require，但调用 getData 会触发原生段错误。
+  try {
+    const modernSdk = require('wework-chat-node');
+    if (typeof modernSdk.WeWorkChat === 'function') {
+      qywxChat = modernSdk;
+      sdkName = 'wework-chat-node';
+      sdkKind = 'modern';
       return true;
-    } catch (_) { /* 继续尝试下一个 */ }
-  }
+    }
+  } catch (_) { /* Windows 等未构建平台继续尝试旧版 */ }
+
+  try {
+    const legacySdk = require('ms-qywx-chat');
+    if (typeof legacySdk.getData === 'function') {
+      qywxChat = legacySdk;
+      sdkName = 'ms-qywx-chat';
+      sdkKind = 'legacy';
+      return true;
+    }
+  } catch (_) { /* 由 isReady 返回统一错误 */ }
+
   return false;
+}
+
+function getModernClient() {
+  if (modernClient) return modernClient;
+  if (!qywxChat || sdkKind !== 'modern') return null;
+
+  modernClient = new qywxChat.WeWorkChat({
+    corpid: config.wecomCorpId,
+    secret: config.wecomArchiveSecret,
+    private_key: config.wecomArchivePrivateKey,
+    seq: 0,
+  });
+  return modernClient;
+}
+
+function parseModernChatData(result) {
+  const rawMessages = Array.isArray(result?.data) ? result.data : [];
+  const lastSeq = Number(result?.last_seq) || 0;
+  const firstSeq = lastSeq > 0 ? Math.max(1, lastSeq - rawMessages.length + 1) : 0;
+
+  const chatdata = rawMessages.map((raw, index) => {
+    // 新版 SDK 返回稀疏数组意味着其中某条消息解密失败。此时必须让整批
+    // 失败，不能推进 seq，否则该消息会永久丢失。
+    if (typeof raw !== 'string' || !raw.trim()) {
+      throw new Error(`新版 SDK 第 ${index + 1} 条消息解密为空`);
+    }
+
+    const message = JSON.parse(raw);
+    const seq = firstSeq > 0 ? firstSeq + index : 0;
+    return {
+      seq,
+      msgid: message.msgid || '',
+      decrypted_message: message,
+    };
+  });
+
+  return {
+    errcode: 0,
+    errmsg: 'ok',
+    chatdata,
+    last_seq: lastSeq,
+    already_decrypted: true,
+  };
 }
 
 // ── 缓存 ─────────────────────────────────────────────────────────────────
@@ -110,6 +171,16 @@ function pullChatData(seq, limit = 500) {
         return resolve(null);
       }
 
+      if (sdkKind === 'modern') {
+        const client = getModernClient();
+        const result = client.getChatData({
+          seq,
+          max_results: Math.min(limit, 1000),
+          timeout: 30,
+        });
+        return resolve(parseModernChatData(result));
+      }
+
       // ms-qywx-chat 的 getData 是同步调用（底层 C SDK 阻塞）
       // 参数: seq, limit, timeout(秒), corpid, secret
       const result = qywxChat.getData(
@@ -162,6 +233,11 @@ function decryptChatMessage(encryptRandomKey, encryptChatMsg, privateKeyPem) {
         return resolve(null);
       }
 
+      if (sdkKind !== 'legacy' || typeof qywxChat.decryptData !== 'function') {
+        console.error('[archive] 当前 SDK 不支持单独解密；新版 SDK 应在拉取时完成解密');
+        return resolve(null);
+      }
+
       // ms-qywx-chat 的 decryptData 是同步调用
       // 参数: decrypt_random_key (RSA 解密后的字符串), encrypt_chat_msg
       const raw = qywxChat.decryptData(aesKeyStr, encryptChatMsg);
@@ -198,6 +274,40 @@ function downloadMedia(sdkfileid, filepath) {
         return resolve(false);
       }
 
+      if (sdkKind === 'modern') {
+        const client = getModernClient();
+        let indexBuf = '';
+        let firstChunk = true;
+
+        do {
+          const result = client.getMediaData({
+            sdk_fileid: sdkfileid,
+            index_buf: indexBuf,
+          });
+          if (!result || !result.data) {
+            console.error('[archive] 媒体下载失败: 新版 SDK 返回为空');
+            return resolve(false);
+          }
+
+          const chunk = Buffer.from(result.data);
+          if (firstChunk) {
+            fs.writeFileSync(filepath, chunk);
+            firstChunk = false;
+          } else {
+            fs.appendFileSync(filepath, chunk);
+          }
+
+          if (result.is_finished) break;
+          indexBuf = result.buf_index || '';
+          if (!indexBuf) {
+            console.error('[archive] 媒体下载失败: 缺少下一分片索引');
+            return resolve(false);
+          }
+        } while (true);
+
+        return resolve(true);
+      }
+
       const result = qywxChat.getMediaData(
         sdkfileid,
         60, // timeout 60 秒
@@ -222,7 +332,7 @@ function downloadMedia(sdkfileid, filepath) {
 // ── 缓存管理 ─────────────────────────────────────────────────────────────
 
 function getStatus() {
-  return { ...archiveCache, sdk: sdkName || '未加载' };
+  return { ...archiveCache, sdk: sdkName || '未加载', sdkKind: sdkKind || '未加载' };
 }
 
 function updateSeq(newSeq) {

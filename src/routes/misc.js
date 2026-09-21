@@ -31,7 +31,7 @@ function serializeFlashcard(row) {
 }
 
 module.exports = function registerMiscRoutes(app, shared) {
-  const { db, requireAuth, requireStudent, requireTeacher, requireAdmin, safeJsonParse, sanitizeUser, serializeProduct, serializeOrder, serializeQuestionForTeacher, serializeFlashcard: _serializeFlashcard, updateStudyStreak, checkAndUnlockAchievements, taskImportUpload, readWorkbookRows, getFieldValue, broadcastToLiveRoom } = shared;
+  const { db, requireAuth, requireStudent, requireTeacher, requireAdmin, requireRole, safeJsonParse, sanitizeUser, serializeProduct, serializeOrder, serializeQuestionForTeacher, serializeFlashcard: _serializeFlashcard, updateStudyStreak, checkAndUnlockAchievements, taskImportUpload, readWorkbookRows, getFieldValue, broadcastToLiveRoom } = shared;
 
   // 健康检查
   app.get('/healthz', (request, response) => {
@@ -67,6 +67,10 @@ module.exports = function registerMiscRoutes(app, shared) {
 
   app.get('/admin', (request, response) => {
     response.sendFile(path.join(shared.publicDir, 'admin.html'));
+  });
+
+  app.get('/guide', (request, response) => {
+    response.sendFile(path.join(shared.publicDir, 'guide.html'));
   });
 
   app.get('/forum', (request, response) => {
@@ -147,7 +151,7 @@ module.exports = function registerMiscRoutes(app, shared) {
   });
 
   // 词汇卡片批量导入
-  app.post('/api/flashcards/import', requireTeacher, (request, response) => {
+  app.post('/api/flashcards/import', requireRole(['teacher', 'admin']), (request, response) => {
     taskImportUpload(request, response, (error) => {
       if (error) {
         response.status(400).json({ error: '文件上传失败。' });
@@ -165,10 +169,12 @@ module.exports = function registerMiscRoutes(app, shared) {
 
       const importFlashcards = db.transaction(() => {
       rows.forEach((row) => {
-        const title = sanitizeText(getFieldValue(row, ['标题', 'title', 'Title']));
-        const subject = sanitizeText(getFieldValue(row, ['科目', 'subject', 'Subject']));
-        const frontContent = sanitizeText(getFieldValue(row, ['正面内容', 'frontContent', 'FrontContent']));
-        const backContent = sanitizeText(getFieldValue(row, ['背面内容', 'backContent', 'BackContent']));
+        const spelling = sanitizeText(getFieldValue(row, ['拼写', '单词', 'word', 'Word']));
+        const title = sanitizeText(getFieldValue(row, ['标题', 'title', 'Title'])) || spelling;
+        const subject = sanitizeText(getFieldValue(row, ['科目', 'subject', 'Subject'])) || '英语';
+        const frontContent = sanitizeText(getFieldValue(row, ['正面内容', 'frontContent', 'FrontContent'])) || spelling;
+        const backContent = sanitizeText(getFieldValue(row, ['背面内容', 'backContent', 'BackContent', '中文意思', '释义']));
+        const mnemonic = sanitizeText(getFieldValue(row, ['助记', '记忆方法', 'mnemonic', 'Mnemonic']));
         const tags = sanitizeText(getFieldValue(row, ['标签', 'tags', 'Tags']));
 
         if (!title || !frontContent || !backContent) {
@@ -177,9 +183,9 @@ module.exports = function registerMiscRoutes(app, shared) {
         }
 
         db.prepare(
-          'INSERT INTO flashcards (title, subject, front_content, back_content, tags, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'
+          'INSERT INTO flashcards (title, subject, front_content, back_content, example_sentence, tags, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
         ).run(
-          title, subject, frontContent, backContent,
+          title, subject, frontContent, backContent, mnemonic,
           JSON.stringify(tags ? tags.split(/[,，]/).map((t) => t.trim()).filter(Boolean) : []),
           request.currentUser.id, dayjs().toISOString()
         );

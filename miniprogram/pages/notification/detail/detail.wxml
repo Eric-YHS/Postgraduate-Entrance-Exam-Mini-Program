@@ -1,0 +1,30 @@
+<view class="container detail-page">
+  <ky-loading wx:if="{{ loading }}" />
+
+  <view wx:elif="{{ error }}" class="state-message">{{ error }}</view>
+
+  <view wx:else class="detail-panel">
+    <view class="detail-heading">{{ detail.title }}</view>
+    <view class="detail-status">{{ detail.status }}</view>
+    <view class="detail-content">{{ detail.content }}</view>
+
+    <view class="detail-list">
+      <view class="detail-row">
+        <text class="detail-label">固定内容</text>
+        <text class="detail-value">{{ detail.fixedContent }}</text>
+      </view>
+      <view class="detail-row">
+        <text class="detail-label">更换日期</text>
+        <text class="detail-value">{{ detail.replacementDate }}</text>
+      </view>
+      <view class="detail-row">
+        <text class="detail-label">编号</text>
+        <text class="detail-value">{{ detail.number }}</text>
+      </view>
+      <view class="detail-row detail-row--last">
+        <text class="detail-label">温馨提示</text>
+        <text class="detail-value">{{ detail.tip }}</text>
+      </view>
+    </view>
+  </view>
+</view>

@@ -136,6 +136,31 @@ function initializeDatabase() {
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
 
+    CREATE TABLE IF NOT EXISTS wx_subscribe_recipients (
+      openid TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'active',
+      subscribed_at TEXT NOT NULL,
+      last_sent_at TEXT DEFAULT NULL,
+      last_error TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (openid, template_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS wx_subscribe_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      openid TEXT NOT NULL,
+      template_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL DEFAULT '{}',
+      detail_json TEXT NOT NULL DEFAULT '{}',
+      page TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending',
+      errcode INTEGER NOT NULL DEFAULT 0,
+      errmsg TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      sent_at TEXT DEFAULT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS system_settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL DEFAULT '',
@@ -472,6 +497,10 @@ function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_task_completions_student ON task_completions(student_id);
     CREATE INDEX IF NOT EXISTS idx_notifications_student ON notifications(student_id);
     CREATE INDEX IF NOT EXISTS idx_forum_replies_topic ON forum_replies(topic_id);
+    CREATE INDEX IF NOT EXISTS idx_wx_subscribe_deliveries_openid
+      ON wx_subscribe_deliveries(openid, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_wx_subscribe_deliveries_status
+      ON wx_subscribe_deliveries(status, created_at);
 
     -- ===== 新功能模块表（集成 agent 统一创建） =====
 
@@ -536,12 +565,188 @@ function initializeDatabase() {
     -- 机器人管理表
     CREATE TABLE IF NOT EXISTS bots (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      robot_uid TEXT DEFAULT '',
       code TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL,
       type TEXT NOT NULL,
       config TEXT DEFAULT '{}',
-      is_active INTEGER NOT NULL DEFAULT 1,
-      created_at TEXT NOT NULL
+      status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'online', 'paused', 'archived')),
+      is_active INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT DEFAULT ''
+    );
+    -- 机器人配置审计：记录配置变更、上线、暂停和灰度发布。
+    CREATE TABLE IF NOT EXISTS bot_config_audits (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id INTEGER NOT NULL,
+      actor_id INTEGER DEFAULT NULL,
+      action TEXT NOT NULL,
+      before_json TEXT DEFAULT '{}',
+      after_json TEXT DEFAULT '{}',
+      summary TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+      FOREIGN KEY (actor_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_bot_config_audits_bot ON bot_config_audits(bot_id, created_at DESC);
+
+    -- 禁用词命中与机器人输出自检事件。
+    CREATE TABLE IF NOT EXISTS bot_violation_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id INTEGER NOT NULL,
+      channel TEXT NOT NULL DEFAULT '',
+      external_user_id TEXT DEFAULT '',
+      direction TEXT NOT NULL CHECK (direction IN ('input', 'output')),
+      matched_terms TEXT NOT NULL DEFAULT '[]',
+      content_excerpt TEXT DEFAULT '',
+      action TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_bot_violation_identity ON bot_violation_events(bot_id, external_user_id, created_at DESC);
+
+    -- 转人工工单池，同时覆盖未绑定站内用户的企微/微信客服身份。
+    CREATE TABLE IF NOT EXISTS bot_handoff_tickets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id INTEGER DEFAULT NULL,
+      channel TEXT NOT NULL DEFAULT '',
+      external_user_id TEXT NOT NULL DEFAULT '',
+      student_id INTEGER DEFAULT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      message_excerpt TEXT DEFAULT '',
+      priority TEXT NOT NULL DEFAULT 'P0' CHECK (priority IN ('P0', 'P1', 'P2')),
+      status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open', 'assigned', 'resolved')),
+      assigned_to INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE SET NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE SET NULL,
+      FOREIGN KEY (assigned_to) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_bot_handoff_tickets_status ON bot_handoff_tickets(status, priority, created_at);
+
+    -- Prompt/模板等上线前的灰度发布记录。
+    CREATE TABLE IF NOT EXISTS bot_release_batches (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id INTEGER NOT NULL,
+      resource_type TEXT NOT NULL DEFAULT 'config',
+      resource_key TEXT DEFAULT '',
+      rollout_percent INTEGER NOT NULL DEFAULT 10 CHECK (rollout_percent IN (10, 50, 100)),
+      status TEXT NOT NULL DEFAULT 'observing' CHECK (status IN ('observing', 'promoted', 'rolled_back')),
+      snapshot_json TEXT NOT NULL DEFAULT '{}',
+      created_by INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS bot_push_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bot_id INTEGER NOT NULL,
+      student_id INTEGER NOT NULL,
+      schedule_id TEXT DEFAULT '',
+      push_slot_key TEXT DEFAULT '',
+      trigger_type TEXT NOT NULL DEFAULT 'manual' CHECK (trigger_type IN ('cron', 'event', 'manual')),
+      content_excerpt TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'sent' CHECK (status IN ('sent', 'skipped', 'failed')),
+      skip_reason TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_bot_push_daily ON bot_push_deliveries(student_id, bot_id, created_at, status);
+
+    -- 表 1：学生基本信息登记。token 用于企微首次招呼中的安全填写链接。
+    CREATE TABLE IF NOT EXISTS student_profiles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER DEFAULT NULL UNIQUE,
+      invite_token TEXT NOT NULL UNIQUE,
+      wecom_userid TEXT DEFAULT '',
+      name TEXT DEFAULT '',
+      gender TEXT DEFAULT '',
+      gaokao_english_score REAL DEFAULT NULL,
+      cet4_score REAL DEFAULT NULL,
+      upgrade_english_score REAL DEFAULT NULL,
+      vocabulary_level TEXT DEFAULT '',
+      previous_review TEXT DEFAULT '',
+      weakest_english_section TEXT DEFAULT '',
+      gaokao_math_score REAL DEFAULT NULL,
+      upgrade_math_score REAL DEFAULT NULL,
+      english_paper TEXT DEFAULT '',
+      math_paper TEXT DEFAULT '',
+      shipping_name TEXT DEFAULT '',
+      shipping_phone TEXT DEFAULT '',
+      shipping_address TEXT DEFAULT '',
+      requirements TEXT DEFAULT '',
+      target_school TEXT DEFAULT '',
+      target_major TEXT DEFAULT '',
+      current_stage TEXT DEFAULT '基础',
+      head_teacher_name TEXT DEFAULT '',
+      email TEXT DEFAULT '',
+      extra_json TEXT DEFAULT '{}',
+      submitted_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_student_profiles_wecom ON student_profiles(wecom_userid);
+
+    -- 表 2：每名学员的目标分数与分科任务基线。
+    CREATE TABLE IF NOT EXISTS student_plan_templates (
+      student_id INTEGER PRIMARY KEY,
+      target_school TEXT DEFAULT '',
+      english_target_score REAL DEFAULT NULL,
+      politics_target_score REAL DEFAULT NULL,
+      business1_target_score REAL DEFAULT NULL,
+      business2_target_score REAL DEFAULT NULL,
+      english_long_task TEXT DEFAULT '',
+      english_stage_task TEXT DEFAULT '',
+      math_task TEXT DEFAULT '',
+      politics_task TEXT DEFAULT '',
+      professional_task TEXT DEFAULT '',
+      extra_tasks_json TEXT DEFAULT '[]',
+      created_by INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+
+    -- 表 2/表 3：日期级复习计划与完成情况，支持半自动、全自动微调。
+    CREATE TABLE IF NOT EXISTS study_plan_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      student_id INTEGER NOT NULL,
+      plan_date TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '考研规划',
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      source_mode TEXT NOT NULL DEFAULT 'manual' CHECK (source_mode IN ('manual', 'semi_auto', 'full_auto')),
+      source_plan_id INTEGER DEFAULT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'skipped')),
+      feedback TEXT DEFAULT '',
+      completed_at TEXT DEFAULT NULL,
+      created_by INTEGER DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (source_plan_id) REFERENCES study_plan_items(id) ON DELETE SET NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_study_plan_student_date ON study_plan_items(student_id, plan_date, status);
+
+    -- 周报邮件发送审计；SMTP 未配置时也会记录 skipped，避免静默丢失。
+    CREATE TABLE IF NOT EXISTS weekly_report_deliveries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      report_id INTEGER DEFAULT NULL,
+      student_id INTEGER NOT NULL,
+      recipient_email TEXT DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'sent', 'failed', 'skipped')),
+      error_message TEXT DEFAULT '',
+      sent_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (report_id) REFERENCES study_reports(id) ON DELETE SET NULL,
+      FOREIGN KEY (student_id) REFERENCES users(id) ON DELETE CASCADE
     );
 
     -- 机器人群组分配表
@@ -549,6 +754,7 @@ function initializeDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       bot_id INTEGER NOT NULL,
       group_id INTEGER NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
       FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
       UNIQUE(bot_id, group_id)
@@ -558,10 +764,15 @@ function initializeDatabase() {
     CREATE TABLE IF NOT EXISTS wecom_groups (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       chat_id TEXT NOT NULL UNIQUE,
+      archive_roomid TEXT DEFAULT '',
       name TEXT DEFAULT '',
       owner TEXT DEFAULT '',
       student_id INTEGER DEFAULT NULL,
       order_id INTEGER DEFAULT NULL,
+      reply_enabled INTEGER NOT NULL DEFAULT 1,
+      reply_all_text INTEGER NOT NULL DEFAULT 1,
+      reply_delay_seconds INTEGER NOT NULL DEFAULT 5,
+      binding_token TEXT DEFAULT '',
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_wecom_groups_student ON wecom_groups(student_id);
@@ -594,11 +805,132 @@ function initializeDatabase() {
       roomid TEXT DEFAULT '',
       msgtype TEXT DEFAULT 'text',
       content TEXT DEFAULT '',
+      media_path TEXT DEFAULT '',
+      media_meta TEXT DEFAULT '',
       action TEXT DEFAULT 'ignored' CHECK (action IN ('group_reply', 'ignored', 'handoff', 'callback_reply')),
       processed_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_roomid ON wecom_archive_messages(roomid);
     CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_processed ON wecom_archive_messages(processed_at);
+
+    -- 群消息防抖队列：按群聚合连续消息，最后一条消息后再统一回复
+    CREATE TABLE IF NOT EXISTS wecom_pending_replies (
+      roomid TEXT PRIMARY KEY,
+      group_id INTEGER DEFAULT NULL,
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      version INTEGER NOT NULL DEFAULT 1,
+      processing_version INTEGER NOT NULL DEFAULT 0,
+      due_at INTEGER NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (group_id) REFERENCES wecom_groups(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_pending_replies_due
+      ON wecom_pending_replies(due_at);
+
+    -- 微信客服账号：面向普通微信用户的一对一客服入口
+    CREATE TABLE IF NOT EXISTS wecom_kf_accounts (
+      open_kfid TEXT PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      avatar TEXT NOT NULL DEFAULT '',
+      contact_url TEXT NOT NULL DEFAULT '',
+      reply_enabled INTEGER NOT NULL DEFAULT 1,
+      reply_delay_seconds INTEGER NOT NULL DEFAULT 5,
+      managed_by_api INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT NOT NULL DEFAULT '',
+      last_synced_at TEXT DEFAULT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    -- 一个客服账号可以配置多个角色，并指定其中一个默认角色
+    CREATE TABLE IF NOT EXISTS wecom_kf_bot_assignments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      open_kfid TEXT NOT NULL,
+      bot_id INTEGER NOT NULL,
+      is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY (open_kfid) REFERENCES wecom_kf_accounts(open_kfid) ON DELETE CASCADE,
+      FOREIGN KEY (bot_id) REFERENCES bots(id) ON DELETE CASCADE,
+      UNIQUE(open_kfid, bot_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_kf_bot_account
+      ON wecom_kf_bot_assignments(open_kfid, is_default DESC);
+
+    -- 微信客服客户及当前接待状态
+    CREATE TABLE IF NOT EXISTS wecom_kf_customers (
+      open_kfid TEXT NOT NULL,
+      external_userid TEXT NOT NULL,
+      nickname TEXT NOT NULL DEFAULT '',
+      avatar TEXT NOT NULL DEFAULT '',
+      service_state INTEGER NOT NULL DEFAULT 4,
+      servicer_userid TEXT NOT NULL DEFAULT '',
+      manual_takeover INTEGER NOT NULL DEFAULT 0,
+      reject_switch INTEGER NOT NULL DEFAULT 0,
+      last_customer_message_at INTEGER NOT NULL DEFAULT 0,
+      outbound_count INTEGER NOT NULL DEFAULT 0,
+      last_message_at INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (open_kfid, external_userid),
+      FOREIGN KEY (open_kfid) REFERENCES wecom_kf_accounts(open_kfid) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_kf_customers_recent
+      ON wecom_kf_customers(open_kfid, last_message_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_wecom_kf_customers_manual
+      ON wecom_kf_customers(open_kfid, manual_takeover);
+
+    -- 微信客服消息审计、去重与上下文
+    CREATE TABLE IF NOT EXISTS wecom_kf_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      msgid TEXT NOT NULL UNIQUE,
+      open_kfid TEXT NOT NULL DEFAULT '',
+      external_userid TEXT NOT NULL DEFAULT '',
+      origin INTEGER NOT NULL DEFAULT 0,
+      msgtype TEXT NOT NULL DEFAULT 'text',
+      event_type TEXT NOT NULL DEFAULT '',
+      content TEXT NOT NULL DEFAULT '',
+      media_path TEXT NOT NULL DEFAULT '',
+      media_meta TEXT NOT NULL DEFAULT '',
+      action TEXT NOT NULL DEFAULT 'ignored',
+      raw_json TEXT NOT NULL DEFAULT '{}',
+      send_time INTEGER NOT NULL DEFAULT 0,
+      processed_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_kf_messages_conversation
+      ON wecom_kf_messages(open_kfid, external_userid, send_time DESC);
+    CREATE INDEX IF NOT EXISTS idx_wecom_kf_messages_processed
+      ON wecom_kf_messages(processed_at);
+
+    -- 按客服账号和微信客户聚合连续消息，最后一条消息后统一回答
+    CREATE TABLE IF NOT EXISTS wecom_kf_pending_replies (
+      open_kfid TEXT NOT NULL,
+      external_userid TEXT NOT NULL,
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      version INTEGER NOT NULL DEFAULT 1,
+      processing_version INTEGER NOT NULL DEFAULT 0,
+      due_at INTEGER NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (open_kfid, external_userid),
+      FOREIGN KEY (open_kfid) REFERENCES wecom_kf_accounts(open_kfid) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_kf_pending_due
+      ON wecom_kf_pending_replies(due_at);
+
+    -- 每个客服账号独立保存 sync_msg 游标
+    CREATE TABLE IF NOT EXISTS wecom_kf_sync_state (
+      open_kfid TEXT PRIMARY KEY,
+      cursor TEXT NOT NULL DEFAULT '',
+      last_error TEXT NOT NULL DEFAULT '',
+      last_synced_at TEXT DEFAULT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (open_kfid) REFERENCES wecom_kf_accounts(open_kfid) ON DELETE CASCADE
+    );
 
     -- 推广员申请表（与 promoter.js 路由一致）
     CREATE TABLE IF NOT EXISTS promoter_applications (
@@ -675,6 +1007,31 @@ function initializeDatabase() {
     CREATE INDEX IF NOT EXISTS idx_handoff_status_user ON handoff_status(user_id, status);
     CREATE INDEX IF NOT EXISTS idx_handoff_status_active ON handoff_status(status, started_at);
   `);
+
+  // 机器人配置平台兼容迁移。旧机器人保留启用状态，并分配稳定的 R-xx 业务编号。
+  try { db.exec("ALTER TABLE bots ADD COLUMN robot_uid TEXT DEFAULT ''"); } catch (_) {}
+  try { db.exec("ALTER TABLE bots ADD COLUMN status TEXT NOT NULL DEFAULT 'draft'"); } catch (_) {}
+  try { db.exec("ALTER TABLE bots ADD COLUMN updated_at TEXT DEFAULT ''"); } catch (_) {}
+  try { db.exec("UPDATE bots SET status = CASE WHEN is_active = 1 THEN 'online' ELSE 'draft' END WHERE status IS NULL OR status = ''"); } catch (_) {}
+  try { db.exec("UPDATE bots SET updated_at = created_at WHERE updated_at IS NULL OR updated_at = ''"); } catch (_) {}
+  try {
+    const botsWithoutUid = db.prepare("SELECT id FROM bots WHERE robot_uid IS NULL OR robot_uid = '' ORDER BY id ASC").all();
+    const used = new Set(db.prepare("SELECT robot_uid FROM bots WHERE robot_uid != ''").all().map((row) => row.robot_uid));
+    let sequence = 1;
+    const assign = db.prepare('UPDATE bots SET robot_uid = ? WHERE id = ?');
+    for (const row of botsWithoutUid) {
+      let candidate = '';
+      do {
+        candidate = `R-${String(sequence).padStart(2, '0')}`;
+        sequence += 1;
+      } while (used.has(candidate));
+      assign.run(candidate, row.id);
+      used.add(candidate);
+    }
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_bots_robot_uid ON bots(robot_uid) WHERE robot_uid != ''");
+  } catch (error) {
+    console.warn('[db] 机器人业务编号迁移失败:', error.message);
+  }
 
   // 教师评语字段
   try { db.exec('ALTER TABLE summaries ADD COLUMN teacher_comment TEXT DEFAULT NULL'); } catch (_) {}
@@ -1909,12 +2266,35 @@ function migrate() {
   // ===== Phase 3 迁移：兼容旧版 wecom_groups 表结构 =====
   const wgColumns = db.prepare('PRAGMA table_info(wecom_groups)').all();
   if (wgColumns.length > 0) {
+    if (!wgColumns.some((c) => c.name === 'archive_roomid')) {
+      try { db.exec("ALTER TABLE wecom_groups ADD COLUMN archive_roomid TEXT DEFAULT ''"); } catch (_) {}
+    }
     if (!wgColumns.some((c) => c.name === 'student_id')) {
       try { db.exec('ALTER TABLE wecom_groups ADD COLUMN student_id INTEGER DEFAULT NULL'); } catch (_) {}
     }
     if (!wgColumns.some((c) => c.name === 'order_id')) {
       try { db.exec('ALTER TABLE wecom_groups ADD COLUMN order_id INTEGER DEFAULT NULL'); } catch (_) {}
     }
+    if (!wgColumns.some((c) => c.name === 'reply_enabled')) {
+      try { db.exec('ALTER TABLE wecom_groups ADD COLUMN reply_enabled INTEGER NOT NULL DEFAULT 1'); } catch (_) {}
+    }
+    if (!wgColumns.some((c) => c.name === 'reply_all_text')) {
+      try { db.exec('ALTER TABLE wecom_groups ADD COLUMN reply_all_text INTEGER NOT NULL DEFAULT 1'); } catch (_) {}
+    }
+    if (!wgColumns.some((c) => c.name === 'reply_delay_seconds')) {
+      try { db.exec('ALTER TABLE wecom_groups ADD COLUMN reply_delay_seconds INTEGER NOT NULL DEFAULT 5'); } catch (_) {}
+    }
+    if (!wgColumns.some((c) => c.name === 'binding_token')) {
+      try { db.exec("ALTER TABLE wecom_groups ADD COLUMN binding_token TEXT DEFAULT ''"); } catch (_) {}
+    }
+  }
+  try {
+    db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_wecom_groups_binding_token ON wecom_groups(binding_token) WHERE binding_token != ''");
+  } catch (_) {}
+
+  const bgaColumns = db.prepare('PRAGMA table_info(bot_group_assignments)').all();
+  if (bgaColumns.length > 0 && !bgaColumns.some((c) => c.name === 'is_default')) {
+    try { db.exec('ALTER TABLE bot_group_assignments ADD COLUMN is_default INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
   }
 
   // ===== Phase 3 迁移：兼容旧版 wecom_group_members 表结构 =====
@@ -2163,7 +2543,26 @@ function migrate() {
     );
     CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_roomid ON wecom_archive_messages(roomid);
     CREATE INDEX IF NOT EXISTS idx_wecom_archive_messages_processed ON wecom_archive_messages(processed_at);
+    CREATE TABLE IF NOT EXISTS wecom_pending_replies (
+      roomid TEXT PRIMARY KEY,
+      group_id INTEGER DEFAULT NULL,
+      messages_json TEXT NOT NULL DEFAULT '[]',
+      version INTEGER NOT NULL DEFAULT 1,
+      processing_version INTEGER NOT NULL DEFAULT 0,
+      due_at INTEGER NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      last_error TEXT DEFAULT '',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY (group_id) REFERENCES wecom_groups(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_wecom_pending_replies_due
+      ON wecom_pending_replies(due_at);
   `);
+  const pendingReplyCols = db.prepare('PRAGMA table_info(wecom_pending_replies)').all();
+  if (pendingReplyCols.length > 0 && !pendingReplyCols.some((c) => c.name === 'processing_version')) {
+    try { db.exec('ALTER TABLE wecom_pending_replies ADD COLUMN processing_version INTEGER NOT NULL DEFAULT 0'); } catch (_) {}
+  }
   // 初始化同步记录（如果表为空）
   const syncCount = db.prepare('SELECT COUNT(*) AS cnt FROM wecom_archive_sync').get().cnt;
   if (syncCount === 0) {
@@ -2182,6 +2581,12 @@ function migrate() {
   }
   if (!wamCols.some((c) => c.name === 'reply_to_msgid')) {
     try { db.exec("ALTER TABLE wecom_archive_messages ADD COLUMN reply_to_msgid TEXT DEFAULT ''"); } catch (_) {}
+  }
+  if (!wamCols.some((c) => c.name === 'media_path')) {
+    try { db.exec("ALTER TABLE wecom_archive_messages ADD COLUMN media_path TEXT DEFAULT ''"); } catch (_) {}
+  }
+  if (!wamCols.some((c) => c.name === 'media_meta')) {
+    try { db.exec("ALTER TABLE wecom_archive_messages ADD COLUMN media_meta TEXT DEFAULT ''"); } catch (_) {}
   }
 
   // 6b. 记忆卡片表（LTM — 语义记忆）

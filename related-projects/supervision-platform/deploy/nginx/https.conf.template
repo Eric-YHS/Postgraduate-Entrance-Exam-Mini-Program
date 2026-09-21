@@ -1,0 +1,29 @@
+# Replace domain and certificate paths before mounting this file into a TLS terminator.
+# The application container continues to listen on HTTP internally.
+server {
+  listen 80;
+  server_name app.example.com;
+  return 301 https://$host$request_uri;
+}
+
+server {
+  listen 443 ssl http2;
+  server_name app.example.com;
+
+  ssl_certificate /etc/letsencrypt/live/app.example.com/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/app.example.com/privkey.pem;
+  ssl_protocols TLSv1.2 TLSv1.3;
+  ssl_session_timeout 1d;
+  ssl_session_cache shared:SSL:10m;
+
+  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+
+  location / {
+    proxy_pass http://web:80;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+  }
+}

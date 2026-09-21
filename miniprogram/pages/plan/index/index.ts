@@ -1,83 +1,63 @@
-type PlanItem = {
-  id: string;
-  content: string;
-  completed: boolean;
-  createdAt: number;
-};
-
-const STORAGE_KEY = 'ky_study_plan_items';
+import { getFuturePlans, updatePlanItem, type StudyPlanDay } from '../../../services/plan.service';
 
 Page({
   data: {
-    inputValue: '',
-    items: [] as PlanItem[],
+    days: [] as StudyPlanDay[],
+    loading: true,
+    error: '',
     completedCount: 0,
+    totalCount: 0,
   },
 
   onLoad() {
+    this.loadPlans();
+  },
+
+  onPullDownRefresh() {
+    this.loadPlans().finally(() => wx.stopPullDownRefresh());
+  },
+
+  async loadPlans() {
+    this.setData({ loading: true, error: '' });
     try {
-      const stored = wx.getStorageSync(STORAGE_KEY) as PlanItem[] | undefined;
-      const items = Array.isArray(stored)
-        ? stored.filter(
-            (item) =>
-              item &&
-              typeof item.id === 'string' &&
-              typeof item.content === 'string' &&
-              typeof item.completed === 'boolean'
-          )
-        : [];
-      this.updateItems(items);
+      const result = await getFuturePlans(7);
+      this.applyDays(result.days || []);
     } catch (error) {
-      console.warn('[StudyPlan] 读取计划失败', error);
-      this.updateItems([]);
+      console.error('[StudyPlan] 加载未来计划失败', error);
+      this.setData({ loading: false, error: '计划加载失败，请稍后重试。' });
     }
   },
 
-  onInput(e: WechatMiniprogram.Input) {
-    this.setData({ inputValue: e.detail.value });
-  },
-
-  onAdd() {
-    const content = this.data.inputValue.trim();
-    if (!content) {
-      wx.showToast({ title: '请输入计划内容', icon: 'none' });
+  async onToggle(e: WechatMiniprogram.BaseEvent) {
+    const id = Number(e.currentTarget.dataset.id);
+    const currentStatus = String(e.currentTarget.dataset.status || 'pending');
+    if (!Number.isInteger(id)) {
+      wx.showToast({ title: '固定任务请在网页端登记', icon: 'none' });
       return;
     }
-
-    const items = [
-      {
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        content,
-        completed: false,
-        createdAt: Date.now(),
-      },
-      ...this.data.items,
-    ];
-    this.setData({ inputValue: '' });
-    this.updateItems(items);
-  },
-
-  onToggle(e: WechatMiniprogram.BaseEvent) {
-    const id = String(e.currentTarget.dataset.id || '');
-    const items = this.data.items.map((item) => (item.id === id ? { ...item, completed: !item.completed } : item));
-    this.updateItems(items);
-  },
-
-  onDelete(e: WechatMiniprogram.BaseEvent) {
-    const id = String(e.currentTarget.dataset.id || '');
-    this.updateItems(this.data.items.filter((item) => item.id !== id));
-  },
-
-  updateItems(items: PlanItem[]) {
-    this.setData({
-      items,
-      completedCount: items.filter((item) => item.completed).length,
-    });
+    const nextStatus = currentStatus === 'completed' ? 'pending' : 'completed';
     try {
-      wx.setStorageSync(STORAGE_KEY, items);
+      await updatePlanItem(id, nextStatus);
+      const days = this.data.days.map((day) => {
+        const items = day.items.map((item) => Number(item.id) === id
+          ? { ...item, status: nextStatus as 'pending' | 'completed', completedAt: nextStatus === 'completed' ? new Date().toISOString() : null }
+          : item);
+        return { ...day, items, completed: items.filter((item) => item.status === 'completed').length };
+      });
+      this.applyDays(days);
     } catch (error) {
-      console.warn('[StudyPlan] 保存计划失败', error);
-      wx.showToast({ title: '保存失败，请稍后重试', icon: 'none' });
+      console.error('[StudyPlan] 更新计划失败', error);
+      wx.showToast({ title: '更新失败，请稍后重试', icon: 'none' });
     }
+  },
+
+  applyDays(days: StudyPlanDay[]) {
+    this.setData({
+      days,
+      loading: false,
+      error: '',
+      completedCount: days.reduce((sum, day) => sum + day.completed, 0),
+      totalCount: days.reduce((sum, day) => sum + day.total, 0),
+    });
   },
 });

@@ -1,0 +1,6 @@
+{
+  "navigationBarTitleText": "通知详情",
+  "usingComponents": {
+    "ky-loading": "/components/ky-loading/ky-loading"
+  }
+}

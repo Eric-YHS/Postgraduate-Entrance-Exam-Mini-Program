@@ -1,0 +1,58 @@
+services:
+  yanban-api:
+    build: .
+    restart: unless-stopped
+    environment:
+      YANBAN_HOST: 0.0.0.0
+      YANBAN_PORT: 8000
+      YANBAN_LOCAL_TEST_MODE: "0"
+      YANBAN_CORS_ORIGINS: ${YANBAN_CORS_ORIGINS:-https://your-domain.example}
+      YANBAN_ADMIN_TOKEN_FILE: /run/secrets/yanban_admin_token
+      YANBAN_LLM_BASE_URL: ${YANBAN_LLM_BASE_URL:-}
+      YANBAN_LLM_MODEL: ${YANBAN_LLM_MODEL:-}
+      YANBAN_LLM_API_KEY_FILE: /run/secrets/yanban_llm_api_key
+      YANBAN_VISION_BASE_URL: ${YANBAN_VISION_BASE_URL:-}
+      YANBAN_VISION_MODEL: ${YANBAN_VISION_MODEL:-}
+      YANBAN_VISION_API_KEY_FILE: /run/secrets/yanban_vision_api_key
+      YANBAN_SEARCH_BASE_URL: ${YANBAN_SEARCH_BASE_URL:-}
+      YANBAN_SEARCH_MODEL: ${YANBAN_SEARCH_MODEL:-}
+      YANBAN_SEARCH_API_KEY_FILE: /run/secrets/yanban_search_api_key
+      TAVILY_API_KEY_FILE: /run/secrets/tavily_api_key
+    volumes:
+      - ./data:/app/data
+    secrets:
+      - yanban_admin_token
+      - yanban_llm_api_key
+      - yanban_vision_api_key
+      - yanban_search_api_key
+      - tavily_api_key
+    expose:
+      - "8000"
+
+  yanban-web:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on:
+      - yanban-api
+    ports:
+      - "80:80"
+    volumes:
+      - ./student.html:/usr/share/nginx/html/student.html:ro
+      - ./teacher.html:/usr/share/nginx/html/teacher.html:ro
+      - ./subject_directory.js:/usr/share/nginx/html/subject_directory.js:ro
+      - ./assets:/usr/share/nginx/html/assets:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+
+# Secrets are external Docker secrets. Create them on the deployment host;
+# this compose file never embeds or interpolates their values.
+secrets:
+  yanban_admin_token:
+    external: true
+  yanban_llm_api_key:
+    external: true
+  yanban_vision_api_key:
+    external: true
+  yanban_search_api_key:
+    external: true
+  tavily_api_key:
+    external: true
