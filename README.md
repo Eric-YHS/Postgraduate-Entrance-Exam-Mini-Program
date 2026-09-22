@@ -1,5 +1,8 @@
 # 研途总控台
 
+[![Deploy to Server](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/deploy.yml/badge.svg)](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/deploy.yml)
+[![Upload MiniProgram](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/upload-miniprogram.yml/badge.svg)](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/upload-miniprogram.yml)
+
 围绕"考研规划"主题的全栈学习管理系统，包含 Web 端和微信小程序端。
 
 ## 项目概览
@@ -128,8 +131,9 @@
 
 ### 前置要求
 
-- Node.js >= 18
-- npm >= 9
+- Node.js >= 20.12（`npm start` 使用 `node --env-file-if-exists`，CI 与生产均为 Node 20）
+- npm >= 10
+- 时区：生产容器固定 `TZ=Asia/Shanghai`，cron 推送按北京时间书写
 
 ### 本地运行
 
@@ -486,5 +490,7 @@ HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
 
 ## License
 
-MIT
+MIT © [Eric-YHS](https://github.com/Eric-YHS)
+
+完整条款见仓库根目录的 [`LICENSE`](LICENSE)。
 
