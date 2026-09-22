@@ -130,6 +130,28 @@ jobs:
           printf '%s\n' "$SERVER_DOTENV" | ssh deploy-server "umask 077 && cat > $APP_DIR/.env && wc -l < $APP_DIR/.env"
           echo "已从 SERVER_DOTENV 重建 .env（只写了变量名对应的行，未回显任何值）"
 
+      # 回滚快照：rsync 是直接覆盖工作目录的，新代码一旦起不来，服务器上连旧代码都不剩，
+      # 站点会一直挂着等人。同步之前先把当前代码打包到 backups/，健康检查失败时原地还原。
+      # 排除掉的都是运行期数据（数据库、上传、模型缓存、备份目录本身），不是代码。
+      - name: Snapshot current server code (rollback point)
+        run: |
+          APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
+          ssh deploy-server "
+            set -e
+            mkdir -p $APP_DIR/backups
+            if [ -d $APP_DIR/src ]; then
+              tar czf $APP_DIR/backups/app-before-deploy.tar.gz -C $APP_DIR \
+                --exclude=./node_modules --exclude=./miniprogram/node_modules \
+                --exclude=./.git --exclude=./backups --exclude=./data --exclude=./.cache \
+                --exclude=./public/uploads --exclude=./related-projects \
+                --exclude=./.env --exclude='./.env.*' --exclude='./*.sqlite' --exclude='./*.sqlite-*' \
+                --exclude='./private.*.key' --exclude='./*.log' .
+              ls -lh $APP_DIR/backups/app-before-deploy.tar.gz
+            else
+              echo '服务器上还没有代码（首次部署），跳过回滚快照'
+            fi
+          "
+
       - name: Sync checked-out revision to server
         run: |
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
@@ -220,6 +242,9 @@ jobs:
             }
             console.log("SESSION_SECRET 长度校验通过");
           '
+
+          # 上一个版本的 commit（万一健康检查失败，回滚后靠它把标记文件写回旧版本）
+          PREV_DEPLOY_SHA=$(cat .deploy-sha 2>/dev/null || echo unknown)
 
           # 标记本次由 Runner 同步的精确提交；服务健康接口会回传该值。
           printf '%s\n' "$DEPLOY_SHA" > .deploy-sha
@@ -341,24 +366,56 @@ jobs:
           printf '%s\n' "$DEPLOY_SHA" > .content-security-verified
 
           # 清理并重新启动应用（避免旧配置残留导致 reload 异常）
+          ROLLBACK_TARBALL=$BACKUP_DIR/app-before-deploy.tar.gz
+
+          # 每 5 秒探一次 /healthz，最多 12 次（60 秒）
+          wait_for_health() {
+            for i in {1..12}; do
+              if curl -fsS http://localhost:3000/healthz > /dev/null 2>&1; then return 0; fi
+              sleep 5
+            done
+            return 1
+          }
+
           pm2 delete study-planner || true
           pm2 start ecosystem.config.cjs --env production
 
           # 健康检查：等待应用启动
           echo "Waiting for application to start..."
-          for i in {1..12}; do
-            if curl -fsS http://localhost:3000/healthz > /dev/null 2>&1; then
-              echo "Health check passed"
-              break
+          if ! wait_for_health; then
+            echo "FATAL: 新进程 60 秒内没有通过 /healthz"
+            pm2 status || true
+            pm2 logs study-planner --lines 100 --nostream || true
+            # 不回滚的话，代码已被 rsync 覆盖、旧进程已被删，站点会一直挂着等人上门。
+            # 注：tar 只覆盖同名文件，新版本新增的文件（新路由等）会留在原地，但
+            # package-lock 与下面两个标记文件都回到旧版本，跑的确实是旧代码。
+            # 本次部署仍然算失败（最后 exit 1）。
+            if [ -f "$ROLLBACK_TARBALL" ]; then
+              echo "回滚到部署前的代码（commit $PREV_DEPLOY_SHA）"
+              tar xzf "$ROLLBACK_TARBALL" -C "$APP_DIR"
+              # 标记文件按回滚前的版本重写（tar 里可能根本没有），不让健康接口报一个
+              # 根本没在跑的 commit：/api/content-security/health 只在两个标记相等时才算 verified
+              printf '%s\n' "$PREV_DEPLOY_SHA" > .deploy-sha
+              if [ "$PREV_DEPLOY_SHA" = "unknown" ]; then
+                rm -f .content-security-verified
+              else
+                printf '%s\n' "$PREV_DEPLOY_SHA" > .content-security-verified
+              fi
+              # 依赖也回到旧 lock；装不动就先保留现有 node_modules，不要卡住重启
+              npm ci --omit=dev || echo "回滚时 npm ci 失败，沿用了当前 node_modules"
+              pm2 delete study-planner || true
+              pm2 start ecosystem.config.cjs --env production
+              if wait_for_health; then
+                echo "回滚后应用已恢复，线上继续跑上一个版本，请把新代码修好再部署"
+              else
+                echo "回滚后应用仍未启动，需要人工登录服务器处理"
+              fi
+            else
+              echo "没有 $ROLLBACK_TARBALL（首次部署或被清理），没有可回滚的代码"
             fi
-            if [ $i -eq 12 ]; then
-              echo "Health check failed after 60 seconds"
-              pm2 status
-              pm2 logs study-planner --lines 100 --nostream
-              exit 1
-            fi
-            sleep 5
-          done
+            exit 1
+          fi
+          echo "Health check passed"
 
           CONTENT_SECURITY_HEALTH=$(curl -fsS http://localhost:3000/api/content-security/health)
           CONTENT_SECURITY_HEALTH="$CONTENT_SECURITY_HEALTH" DEPLOY_SHA="$DEPLOY_SHA" node -e '

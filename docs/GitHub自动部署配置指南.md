@@ -115,6 +115,27 @@ Secret 栏粘贴服务器上生成的**完整私钥内容**（包括首尾两行
 
 ---
 
+## 新代码起不来：自动回滚
+
+`rsync` 是直接覆盖服务器工作目录的。以前新版本启动失败（`/healthz` 60 秒内不返 ok）时，
+旧进程已被 `pm2 delete`、旧代码已被覆盖，站点会一直挂到有人上门。
+
+现在 `rsync` 之前会把服务器上当前的代码打包到 `backups/app-before-deploy.tar.gz`（只打代码：
+数据库、`public/uploads`、`.cache`、`node_modules`、`.env`、`backups` 本身都不进包），
+健康检查失败时：
+
+1. 解包还原代码与 `package-lock.json`；
+2. 把 `.deploy-sha` / `.content-security-verified` 写回上一个版本（不让健康接口报一个根本没在跑的 commit）；
+3. `npm ci --omit=dev` 后重新 `pm2 start`，再等一次健康检查；
+4. 不管回滚成功与否，本次部署在 Actions 里仍是红的，只是线上先恢复到上一个能跑的版本。
+
+日志里会写明回滚到了哪个 commit。看到 `回滚后应用仍未启动` 才需要人工登录服务器看
+`pm2 logs study-planner`。首次部署没有快照，日志会提示“没有可回滚的代码”。
+- tar 只覆盖同名文件，新版本新增的文件会留在磁盘上，但旧 `src/` 不引用它们，
+`npm ci` 也会按旧 `package-lock.json` 重建 `node_modules`。
+
+---
+
 ## 配置完成后的效果
 
 3 个密钥全部添加后，页面应该显示如下：
@@ -130,6 +151,7 @@ SERVER_USER       (Updated just now)
 2. `CI` 成功后通过 SSH 连接服务器，用 rsync 同步这次被测试的那个 commit（不是 `git pull`）
 3. 备份 SQLite 数据库、`npm ci --omit=dev`、用 PM2 重启服务
 4. 等 `/healthz` 返回 ok，再校验内容安全接口确实属于本次部署
+5. 新进程起不来时，自动回滚到上一个版本（见上方「新代码起不来：自动回滚」）
 
 你可以在仓库的 **Actions** 标签页查看每次自动部署的运行状态。
 
