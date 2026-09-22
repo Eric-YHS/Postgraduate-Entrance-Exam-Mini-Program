@@ -6,10 +6,11 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
     "dev": "node --env-file-if-exists=.env src/server.js",
-    "test": "jest --forceExit",
+    "test": "node scripts/run-jest.mjs --forceExit",
     "generate-secret": "node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\"",
     "pm2:start": "pm2 start ecosystem.config.cjs --env production",
-    "pm2:stop": "pm2 delete study-planner"
+    "pm2:stop": "pm2 delete study-planner",
+    "test:watch": "node scripts/run-jest.mjs --watch"
   },
   "dependencies": {
     "@xenova/transformers": "^2.17.2",

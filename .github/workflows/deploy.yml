@@ -11,6 +11,10 @@ concurrency:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # 生产容器固定 TZ=Asia/Shanghai，测试里的 cron 匹配与推送静默时段（8-22 点）都按北京时间书写，
+    # 因此 Runner 也必须固定时区，否则会出现「手动推送被判为 quiet_hours」这类偶发失败。
+    env:
+      TZ: Asia/Shanghai
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
