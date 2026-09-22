@@ -89,7 +89,10 @@ jobs:
         run: |
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
           ssh deploy-server "test \"\$(readlink -f '$APP_DIR')\" = '$APP_DIR'"
-          rsync -az \
+          # related-projects/ 仅用于归档参考（其中 wechat-ai-assistant 就占 298MB），
+          # 服务端运行与测试都不读取它；以前每次部署都要把它重传一遍，
+          # 一个几秒钟的同步能跑上特别久，所以这里直接排除。
+          rsync -az --stats \
             --exclude='.git/' \
             --exclude='.env' \
             --exclude='.env.backup' \
@@ -105,6 +108,10 @@ jobs:
             --exclude='public/uploads/' \
             --exclude='private.*.key' \
             --exclude='wechat-platform-login*.png' \
+            --exclude='related-projects/' \
+            --exclude='*.sqlite' \
+            --exclude='*.sqlite-shm' \
+            --exclude='*.sqlite-wal' \
             -e ssh ./ "deploy-server:$APP_DIR/"
 
       - name: Deploy via SSH
