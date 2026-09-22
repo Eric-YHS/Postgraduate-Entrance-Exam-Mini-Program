@@ -1,0 +1,157 @@
+name: CI
+
+# 这条工作流只管「这次改动能不能要」：后端测试、小程序类型/ lint、密钥泄漏、依赖公告。
+# 部署拆到 deploy.yml（由本工作流成功后通过 workflow_run 触发）。
+# 拆开之前，服务器缺一个 .env 这种纯基建问题会把 PR 检查整体点红，
+# 于是「测试没过」和「机器连不上」长得一模一样，很快就没人看它了。
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # 生产容器固定 TZ=Asia/Shanghai，测试里的 cron 匹配与推送静默时段（9-21 点）都按北京时间书写，
+    # 因此 Runner 也必须固定时区，否则会出现「手动推送被判为 quiet_hours」这类偶发失败。
+    # （时间断言本身也已改成显式传 at / 用本地时间字面量，TEST_TZ=UTC npm test 现在也是全绿，
+    #  但线上跑的确实是北京时间，这里不跟着环境变。）
+    env:
+      TZ: Asia/Shanghai
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm test
+
+      # 服务器上部署时靠一份手工维护的 .env，新增变量如果没进 .env.example，
+      # 下次重建环境就会静默地少了配置（例如订阅消息模板没配 → 推送静默失效）。
+      - name: .env.example must cover every env var the code reads
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          from pathlib import Path
+
+          used = set()
+          for path in sorted(Path('src').rglob('*.js')):
+              used |= set(re.findall(r'process\.env\.([A-Z_][A-Z0-9_]*)',
+                                     path.read_text(encoding='utf-8', errors='replace')))
+          documented = set(re.findall(
+              r'^#?\s*([A-Z_][A-Z0-9_]*)=',
+              Path('.env.example').read_text(encoding='utf-8'), re.M))
+          missing = sorted(used - documented)
+          if missing:
+              print('read via process.env but absent from .env.example:')
+              print('\n'.join(f'  {name}' for name in missing))
+              sys.exit(1)
+          print(f'ok  {len(used)} env vars documented in .env.example')
+          PY
+
+      # 以前这里是 `npm audit --audit-level=high` + continue-on-error，结果永远是红的，
+      # 红了就没人看，新公告和长期噪音混在一起。改成白名单校验后会真正拦截新出现的高危项。
+      - name: Run security audit (allowlisted)
+        run: npm run audit
+
+  # 小程序端是 TypeScript 写的（strict: true），但微信开发者工具只在上传那个时点才反它。
+  # 以前只有后端的 npm test 会跑，页面里一个类型错误能安静地存在到下一次手工上传。
+  miniprogram:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: miniprogram/package-lock.json
+
+      - name: Install dependencies
+        working-directory: miniprogram
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        working-directory: miniprogram
+        run: npm run typecheck
+
+      - name: Lint (eslint + prettier)
+        working-directory: miniprogram
+        run: npm run lint
+
+      # 上传前会跑的发布模式校验，现在提前在 CI 里做，免得上图时才发现 app.json / 配置不一致
+      - name: Verify release mode
+        working-directory: miniprogram
+        run: npm run verify:release
+
+  # 密钥一旦 commit 进历史就很难清干净（science-pop 就漏过一个 Coze PAT）。
+  # 这里只匹配高置信度的前缀，不做熵分析，避免把 CI 变成误报噪音。
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan tracked files for committed credentials
+        run: |
+          python3 - <<'PY'
+          import re, subprocess, sys
+
+          PATTERNS = [
+              ("GitHub token", re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{20,}\b")),
+              ("GitHub fine-grained PAT", re.compile(r"\bgithub_pat_[0-9A-Za-z_]{30,}\b")),
+              ("OpenAI-style key", re.compile(r"\bsk-[0-9A-Za-z_-]{20,}\b")),
+              ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+              ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
+              ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b")),
+              ("WeChat app secret", re.compile(
+                  r"(?i)\b(wxappsecret|wx_app_secret|app_secret)\b\s*[:=]\s*['\"]?([0-9a-f]{32})['\"]?")),
+              ("Coze PAT", re.compile(r"\bpat_[0-9A-Za-z]{20,}\b")),
+          ]
+          SKIP = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz",
+                  ".pkl", ".pt", ".pth", ".ckpt", ".onnx", ".bin", ".dll", ".so", ".pdb",
+                  ".docx", ".hdr", ".ttf", ".woff", ".woff2", ".mp3", ".mp4", ".wav", ".h5",
+                  ".safetensors", ".lock", ".whl", ".jar", ".class"}
+
+          files = subprocess.run(["git", "ls-files", "-z"], capture_output=True,
+                                 text=True).stdout.split("\0")
+          hits = []
+          for name in filter(None, files):
+              if name.endswith(tuple(SKIP)):
+                  continue
+              try:
+                  blob = open(name, "rb").read(2 * 1024 * 1024)
+              except OSError:
+                  continue
+              if b"\0" in blob:
+                  continue
+              text = blob.decode("utf-8", "replace")
+              for label, pat in PATTERNS:
+                  for m in pat.finditer(text):
+                      hits.append(f"{label}: {name}: {m.group(0)[:24]}")
+          if hits:
+              print("\n".join(hits))
+              sys.exit("发现疑似明文密钥（见上）；确认是误报就把该文件加进 SKIP 或换成占位符")
+          print(f"ok  已扫描 {len([f for f in files if f])} 个文件，未发现明文密钥")
+          PY

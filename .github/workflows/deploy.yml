@@ -1,97 +1,34 @@
 name: Deploy to Server
 
+# 代码质量检查在 ci.yml 里；这条工作流只负责「把已经绿过的提交推到服务器」。
+# 之前测试和部署挤在同一条 push 触发的工作流里：服务器缺 .env、SSH 抖动这类
+# 纯运维问题会把 npm test 也标成红叉，PR 上看不出到底是哪里坏了。
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
+  # 服务器上手工改过配置、或者需要把已经部署过的提交再重启一次时用这个
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
   group: deploy-main
   cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    # 生产容器固定 TZ=Asia/Shanghai，测试里的 cron 匹配与推送静默时段（8-22 点）都按北京时间书写，
-    # 因此 Runner 也必须固定时区，否则会出现「手动推送被判为 quiet_hours」这类偶发失败。
-    env:
-      TZ: Asia/Shanghai
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      # 服务器上部署时靠一份手工维护的 .env，新增变量如果没进 .env.example，
-      # 下次重建环境就会静默地少了配置（例如订阅消息模板没配 → 推送静默失效）。
-      - name: .env.example must cover every env var the code reads
-        run: |
-          python3 - <<'PY'
-          import re, sys
-          from pathlib import Path
-
-          used = set()
-          for path in sorted(Path('src').rglob('*.js')):
-              used |= set(re.findall(r'process\.env\.([A-Z_][A-Z0-9_]*)',
-                                     path.read_text(encoding='utf-8', errors='replace')))
-          documented = set(re.findall(
-              r'^#?\s*([A-Z_][A-Z0-9_]*)=',
-              Path('.env.example').read_text(encoding='utf-8'), re.M))
-          missing = sorted(used - documented)
-          if missing:
-              print('read via process.env but absent from .env.example:')
-              print('\n'.join(f'  {name}' for name in missing))
-              sys.exit(1)
-          print(f'ok  {len(used)} env vars documented in .env.example')
-          PY
-
-      - name: Run security audit
-        run: npm audit --audit-level=high
-        continue-on-error: true
-
-  # 小程序端是 TypeScript 写的（strict: true），但微信开发者工具只在上传那个时点才反它。
-  # 以前只有后端的 npm test 会跑，页面里一个类型错误能安静地存在到下一次手工上传。
-  miniprogram:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: "npm"
-          cache-dependency-path: miniprogram/package-lock.json
-
-      - name: Install dependencies
-        working-directory: miniprogram
-        run: npm ci
-
-      - name: Typecheck (tsc --noEmit)
-        working-directory: miniprogram
-        run: npm run typecheck
-
-      - name: Lint (eslint + prettier)
-        working-directory: miniprogram
-        run: npm run lint
-
-      # 上传前会跑的发布模式校验，现在提前在 CI 里做，免得上图时才发现 app.json / 配置不一致
-      - name: Verify release mode
-        working-directory: miniprogram
-        run: npm run verify:release
-
   deploy:
-    needs: [test, miniprogram, secret-scan]
+    # 手工触发时 github.event.workflow_run 是空的，所以两种触发方式分开判断。
+    # workflow_run 只会看 CI 的结论，不会重复跑测试；event/branch 判断是为了排除
+    # 由 PR 触发的那次 CI 运行（PR 还没合就部署会把 main 之外的代码推上线）。
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
     runs-on: ubuntu-latest
     # 部署曾经会在 rsync 这一步挂住几个小时：链路半死时 TCP 连接不会自己报错，
     # 而一个卡住的 deploy 又会让后面所有提交排队，所以同时设置任务超时、
@@ -101,8 +38,25 @@ jobs:
       group: kaoyan-deploy
       cancel-in-progress: false
     steps:
+      - name: Resolve target commit
+        id: target
+        # workflow_run 触发时 Runner 默认检出的是「触发它的那次运行」的仓库快照，
+        # 而不是 main；不显式锁 SHA 就可能部署到比被测提交更新的 HEAD，
+        # 那部分代码是没跑过测试的。
+        env:
+          run_sha: ${{ github.event.workflow_run.head_sha }}
+          dispatch_sha: ${{ github.sha }}
+        run: |
+          sha="${run_sha:-$dispatch_sha}"
+          test -n "$sha" || { echo "无法确定要部署的提交"; exit 1; }
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "将部署提交 $sha（触发方式 ${{ github.event_name }}）"
+
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          persist-credentials: false
 
       - name: Check secrets are set
         run: |
@@ -149,6 +103,27 @@ jobs:
       - name: Test SSH connection
         run: ssh deploy-server "echo 'SSH connection OK'"
 
+      # 服务器上的 .env 一旦被误删，部署会永远卡在那道 .env 检查上，而没有 SSH
+      # 权限的人完全无法推进（实际就碰上过：仓库侧什么都错了，但只有服务器少了一个文件）。
+      # 配了可选的 SERVER_DOTENV secret 时，这里做一次「只在文件缺失时」的兑底重建；
+      # 没配就什么都不做，行为跟以前完全一致。后面的 SESSION_SECRET 长度校验会接着把关，
+      # 重建内容不对也不会带病重启。
+      - name: Rebuild server .env from secret when missing
+        env:
+          SERVER_DOTENV: ${{ secrets.SERVER_DOTENV }}
+        run: |
+          APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
+          if ssh deploy-server "test -f $APP_DIR/.env"; then
+            echo "服务器已有 .env，跳过重建（这一步只在文件缺失时兑底）"
+            exit 0
+          fi
+          if [ -z "$SERVER_DOTENV" ]; then
+            echo "服务器缺 $APP_DIR/.env，且未配置 SERVER_DOTENV secret，继续让部署脚本按原逻辑报错"
+            exit 0
+          fi
+          printf '%s\n' "$SERVER_DOTENV" | ssh deploy-server "umask 077 && cat > $APP_DIR/.env && wc -l < $APP_DIR/.env"
+          echo "已从 SERVER_DOTENV 重建 .env（只写了变量名对应的行，未回显任何值）"
+
       - name: Sync checked-out revision to server
         run: |
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
@@ -182,8 +157,10 @@ jobs:
             -e ssh ./ "deploy-server:$APP_DIR/"
 
       - name: Deploy via SSH
+        env:
+          DEPLOY_SHA: ${{ steps.target.outputs.sha }}
         run: |
-          ssh deploy-server "DEPLOY_SHA='${{ github.sha }}' bash -s" <<'REMOTESCRIPT'
+          ssh deploy-server "DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTESCRIPT'
           set -e
 
           # 加载 nvm 环境（服务器使用 nvm 管理 Node）
@@ -204,6 +181,7 @@ jobs:
             echo "缺少 $APP_DIR/.env，终止部署（该文件不由 rsync 同步，只在服务器上）"
             ls -la "$APP_DIR" | head -30
             [ -f .env.backup ] && echo "检测到 .env.backup，可用它人工恢复"
+            echo "也可以配置仓库 secret SERVER_DOTENV，下次部署会自动重建（见 docs/GitHub自动部署配置指南.md）"
             exit 1
           fi
           cp .env .env.backup
@@ -356,54 +334,3 @@ jobs:
           pm2 save
           echo "Deploy completed at $(date)"
           REMOTESCRIPT
-
-  # 密钥一旦 commit 进历史就很难清干净（science-pop 就漏过一个 Coze PAT）。
-  # 这里只匹配高置信度的前缀，不做熵分析，避免把 CI 变成误报噪音。
-  secret-scan:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Scan tracked files for committed credentials
-        run: |
-          python3 - <<'PY'
-          import re, subprocess, sys
-
-          PATTERNS = [
-              ("GitHub token", re.compile(r"\b(ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{20,}\b")),
-              ("GitHub fine-grained PAT", re.compile(r"\bgithub_pat_[0-9A-Za-z_]{30,}\b")),
-              ("OpenAI-style key", re.compile(r"\bsk-[0-9A-Za-z_-]{20,}\b")),
-              ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
-              ("Slack token", re.compile(r"\bxox[baprs]-[0-9A-Za-z-]{10,}\b")),
-              ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{30,}\b")),
-              ("WeChat app secret", re.compile(
-                  r"(?i)\b(wxappsecret|wx_app_secret|app_secret)\b\s*[:=]\s*['\"]?([0-9a-f]{32})['\"]?")),
-              ("Coze PAT", re.compile(r"\bpat_[0-9A-Za-z]{20,}\b")),
-          ]
-          SKIP = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".pdf", ".zip", ".gz",
-                  ".pkl", ".pt", ".pth", ".ckpt", ".onnx", ".bin", ".dll", ".so", ".pdb",
-                  ".docx", ".hdr", ".ttf", ".woff", ".woff2", ".mp3", ".mp4", ".wav", ".h5",
-                  ".safetensors", ".lock", ".whl", ".jar", ".class"}
-
-          files = subprocess.run(["git", "ls-files", "-z"], capture_output=True,
-                                 text=True).stdout.split("\0")
-          hits = []
-          for name in filter(None, files):
-              if name.endswith(tuple(SKIP)):
-                  continue
-              try:
-                  blob = open(name, "rb").read(2 * 1024 * 1024)
-              except OSError:
-                  continue
-              if b"\0" in blob:
-                  continue
-              text = blob.decode("utf-8", "replace")
-              for label, pat in PATTERNS:
-                  for m in pat.finditer(text):
-                      hits.append(f"{label}: {name}: {m.group(0)[:24]}")
-          if hits:
-              print("\n".join(hits))
-              sys.exit("发现疑似明文密钥（见上）；确认是误报就把该文件加进 SKIP 或换成占位符")
-          print(f"ok  已扫描 {len([f for f in files if f])} 个文件，未发现明文密钥")
-          PY

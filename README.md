@@ -1,5 +1,6 @@
 # 研途总控台
 
+[![CI](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/ci.yml/badge.svg)](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/ci.yml)
 [![Deploy to Server](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/deploy.yml/badge.svg)](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/deploy.yml)
 [![Upload MiniProgram](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/upload-miniprogram.yml/badge.svg)](https://github.com/Eric-YHS/Postgraduate-Entrance-Exam-Mini-Program/actions/workflows/upload-miniprogram.yml)
 
@@ -146,6 +147,12 @@ npm install
 
 # 启动服务
 npm start
+
+# 后端测试（内存 SQLite，不需要 .env）
+npm test
+
+# 依赖安全审计（带白名单，CI 里跑的就是这一条）
+npm run audit
 
 # 访问
 # 首页：http://localhost:3000
