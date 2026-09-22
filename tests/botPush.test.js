@@ -16,9 +16,26 @@ function createBot(config = completeBotConfig()) {
 
 describe('机器人主动推送执行器', () => {
   test('标准五字段 cron 可按分钟匹配', () => {
-    const at = dayjs('2026-07-27T09:30:00+08:00');
+    // cron 的时/分是按服务器本地时间匹配的，所以测试也得用本地时间字面量。
+    // 写成 09:30:00+08:00 的话，在 UTC 环境下这个瞬间本地读数是 01:30，用例会假红。
+    const at = dayjs('2026-07-27T09:30:00');
     expect(cronMatches('30 9 * * 1', at)).toBe(true);
     expect(cronMatches('0 9 * * 1', at)).toBe(false);
+  });
+
+  test('推送窗口（9:00-21:00）之外的时点一律记为 quiet_hours', async () => {
+    const student = createStudent({ username: `quiet_student_${Date.now()}` });
+    const bot = createBot();
+    const schedule = completeBotConfig().schedules[0];
+
+    const night = await dispatchSchedule(db, bot, schedule, { at: dayjs().hour(22).minute(30).second(0), studentIds: [student.id] });
+    const earlyMorning = await dispatchSchedule(db, bot, schedule, { at: dayjs().hour(8).minute(30).second(0), studentIds: [student.id] });
+    expect(night[0]).toMatchObject({ studentId: student.id, sent: false, reason: 'quiet_hours' });
+    expect(earlyMorning[0]).toMatchObject({ sent: false, reason: 'quiet_hours' });
+
+    // 静默时段只应记录 skipped，不能占用当天频次额度：推到次日窗口内仍应真的发出
+    const daytime = await dispatchSchedule(db, bot, schedule, { at: dayjs().add(1, 'day').hour(9).minute(30).second(0), studentIds: [student.id] });
+    expect(daytime[0]).toMatchObject({ studentId: student.id, sent: true });
   });
 
   test('手动任务实际发送并执行单机器人每日 1 条限频', async () => {

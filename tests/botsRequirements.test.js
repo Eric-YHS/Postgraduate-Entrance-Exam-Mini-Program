@@ -42,9 +42,17 @@ describe('机器人管理手册上线与运营要求', () => {
 
     // 手动验收必须确定命中该学员，发布比例恢复到 100%。
     await agent.post(`/api/admin/bots/${created.body.id}/releases`).send({ rolloutPercent: 100 }).expect(200);
-    const push = await agent.post(`/api/admin/bots/${created.body.id}/schedules/JOB-MANUAL/trigger`).send({ studentIds: [student.id] }).expect(200);
+    // 必须显式给定时点：不传 at 的话按「现在」判定，晚上 21 点之后或早上 9 点之前
+    // 跑测试会得到 quiet_hours，同一个提交换个时间跑就红一次。
+    const at = `${new Date().getFullYear()}-06-15T10:00:00`;
+    const push = await agent.post(`/api/admin/bots/${created.body.id}/schedules/JOB-MANUAL/trigger`).send({ studentIds: [student.id], at }).expect(200);
     expect(push.body.deliveries).toEqual([expect.objectContaining({ studentId: Number(student.id), sent: true })]);
     expect(db.prepare("SELECT body FROM notifications WHERE student_id = ? AND type = '机器人主动推送'").get(student.id).body).toContain('今天先完成');
+
+    const badAt = await agent.post(`/api/admin/bots/${created.body.id}/schedules/JOB-MANUAL/trigger`).send({ studentIds: [student.id], at: '不是时间' }).expect(400);
+    expect(badAt.body.error).toContain('at');
+    const night = await agent.post(`/api/admin/bots/${created.body.id}/schedules/JOB-MANUAL/trigger`).send({ studentIds: [student.id], at: `${new Date().getFullYear()}-06-15T23:00:00` }).expect(200);
+    expect(night.body.deliveries[0]).toMatchObject({ sent: false, reason: 'quiet_hours' });
 
     await agent.post(`/api/admin/bots/${created.body.id}/pause`).send({ reason: '验收暂停' }).expect(200);
     const audits = await agent.get(`/api/admin/bots/${created.body.id}/audits`).expect(200);

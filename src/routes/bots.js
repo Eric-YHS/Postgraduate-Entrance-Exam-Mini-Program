@@ -286,12 +286,26 @@ module.exports = function registerBotRoutes(app, shared) {
       const schedule = config.schedules.find((item) => String(item.id || item.name) === String(request.params.scheduleId));
       if (!schedule) return response.status(404).json({ error: '定时任务不存在。' });
       const studentIds = Array.isArray(request.body?.studentIds) ? request.body.studentIds : [];
-      const deliveries = await dispatchSchedule(db, bot, { ...schedule, triggerType: 'manual' }, { studentIds });
+      // 手动触发默认按「此刻」判定静默时段与每日频次上限。运维复核「某个时点会不会推」
+      // 时可以显式传 at（ISO 8601）；测试也必须传，否则深夜跑的验收会因为落在
+      // 9:00-21:00 之外而被判成 quiet_hours，同一个提交换个时间跑结果就不一样。
+      const atRaw = request.body?.at;
+      let at = dayjs();
+      if (atRaw !== undefined && atRaw !== null && String(atRaw).trim() !== '') {
+        at = dayjs(String(atRaw).trim());
+        if (!at.isValid()) return response.status(400).json({ error: 'at 需要是可解析的时间（ISO 8601）。' });
+      }
+      const deliveries = await dispatchSchedule(db, bot, { ...schedule, triggerType: 'manual' }, { at, studentIds });
       recordAudit(db, {
         botId: id,
         actorId: request.currentUser?.id,
         action: 'manual_push',
-        after: { scheduleId: schedule.id, requested: deliveries.length, sent: deliveries.filter((item) => item.sent).length },
+        after: {
+          scheduleId: schedule.id,
+          at: at.toISOString(),
+          requested: deliveries.length,
+          sent: deliveries.filter((item) => item.sent).length,
+        },
         summary: `手动执行主动推送：${schedule.name}`
       });
       response.json({ success: true, deliveries });
