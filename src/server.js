@@ -258,6 +258,8 @@ const checkLoginRateLimit = createRateLimiter(loginRateLimiter);
 const checkRegisterRateLimit = createRateLimiter(registerRateLimiter);
 
 // BUG-018: 限速器定期清理过期记录（每60秒）
+// 下面的维护定时器都调 unref：HTTP 监听本身已让事件循环保持存活，
+// 而不 unref 会让 jest 工作进程无法自然退出（只能长期依赖 --forceExit）。
 setInterval(() => {
   const now = Date.now();
   for (const store of [loginRateLimiter, registerRateLimiter]) {
@@ -267,7 +269,7 @@ setInterval(() => {
       else store.set(ip, filtered);
     }
   }
-}, 60000);
+}, 60000).unref();
 
 // ── 用户/认证辅助函数 ──
 
@@ -1535,9 +1537,14 @@ setInterval(() => {
     socket.isAlive = false;
     socket.ping();
   });
-}, 30000);
+}, 30000).unref();
 
-startScheduler(db, sendNotificationToStudent);
+// 测试进程不注册 cron：用例都是直接调用 dispatchXxx，而 node-cron 的心跳定时器会
+// 让 jest worker 永远退不出去（此前始终靠 --forceExit 掩盖），同时候选会刷屏
+// “missed execution” 警告干扰断言输出。
+if (process.env.NODE_ENV !== 'test') {
+  startScheduler(db, sendNotificationToStudent);
+}
 
 // ── 初始化默认数据 ──
 ensureDefaultTemplates(db);
@@ -1735,7 +1742,7 @@ setInterval(() => {
   try {
     db.prepare('DELETE FROM auth_tokens WHERE expires_at < ?').run(dayjs().toISOString());
   } catch (_) {}
-}, 3600000);
+}, 3600000).unref();
 
 // BUG-075: 优雅关闭
 function gracefulShutdown(signal) {
@@ -1775,4 +1782,4 @@ setInterval(() => {
   } catch (err) {
     console.error('数据库备份失败:', err.message);
   }
-}, 60000);
+}, 60000).unref();

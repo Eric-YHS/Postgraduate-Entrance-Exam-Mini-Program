@@ -10,11 +10,12 @@ db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 
 // BUG-090: 定期 WAL checkpoint，防止 WAL 文件无限增长
+// unref：这类后台维护定时器不应该阻止进程退出（测试里靠 --forceExit 才能收尾）
 setInterval(() => {
   try {
     db.pragma('wal_checkpoint(TRUNCATE)');
   } catch (_) {}
-}, 300000);
+}, 300000).unref();
 
 // BUG-079: 数据库初始化使用事务保护
 function initializeDatabase() {
