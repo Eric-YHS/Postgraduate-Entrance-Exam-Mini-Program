@@ -10,6 +10,12 @@ on:
     branches: [main]
   # 服务器上手工改过配置、或者需要把已经部署过的提交再重启一次时用这个
   workflow_dispatch:
+    inputs:
+      allow_empty_db:
+        description: '允许数据库为空（刚重置过库时勾选，跳过空库守卫）'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -105,7 +111,7 @@ jobs:
 
       # 服务器上的 .env 一旦被误删，部署会永远卡在那道 .env 检查上，而没有 SSH
       # 权限的人完全无法推进（实际就碰上过：仓库侧什么都错了，但只有服务器少了一个文件）。
-      # 配了可选的 SERVER_DOTENV secret 时，这里做一次「只在文件缺失时」的兑底重建；
+      # 配了可选的 SERVER_DOTENV secret 时，这里做一次「只在文件缺失时」的兜底重建；
       # 没配就什么都不做，行为跟以前完全一致。后面的 SESSION_SECRET 长度校验会接着把关，
       # 重建内容不对也不会带病重启。
       - name: Rebuild server .env from secret when missing
@@ -114,7 +120,7 @@ jobs:
         run: |
           APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
           if ssh deploy-server "test -f $APP_DIR/.env"; then
-            echo "服务器已有 .env，跳过重建（这一步只在文件缺失时兑底）"
+            echo "服务器已有 .env，跳过重建（这一步只在文件缺失时兜底）"
             exit 0
           fi
           if [ -z "$SERVER_DOTENV" ]; then
@@ -159,8 +165,13 @@ jobs:
       - name: Deploy via SSH
         env:
           DEPLOY_SHA: ${{ steps.target.outputs.sha }}
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+          # 手工触发时可以勾选跳过空库守卫；workflow_run 触发时这里永远是 false
+          ALLOW_EMPTY_DB: ${{ github.event.inputs.allow_empty_db || 'false' }}
         run: |
-          ssh deploy-server "DEPLOY_SHA='$DEPLOY_SHA' bash -s" <<'REMOTESCRIPT'
+          # ssh 不会把 Runner 的环境变量带过去（sshd 默认不收 AcceptEnv），
+          # 要用的变量只能在这里逐个显式传，不传远端读到的是空字符串
+          ssh deploy-server "DEPLOY_SHA='$DEPLOY_SHA' ALLOW_EMPTY_DB='$ALLOW_EMPTY_DB' SERVER_HOST='$SERVER_HOST' bash -s" <<'REMOTESCRIPT'
           set -e
 
           # 加载 nvm 环境（服务器使用 nvm 管理 Node）
@@ -204,7 +215,7 @@ jobs:
             }
             if (value.length < 32) {
               console.error("FATAL: .env 里的 SESSION_SECRET 缺失或短于 32 字符（当前 " + value.length + "），终止部署");
-              console.error("用 npm run generate-secret 生成后戒到服务器上的 .env 里");
+              console.error("用 npm run generate-secret 生成后写到服务器上的 .env 里");
               process.exit(1);
             }
             console.log("SESSION_SECRET 长度校验通过");
@@ -257,6 +268,39 @@ jobs:
 
           # 安装依赖
           npm ci --omit=dev
+
+          # 空库守卫：上一次成功部署时库里多少人多少题，记在 .deploy-db-stats.json；
+          # 这次读到的库却不见了或空了，说明 .env 里的 DB_PATH 指到了别处（.env 丢了，
+          # DB_PATH 就退回默认值）。以前这种情况只在备份那一步打一行警告，然后新进程
+          # 在空库上启动、/healthz 照样返回 ok，线上安静地变成「所有用户都不存在」。
+          # 现在放在删旧进程之前失败，旧进程继续服务；统计本身出错只会警告，不卡部署。
+          STATS_FILE=$APP_DIR/.deploy-db-stats.json
+          DB_STATS=$(node -e '
+            const fs = require("fs");
+            const p = process.argv[1];
+            if (!fs.existsSync(p)) { console.log("missing"); process.exit(0); }
+            try {
+              const Database = require("better-sqlite3");
+              const db = new Database(p, { readonly: true, fileMustExist: true });
+              const count = (t) => { try { return db.prepare("select count(*) as n from " + t).get().n; } catch { return -1; } };
+              console.log(JSON.stringify({ users: count("users"), questions: count("questions") }));
+            } catch (err) {
+              console.log("unknown");
+            }
+          ' "$DB_PATH")
+          PREV_USERS=$(node -e '
+            try { const v = Number(require(process.argv[1]).users); console.log(Number.isFinite(v) ? v : -1); } catch { console.log(-1); }
+          ' "$STATS_FILE" 2>/dev/null || echo -1)
+          CUR_USERS=$(node -e '
+            try { console.log(JSON.parse(process.argv[1]).users); } catch { console.log(-1); }
+          ' "$DB_STATS")
+          echo "数据库规模：$DB_PATH → $DB_STATS（上次成功部署 users=$PREV_USERS）"
+          if [ "$ALLOW_EMPTY_DB" != "true" ] && [ "$PREV_USERS" -gt 0 ] 2>/dev/null && { [ "$DB_STATS" = "missing" ] || [ "$CUR_USERS" = "0" ]; }; then
+            echo "FATAL: 上次成功部署时库里有 $PREV_USERS 个用户，这次读 $DB_PATH 却是空的/不存在，终止部署"
+            echo "旧进程未被动过，线上照服。先查 .env 里的 DB_PATH 是否指向真正的库文件；"
+            echo "确实刚重置过数据库，就用 Allow empty database 手工触发一次部署。"
+            exit 1
+          fi
 
           # 重启前真实获取一次微信 access_token。配置缺失、Secret 错误或 IP 未加白名单时
           # 直接失败，保持当前线上进程继续运行，不上传无法审核 UGC 的小程序版本。
@@ -331,6 +375,32 @@ jobs:
             }
           '
 
+          # 基线只在整条链路都成功之后才更新，失败的部署不会把上一次的数字冲掉；
+          # 没读到真实数字（missing/unknown）时保留旧基线，不要把哨兵值当成基线写回去
+          case "$DB_STATS" in
+            '{'*) printf '%s\n' "$DB_STATS" > "$STATS_FILE" ;;
+            *) echo "本次没读到数据库规模（$DB_STATS），保留 $STATS_FILE 里的旧基线" ;;
+          esac
+
           pm2 save
+          echo "访问地址：http://$SERVER_HOST"
           echo "Deploy completed at $(date)"
           REMOTESCRIPT
+
+      # 只看红叉的人不必翻完几百行日志才知道这次是机器少了文件、不是代码坏了：
+      # 失败时把目标、已排除的原因和两条恢复路径写进运行摘要。
+      - name: Summarise failure
+        if: failure()
+        env:
+          SERVER_HOST: ${{ secrets.SERVER_HOST }}
+        run: |
+          APP_DIR=/home/ubuntu/kaoyan-xiaochengxu
+          {
+            echo "## 部署失败"
+            echo ""
+            echo "- 目标：\`$SERVER_HOST:$APP_DIR\`，本次部署的 commit：\`${{ github.sha }}\`"
+            echo "- 已排除：CI（后端测试 + 小程序校验 + 密钥扫描）是绿的，所以大概率不是代码问题"
+            echo "- 常见原因：服务器缺 \`$APP_DIR/.env\`（该文件被 rsync 排除，只存在服务器上）、SSH 私钥失效、registry 不可达"
+            echo "- 恢复：SSH 上去补 .env；或在仓库配好 secret \`SERVER_DOTENV\` 后重跑本工作流（Actions → Deploy to Server → Run workflow）"
+            echo "- 详细说明：\`docs/GitHub自动部署配置指南.md\`"
+          } >> "$GITHUB_STEP_SUMMARY"
