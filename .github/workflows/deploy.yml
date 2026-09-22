@@ -31,6 +31,29 @@ jobs:
       - name: Run tests
         run: npm test
 
+      # 服务器上部署时靠一份手工维护的 .env，新增变量如果没进 .env.example，
+      # 下次重建环境就会静默地少了配置（例如订阅消息模板没配 → 推送静默失效）。
+      - name: .env.example must cover every env var the code reads
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          from pathlib import Path
+
+          used = set()
+          for path in sorted(Path('src').rglob('*.js')):
+              used |= set(re.findall(r'process\.env\.([A-Z_][A-Z0-9_]*)',
+                                     path.read_text(encoding='utf-8', errors='replace')))
+          documented = set(re.findall(
+              r'^#?\s*([A-Z_][A-Z0-9_]*)=',
+              Path('.env.example').read_text(encoding='utf-8'), re.M))
+          missing = sorted(used - documented)
+          if missing:
+              print('read via process.env but absent from .env.example:')
+              print('\n'.join(f'  {name}' for name in missing))
+              sys.exit(1)
+          print(f'ok  {len(used)} env vars documented in .env.example')
+          PY
+
       - name: Run security audit
         run: npm audit --audit-level=high
         continue-on-error: true
