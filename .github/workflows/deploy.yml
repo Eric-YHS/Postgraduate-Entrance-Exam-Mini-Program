@@ -197,6 +197,15 @@ jobs:
           cd $APP_DIR
 
           # 备份环境变量
+          # .env 是 rsync 显式排除的，只存在于服务器上；丢了就直接退，
+          # 不要带着一堆 undefined 配置重启线上进程（上一次部署只留了一句
+          # "cp: cannot stat '.env'"，看不出是于没文件还是目录不对）
+          if [ ! -f .env ]; then
+            echo "缺少 $APP_DIR/.env，终止部署（该文件不由 rsync 同步，只在服务器上）"
+            ls -la "$APP_DIR" | head -30
+            [ -f .env.backup ] && echo "检测到 .env.backup，可用它人工恢复"
+            exit 1
+          fi
           cp .env .env.backup
           chmod 600 .env .env.backup
 
@@ -218,9 +227,16 @@ jobs:
             "$APP_DIR"/*) ;;
             *) echo "DB_PATH is outside APP_DIR; refusing unsafe backup"; exit 1 ;;
           esac
-          cp "$DB_PATH" "$BACKUP_DIR/data-$TIMESTAMP.sqlite" || true
-          cp "$DB_PATH-shm" "$BACKUP_DIR/data-$TIMESTAMP.sqlite-shm" || true
-          cp "$DB_PATH-wal" "$BACKUP_DIR/data-$TIMESTAMP.sqlite-wal" || true
+          # 数据库不存在时不阻断部署（新机器首次部署属于正常），但一定要在日志里喊出来，
+          # 否则服务会静默地在一个空库上起来
+          if [ -f "$DB_PATH" ]; then
+            cp "$DB_PATH" "$BACKUP_DIR/data-$TIMESTAMP.sqlite"
+            cp "$DB_PATH-shm" "$BACKUP_DIR/data-$TIMESTAMP.sqlite-shm" || true
+            cp "$DB_PATH-wal" "$BACKUP_DIR/data-$TIMESTAMP.sqlite-wal" || true
+            echo "已备份数据库 $DB_PATH -> data-$TIMESTAMP.sqlite"
+          else
+            echo "警告：$DB_PATH 不存在，本次没有备份；新进程将在空库上启动，请确认这是预期的"
+          fi
           # 保留最近 7 天备份
           find $BACKUP_DIR -name 'data-*.sqlite*' -mtime +7 -delete || true
 
