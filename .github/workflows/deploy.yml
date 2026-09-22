@@ -209,6 +209,29 @@ jobs:
           cp .env .env.backup
           chmod 600 .env .env.backup
 
+          # ecosystem.config.cjs 默认使 env（NODE_ENV=development），而 config.js 只在
+          # NODE_ENV=production 时才强校验 SESSION_SECRET：密钥缺失时进程会用一个随机
+          # 密钥启起来，重启就全体掉线而且现场没有任何提示。这里在动线上进程之前先把
+          # 这道关卡补上（npm start 的 --env-file-if-exists 同理，文件不在也不会报错）
+          node -e '
+            const fs = require("fs");
+            const lines = fs.readFileSync(".env", "utf8").split("\n");
+            let value = "";
+            for (const raw of lines) {
+              const line = raw.trim();
+              if (line.startsWith("SESSION_SECRET=")) {
+                // \x27 是单引号：这段整体写在 shell 的单引号里，不能出现字面单引号
+                value = line.slice("SESSION_SECRET=".length).trim().replace(/^[\x27"]|[\x27"]$/g, "");
+              }
+            }
+            if (value.length < 32) {
+              console.error("FATAL: .env 里的 SESSION_SECRET 缺失或短于 32 字符（当前 " + value.length + "），终止部署");
+              console.error("用 npm run generate-secret 生成后戒到服务器上的 .env 里");
+              process.exit(1);
+            }
+            console.log("SESSION_SECRET 长度校验通过");
+          '
+
           # 标记本次由 Runner 同步的精确提交；服务健康接口会回传该值。
           printf '%s\n' "$DEPLOY_SHA" > .deploy-sha
           rm -f .content-security-verified
