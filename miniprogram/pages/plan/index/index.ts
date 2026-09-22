@@ -39,9 +39,15 @@ Page({
     try {
       await updatePlanItem(id, nextStatus);
       const days = this.data.days.map((day) => {
-        const items = day.items.map((item) => Number(item.id) === id
-          ? { ...item, status: nextStatus as 'pending' | 'completed', completedAt: nextStatus === 'completed' ? new Date().toISOString() : null }
-          : item);
+        const items = day.items.map((item) =>
+          Number(item.id) === id
+            ? {
+                ...item,
+                status: nextStatus as 'pending' | 'completed',
+                completedAt: nextStatus === 'completed' ? new Date().toISOString() : null,
+              }
+            : item
+        );
         return { ...day, items, completed: items.filter((item) => item.status === 'completed').length };
       });
       this.applyDays(days);

@@ -120,5 +120,4 @@ Page({
       url: `/pages/question/practice/practice?subject=${subject}&focusId=${id}`,
     });
   },
-
 });

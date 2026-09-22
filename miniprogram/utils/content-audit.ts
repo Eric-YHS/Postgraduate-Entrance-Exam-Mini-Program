@@ -74,10 +74,9 @@ export async function cloudAuditText(
 
   // 调用后端 /api/content/audit
   try {
-    const result = await post<{ passed: boolean; hitWords: string[]; status: AuditStatus }>(
-      '/api/content/audit',
-      { text }
-    );
+    const result = await post<{ passed: boolean; hitWords: string[]; status: AuditStatus }>('/api/content/audit', {
+      text,
+    });
     if (result) return result;
   } catch (err) {
     console.warn('[cloudAudit] 云端审核请求失败，回退到本地结果:', err);

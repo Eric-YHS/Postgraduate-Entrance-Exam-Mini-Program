@@ -58,8 +58,40 @@ jobs:
         run: npm audit --audit-level=high
         continue-on-error: true
 
+  # 小程序端是 TypeScript 写的（strict: true），但微信开发者工具只在上传那个时点才反它。
+  # 以前只有后端的 npm test 会跑，页面里一个类型错误能安静地存在到下一次手工上传。
+  miniprogram:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: miniprogram/package-lock.json
+
+      - name: Install dependencies
+        working-directory: miniprogram
+        run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        working-directory: miniprogram
+        run: npm run typecheck
+
+      - name: Lint (eslint + prettier)
+        working-directory: miniprogram
+        run: npm run lint
+
+      # 上传前会跑的发布模式校验，现在提前在 CI 里做，免得上图时才发现 app.json / 配置不一致
+      - name: Verify release mode
+        working-directory: miniprogram
+        run: npm run verify:release
+
   deploy:
-    needs: test
+    needs: [test, miniprogram]
     runs-on: ubuntu-latest
     # 部署曾经会在 rsync 这一步挂住几个小时：链路半死时 TCP 连接不会自己报错，
     # 而一个卡住的 deploy 又会让后面所有提交排队，所以同时设置任务超时、

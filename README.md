@@ -89,6 +89,9 @@
 - 微信一键登录
 - 首页任务/提醒/总结
 - 课程、论坛、商城、个人中心、直播入口
+- 代码是 TypeScript（`strict: true`）+ Vant Weapp；`miniprogram/` 下自带依赖与 `tsconfig.json`：
+  `npm run typecheck`、`npm run lint`、`npm run verify:release`（三项已接入 CI，
+  不等微信开发者工具上传时才反报错）
 
 ### 后端核心能力
 - **认证：** Session + Bearer Token 双重鉴权，CSRF 防护

@@ -144,5 +144,4 @@ Page({
       url: `/pages/course/detail/detail?id=${id}`,
     });
   },
-
 });

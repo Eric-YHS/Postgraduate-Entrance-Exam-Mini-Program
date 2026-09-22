@@ -71,10 +71,7 @@ function requestRaw<T>(
           return;
         }
         reject(
-          new WxSubscribeClientError(
-            body.code || `HTTP_${response.statusCode}`,
-            body.error || '微信提醒服务暂不可用。'
-          )
+          new WxSubscribeClientError(body.code || `HTTP_${response.statusCode}`, body.error || '微信提醒服务暂不可用。')
         );
       },
       fail: () => reject(new WxSubscribeClientError('NETWORK_ERROR', '无法连接微信提醒服务。')),
@@ -177,18 +174,14 @@ export function sendWxSubscribeTest(): Promise<{
   page: string;
   sentAt: string;
 }> {
-  return withSession((token) =>
-    requestRaw('/api/wx-subscribe/test', { token })
-  );
+  return withSession((token) => requestRaw('/api/wx-subscribe/test', { token }));
 }
 
 export function getWxSubscribeDelivery(id: number): Promise<{
   ok: boolean;
   delivery: WxSubscribeDelivery;
 }> {
-  return withSession((token) =>
-    requestRaw(`/api/wx-subscribe/deliveries/${id}`, { token, method: 'GET' })
-  );
+  return withSession((token) => requestRaw(`/api/wx-subscribe/deliveries/${id}`, { token, method: 'GET' }));
 }
 
 export function formatWxSubscribeError(error: unknown): string {

@@ -37,10 +37,20 @@ export function mockUpdatePlanItem(data: Record<string, unknown>): { item: Study
   days = days.map((day) => {
     const items = day.items.map((item) => {
       if (Number(item.id) !== id) return item;
-      updated = { ...item, status, feedback: String(data.feedback || ''), completedAt: status === 'completed' ? new Date().toISOString() : null };
+      updated = {
+        ...item,
+        status,
+        feedback: String(data.feedback || ''),
+        completedAt: status === 'completed' ? new Date().toISOString() : null,
+      };
       return updated;
     });
-    return { ...day, items, completed: items.filter((item) => item.status === 'completed').length, total: items.length };
+    return {
+      ...day,
+      items,
+      completed: items.filter((item) => item.status === 'completed').length,
+      total: items.length,
+    };
   });
   if (!updated) throw new Error('计划项不存在');
   return { item: updated };

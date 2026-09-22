@@ -274,5 +274,4 @@ Page({
     this.setData({ filters, filterVisible: false });
     this.loadQuestions();
   },
-
 });
