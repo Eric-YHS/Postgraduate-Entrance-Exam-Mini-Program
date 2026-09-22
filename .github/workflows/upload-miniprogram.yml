@@ -1,5 +1,8 @@
 name: Upload MiniProgram
 
+permissions:
+  contents: read
+
 on:
   push:
     branches: [main]
@@ -9,6 +12,12 @@ on:
 jobs:
   upload:
     runs-on: ubuntu-latest
+    # miniprogram-ci 不会替 tsc 把关，类型错误只会静默地进到线上体验版里，
+    # 所以上传前面先过一遍 typecheck / lint；concurrency 串行避免两个相邻提交交叉上传。
+    concurrency:
+      group: upload-miniprogram
+      cancel-in-progress: false
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: ./miniprogram
@@ -25,6 +34,12 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Typecheck (tsc --noEmit)
+        run: npm run typecheck
+
+      - name: Lint (eslint + prettier)
+        run: npm run lint
 
       - name: Write WeChat private key
         env:
